@@ -1,0 +1,7 @@
+.git
+.github
+config
+data
+*.yaml.local
+unraid
+README.md

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spule zuweisen – PrintHub</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#0a1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+<script src="/static/common.js"></script>
+</head>
+<body>
+<header><h1><a href="/">PrintHub</a></h1></header>
+<section class="card" id="spool">Lade Spule …</section>
+<div id="printers"></div>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const spoolId = Number(new URLSearchParams(location.search).get("spool"));
+
+async function load() {
+  const [spools, st] = await Promise.all([
+    fetch("/api/spools?fresh=1").then(r => r.json()),
+    fetch("/api/state").then(r => r.json())]);
+  const sp = Array.isArray(spools) ? spools.find(s => s.id === spoolId) : null;
+  const el = document.getElementById("spool");
+  if (!sp) { el.innerHTML = `<div class="err">Spule #${spoolId || "?"} nicht in Spoolman gefunden.</div>`; return; }
+  el.innerHTML = `<div class="head"><h2><span class="dot big" style="background:${sp.color || 'transparent'}"></span>#${sp.id} ${esc(sp.name)}</h2></div>
+    <div>Rest: <b>${sp.remaining != null ? Math.round(sp.remaining) + " g" : "–"}</b></div>
+    <div class="muted">Aktuell: ${esc(sp.slot || sp.location || "nicht zugewiesen")}</div>
+    ${sp.slot ? `<div class="btns"><button onclick="unassign()">Ins Lager zurück</button></div>` : ""}`;
+  document.getElementById("printers").innerHTML = st.printers.map(p => `<section class="card">
+    <h2>${esc(p.name)}</h2>
+    <div class="grid">${p.slots.map(s => `<button class="slotbtn" onclick="assign('${p.id}','${s.key}')">
+      <span class="dot" style="background:${(s.spool && s.spool.color) || s.color || 'transparent'}"></span>${esc(s.label)}
+      <span class="small muted">${s.spool ? esc(s.spool.name) : "leer"}</span></button>`).join("")}</div>
+  </section>`).join("");
+}
+
+async function post(printer, slot, spool_id) {
+  const r = await (await fetch("/api/assign", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({printer, slot, spool_id})})).json();
+  if (r.error) alert(r.error); else if (r.warning) alert(r.warning);
+  load();
+}
+function assign(printer, slot) { post(printer, slot, spoolId); }
+async function unassign() {
+  const st = await (await fetch("/api/state")).json();
+  for (const p of st.printers) for (const s of p.slots) if (s.spool_id === spoolId) return post(p.id, s.key, null);
+}
+load();
+</script>
+</body>
+</html>

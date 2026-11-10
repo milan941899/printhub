@@ -1,0 +1,8 @@
+# Zugangsdaten und Laufzeitdaten gehören nicht ins Repository
+config/
+data/
+config.yaml
+*.db
+__pycache__/
+*.pyc
+.env

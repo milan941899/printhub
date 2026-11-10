@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a1220">
+<title>Lager – PrintHub</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#0a1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+<script src="/static/common.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Print<span>Hub</span></h1>
+    <div class="sub">Filamentlager · Daten aus Spoolman <span id="err" class="err"></span></div>
+  </div>
+  <nav class="nav"><a href="/">Übersicht</a><a href="/lager">Lager</a><a href="/verlauf">Verlauf</a><a href="/statistik">Statistik</a><a href="/einstellungen">Einstellungen</a></nav>
+</header>
+
+<div class="page">
+  <div class="sum" id="sum" style="margin-bottom:16px"></div>
+
+  <section class="card toolbar">
+    <div class="tb-left">
+      <input type="search" id="q" placeholder="Suche: Hersteller, Farbe, Material …">
+      <select id="mat" title="Material"><option value="">Alle Materialien</option></select>
+      <select id="show" title="Anzeigen"><option value="stock">Mit Bestand</option><option value="all">Alle Sorten</option><option value="low">Nachkaufen</option></select>
+    </div>
+    <div class="tb-right" id="tb-lager">
+      <a class="btn" href="/lager?ansicht=archiv" id="archlink">📦 Archiv</a>
+      <button onclick="openFil()">＋ Neue Sorte</button>
+      <button class="primary" onclick="openAdd()">＋ Neue Rollen</button>
+    </div>
+    <div class="tb-right" id="tb-archiv" style="display:none">
+      <a class="btn" href="/lager">← Zurück zum Lager</a>
+    </div>
+  </section>
+
+  <div class="selbar" id="selbar">
+    <span id="selcount"></span>
+    <button id="lblbtn" onclick="printLabels()">🏷 Etiketten drucken</button>
+    <button id="archbtn" onclick="archiveSel()">📦 Archivieren</button>
+    <button id="restbtn" onclick="restoreSel()" style="display:none">↩ Zurückholen</button>
+    <button class="danger" onclick="delSpools([...sel])">✕ Löschen</button>
+    <button class="link" onclick="sel.clear();render()">Auswahl aufheben</button>
+  </div>
+
+  <div id="list"></div>
+  <div class="muted small" style="margin:8px 4px 24px">Hersteller- und Sortendetails (Dichte, Extrafelder …) bearbeitest du bei Bedarf direkt in <a id="smlink" target="_blank">Spoolman ↗</a>.</div>
+</div>
+
+<!-- Dialog: Neue Rollen -->
+<div class="modal" id="m-add" onclick="if(event.target===this)closeM()">
+  <form class="mbox card" onsubmit="event.preventDefault();saveAdd()">
+    <h2>Neue Rollen anlegen</h2>
+    <div class="field"><span class="lab">Sorte</span><select id="a-fil" required></select></div>
+    <div class="fgrid">
+      <div class="field"><span class="lab">Anzahl</span><input id="a-count" type="number" min="1" max="50" value="1" required></div>
+      <div class="field"><span class="lab">Netto je Rolle (g)</span><input id="a-weight" type="number" min="1" step="1" placeholder="aus Sorte"></div>
+      <div class="field"><span class="lab">Preis je Rolle (€)</span><input id="a-price" type="number" min="0" step="0.01" placeholder="aus Sorte"></div>
+      <div class="field"><span class="lab">Ort</span><input id="a-loc" type="text"></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="a-labels" checked> Danach gleich Etiketten drucken</label>
+    <div class="muted small">Sorte fehlt in der Liste? <a href="#" onclick="event.preventDefault();closeM();openFil()">＋ Neue Sorte anlegen</a> – auch direkt aus der Filament-Datenbank.</div>
+    <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Anlegen</button></div>
+  </form>
+</div>
+
+<!-- Dialog: Sorte anlegen / bearbeiten -->
+<div class="modal" id="m-fil" onclick="if(event.target===this)closeM()">
+  <form class="mbox card" onsubmit="event.preventDefault();saveFil()">
+    <h2 id="f-title">Neue Sorte</h2>
+    <input type="hidden" id="f-id"><input type="hidden" id="f-ext"><input type="hidden" id="f-dens"><input type="hidden" id="f-diam">
+    <div class="field dbsearch" id="f-dbbox">
+      <span class="lab">Aus Datenbank übernehmen (SpoolmanDB)</span>
+      <div class="dbfilters">
+        <select id="f-dbman"><option value="">Hersteller wählen …</option></select>
+        <select id="f-dbmat"><option value="">Alle Materialien</option></select>
+        <input id="f-db" type="search" placeholder="Farbe / Name, z. B. black" autocomplete="off">
+      </div>
+      <div id="f-dbres" class="dbres"></div>
+      <div id="f-dbsel" class="muted small"></div>
+    </div>
+    <div class="fgrid">
+      <div class="field"><span class="lab">Hersteller</span><select id="f-vendor"></select></div>
+      <div class="field" id="f-newv" style="display:none"><span class="lab">Neuer Hersteller</span><input id="f-vname" placeholder="z. B. Jayo"></div>
+      <div class="field"><span class="lab">Name / Farbe</span><input id="f-name" required placeholder="z. B. Black"></div>
+      <div class="field"><span class="lab">Material</span><input id="f-mat" list="mats" required placeholder="PLA, PETG …"></div>
+      <div class="field"><span class="lab">Farbe</span><input id="f-color" type="color" value="#000000" style="height:40px;padding:3px"></div>
+      <div class="field"><span class="lab">Netto je Rolle (g)</span><input id="f-weight" type="number" min="1" value="1000"></div>
+      <div class="field"><span class="lab">Leere Spule (g)</span><input id="f-sw" type="number" min="0" placeholder="wiegen"></div>
+      <div class="field"><span class="lab">Preis je Rolle (€)</span><input id="f-price" type="number" min="0" step="0.01"></div>
+      <div class="field"><span class="lab">Düse (°C)</span><input id="f-et" type="number" min="150" max="350"></div>
+      <div class="field"><span class="lab">Bett (°C)</span><input id="f-bt" type="number" min="0" max="130"></div>
+      <div class="field" id="f-countbox"><span class="lab">Gleich Rollen anlegen</span><input id="f-count" type="number" min="0" max="50" value="0"></div>
+    </div>
+    <datalist id="mats"><option>PLA</option><option>PLA+</option><option>PETG</option><option>ABS</option><option>ASA</option><option>TPU</option><option>PA</option><option>PC</option></datalist>
+    <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Speichern</button></div>
+  </form>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const {esc, eur, g} = PH;
+let D = null, open = new Set(), sel = new Set();
+const ARCH = new URLSearchParams(location.search).get("ansicht") === "archiv";
+if (ARCH) {
+  document.title = "Archiv – PrintHub";
+  document.querySelector(".brand .sub").firstChild.textContent = "Archivierte Rollen · Daten aus Spoolman ";
+  $("tb-lager").style.display = "none"; $("tb-archiv").style.display = "";
+  $("show").style.display = "none";
+}
+
+async function load() {
+  const r = await fetch("/api/lager?archived=1");  // Archiv immer mitladen (für den Zähler am Knopf)
+  const d = await r.json();
+  if (d.error) { $("err").textContent = d.error; return; }
+  D = d; $("err").textContent = "";
+  $("smlink").href = d.spoolman_url;
+  const mats = [...new Set(d.filaments.map(f => f.material).filter(Boolean))].sort();
+  const cur = $("mat").value;
+  $("mat").innerHTML = `<option value="">Alle</option>` + mats.map(m => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join("");
+  render();
+}
+
+function barColor(hex) {
+  // sehr dunkle (oder sehr helle) Farben auf dem Balken nicht unsichtbar werden lassen
+  const h = (hex || "").replace("#", "");
+  if (h.length < 6) return "var(--acc)";
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
+  const lum = r * 0.299 + g * 0.587 + b * 0.114;
+  if (lum < 70) return "#64748b";
+  if (lum > 235) return "#cbd5e1";
+  return hex;
+}
+function isLow(f) { return f.min > 0 && f.full < f.min; }
+
+function render() {
+  const q = $("q").value.trim().toLowerCase(), mat = $("mat").value, show = $("show").value;
+  const match = f => (!mat || f.material === mat) && (!q || `${f.vendor} ${f.name} ${f.material}`.toLowerCase().includes(q));
+  const tile = (l, v, s = "", c = "") => `<div class="etile"><div class="label">${l}</div><div class="v ${c}">${v}</div><div class="s">${s}</div></div>`;
+  let fl;
+  if (ARCH) {
+    fl = D.filaments.filter(f => f.archived.length && match(f));
+    const all = D.filaments.flatMap(f => f.archived);
+    $("sum").innerHTML = tile("Archivierte Rollen", all.length, `${D.filaments.filter(f => f.archived.length).length} Sorten`) +
+      tile("Restfilament darauf", g(all.reduce((a, s) => a + (s.remaining || 0), 0)), "meist leere Rollen");
+  } else {
+    fl = D.filaments.filter(f => match(f) &&
+      (show === "all" || (show === "low" ? isLow(f) : f.spools.length > 0 || isLow(f))));
+    const all = D.filaments, spools = all.flatMap(f => f.spools);
+    const value = all.reduce((a, f) => a + f.spools.reduce((b, s) => {
+      const pr = s.price ?? f.price, init = s.initial || f.weight;
+      return b + (pr && init && s.remaining != null ? pr * s.remaining / init : 0);
+    }, 0), 0);
+    const low = all.filter(isLow).length;
+    const narch = all.reduce((a, f) => a + (f.archived || []).length, 0);
+    $("sum").innerHTML = tile("Sorten", all.filter(f => f.spools.length).length, `${all.length} angelegt`) +
+      tile("Rollen", spools.length, `${spools.filter(s => !s.opened).length} voll · ${spools.filter(s => s.opened).length} angebrochen`) +
+      tile("Filament", g(spools.reduce((a, s) => a + (s.remaining || 0), 0)), "Rest auf allen Rollen") +
+      tile("Lagerwert", eur(value), "nach Restgewicht", "acc") +
+      tile("Nachkaufen", low, low ? "unter Mindestbestand" : "alles da", low ? "y" : "");
+    $("archlink").textContent = narch ? `📦 Archiv (${narch})` : "📦 Archiv";
+  }
+  const groups = {};
+  for (const f of fl) (groups[f.vendor || "Ohne Hersteller"] ||= []).push(f);
+  $("list").innerHTML = Object.entries(groups).map(([v, fs]) => `
+    <section class="card">
+      <div class="section-h"><span class="label">${esc(v)}</span><span class="muted small">${fs.reduce((a, f) => a + (ARCH ? f.archived : f.spools).length, 0)} Rollen</span></div>
+      ${fs.map(ARCH ? archFil : filRow).join("")}
+    </section>`).join("") || `<section class="card muted">${ARCH ? "Keine archivierten Rollen." : "Keine Sorten für diese Auswahl."}</section>`;
+  // Auswahlleiste
+  $("selbar").classList.toggle("show", sel.size > 0);
+  $("selcount").textContent = `${sel.size} ${sel.size === 1 ? "Rolle" : "Rollen"} ausgewählt`;
+  $("lblbtn").style.display = ARCH ? "none" : "";
+  $("restbtn").style.display = ARCH ? "" : "none";
+  $("archbtn").style.display = ARCH ? "none" : "";
+}
+
+function archFil(f) {
+  const allSel = f.archived.every(s => sel.has(s.id));
+  return `<div class="fil">
+    <div class="fil-top" style="cursor:default">
+      <span class="sw" style="background:${f.color || "transparent"}"></span>
+      <div class="fil-main">
+        <div class="fil-name">${esc(f.name)} <span class="mtag">${esc(f.material)}</span></div>
+        <div class="muted small">${f.archived.length} archiviert · ${f.spools.length} noch im Lager</div>
+      </div>
+    </div>
+    <div class="spools">
+      <label class="chk small" style="margin:4px 0 6px"><input type="checkbox" ${allSel ? "checked" : ""} onchange="selArch(${f.id}, this.checked)"> alle auswählen</label>
+      ${f.archived.map(s => archRow(f, s)).join("")}
+    </div>
+  </div>`;
+}
+function selArch(fid, on) { for (const s of D.filaments.find(f => f.id === fid).archived) on ? sel.add(s.id) : sel.delete(s.id); render(); }
+async function archiveSel() {
+  const ids = [...sel];
+  if (!confirm(`${ids.length === 1 ? "Rolle" : ids.length + " Rollen"} #${ids.join(", #")} ins Archiv verschieben?\n(Rollen, die im Drucker stecken, werden übersprungen.)`)) return;
+  const ok = [], skip = [];
+  for (const id of ids) {
+    const r = await (await fetch(`/api/lager/spools/${id}/archive`, {method: "POST"})).json();
+    (r.ok ? ok : skip).push(id);
+  }
+  ok.forEach(i => sel.delete(i));
+  PH.toast(`${ok.length} archiviert` + (skip.length ? ` – übersprungen (steckt im Drucker): #${skip.join(", #")}` : ""), !!skip.length);
+  load();
+}
+async function restoreSel() {
+  const ids = [...sel];
+  for (const id of ids) await api(`/api/lager/spools/${id}/unarchive`, "POST");
+  sel.clear(); PH.toast(`${ids.length} Rolle(n) zurück im Lager`); load();
+}
+
+function filRow(f) {
+  const opened = f.spools.filter(s => s.opened).length;
+  const isOpen = open.has(f.id);
+  const allSel = f.spools.length && f.spools.every(s => sel.has(s.id));
+  return `<div class="fil ${isLow(f) ? "low" : ""}">
+    <div class="fil-top" onclick="toggle(${f.id})">
+      <span class="sw" style="background:${f.color || "transparent"}"></span>
+      <div class="fil-main">
+        <div class="fil-name">${esc(f.name)} <span class="mtag">${esc(f.material)}</span>${isLow(f) ? ` <span class="lowtag">nachkaufen</span>` : ""}</div>
+        <div class="muted small">${f.full} voll · ${opened} angebrochen · ${g(f.remaining)}${f.price ? ` · ${eur(f.price)}/Rolle` : ""}${f.extruder_temp ? ` · ${f.extruder_temp} °C` : ""}</div>
+      </div>
+      <div class="fil-act" onclick="event.stopPropagation()">
+        <span class="minbox" title="Mindestbestand an vollen Rollen – darunter wird 'nachkaufen' angezeigt">
+          min <button type="button" onclick="setMin(${f.id}, ${f.min - 1})">−</button><b>${f.min}</b><button type="button" onclick="setMin(${f.id}, ${f.min + 1})">＋</button>
+        </span>
+        <button class="small-btn" onclick="openAdd(${f.id})">＋ Rollen</button>
+        <button class="small-btn" onclick="openFil(${f.id})" title="Sorte bearbeiten">✎</button>
+      </div>
+      <span class="chev">${isOpen ? "▾" : "▸"}</span>
+    </div>
+    ${isOpen ? `<div class="spools">
+      ${f.spools.length ? `<label class="chk small" style="margin:4px 0 6px"><input type="checkbox" ${allSel ? "checked" : ""} onchange="selAll(${f.id}, this.checked)"> alle für Etiketten auswählen</label>` : `<div class="muted small">Keine Rollen vorhanden.</div>`}
+      ${f.spools.map(s => spoolRow(f, s)).join("")}
+    </div>` : ""}
+  </div>`;
+}
+
+function spoolRow(f, s) {
+  const init = s.initial || f.weight || 1000;
+  const pct = s.remaining != null ? Math.max(0, Math.min(100, s.remaining / init * 100)) : 0;
+  const last = s.last_used ? new Date(s.last_used).toLocaleDateString("de-DE") : "";
+  return `<div class="srow">
+    <input type="checkbox" ${sel.has(s.id) ? "checked" : ""} onchange="selOne(${s.id}, this.checked)" title="für Etiketten auswählen">
+    <b class="sid">#${s.id}</b>
+    <div class="sbar"><div style="width:${pct}%;background:${barColor(f.color)}"></div></div>
+    <span class="sg">${s.remaining != null ? Math.round(s.remaining) + " g" : "–"}</span>
+    <span class="sloc ${s.in_printer ? "inp" : ""}">${s.in_printer ? "🖨 " : ""}${esc(s.location || "–")}${s.opened ? "" : " · neu"}${last ? ` · zuletzt ${last}` : ""}</span>
+    <span class="sact">
+      <button class="small-btn" title="NFC-/QR-Link kopieren" onclick="copyLink(${s.id})">🔗</button>
+      <a class="small-btn" title="In Spoolman öffnen" target="_blank" href="${D.spoolman_url}/spool/show/${s.id}">↗</a>
+      ${s.in_printer ? "" : `<button class="small-btn" title="Leer – archivieren (bleibt in Spoolman für die Statistik)" onclick="archive(${s.id})">📦</button>
+        <button class="small-btn danger" title="Endgültig löschen (z. B. Fehleingabe)" onclick="delSpools([${s.id}])">✕</button>`}
+    </span>
+  </div>`;
+}
+
+function archRow(f, s) {
+  const last = s.last_used ? new Date(s.last_used).toLocaleDateString("de-DE") : "";
+  return `<div class="srow arch">
+    <input type="checkbox" ${sel.has(s.id) ? "checked" : ""} onchange="selOne(${s.id}, this.checked)">
+    <b class="sid">#${s.id}</b>
+    <div class="sbar"><div style="width:${s.remaining && (s.initial || f.weight) ? Math.max(0, Math.min(100, s.remaining / (s.initial || f.weight) * 100)) : 0}%;background:var(--muted)"></div></div>
+    <span class="sg">${s.remaining != null ? Math.round(s.remaining) + " g" : "–"}</span>
+    <span class="sloc">archiviert${last ? ` · zuletzt ${last}` : ""}</span>
+    <span class="sact">
+      <button class="small-btn" title="Zurück ins Lager holen" onclick="unarchive(${s.id})">↩ Zurückholen</button>
+      <button class="small-btn danger" title="Endgültig löschen" onclick="delSpools([${s.id}])">✕</button>
+    </span>
+  </div>`;
+}
+async function unarchive(id) {
+  await api(`/api/lager/spools/${id}/unarchive`, "POST");
+  PH.toast(`Spule #${id} ist wieder im Lager`); load();
+}
+
+function toggle(id) { open.has(id) ? open.delete(id) : open.add(id); render(); }
+function selOne(id, on) { on ? sel.add(id) : sel.delete(id); render(); }
+function selAll(fid, on) { for (const s of D.filaments.find(f => f.id === fid).spools) on ? sel.add(s.id) : sel.delete(s.id); render(); }
+function printLabels(ids) { location.href = "/etiketten?spools=" + [...(ids || sel)].join(","); }
+
+async function api(url, method, body) {
+  const r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  const d = await r.json();
+  if (d.error) { PH.toast(d.error, true); throw new Error(d.error); }
+  return d;
+}
+async function setMin(fid, v) { await api("/api/lager/min", "PUT", {filament_id: fid, min: Math.max(0, v)}); load(); }
+async function archive(id) {
+  if (!confirm(`Spule #${id} als leer archivieren?\n(In Spoolman bleibt sie unter „archiviert“ erhalten.)`)) return;
+  await api(`/api/lager/spools/${id}/archive`, "POST"); sel.delete(id); PH.toast(`Spule #${id} archiviert`); load();
+}
+async function delSpools(ids) {
+  if (!ids.length) return;
+  const list = ids.map(i => "#" + i).join(", ");
+  if (!confirm(`${ids.length === 1 ? "Rolle" : ids.length + " Rollen"} ${list} ENDGÜLTIG löschen?\n\nDas kann nicht rückgängig gemacht werden. Für leere Rollen lieber 📦 archivieren.`)) return;
+  const d = await api("/api/lager/delete", "POST", {ids});
+  d.deleted.forEach(i => sel.delete(i));
+  PH.toast(`${d.deleted.length} gelöscht` + (d.skipped.length ? ` – übersprungen (steckt im Drucker): #${d.skipped.join(", #")}` : ""), !!d.skipped.length);
+  load();
+}
+async function copyLink(id) {
+  const d = await (await fetch("/api/labels?spools=" + id)).json();
+  const url = d.labels[0]?.url || `${location.origin}/assign?spool=${id}`;
+  try { await navigator.clipboard.writeText(url); PH.toast("Link kopiert – z. B. mit „NFC Tools“ auf den Tag schreiben"); }
+  catch { prompt("Link für NFC-Tag / QR-Code:", url); }
+}
+
+// --- Dialoge ---
+function closeM() { document.querySelectorAll(".modal").forEach(m => m.classList.remove("open")); }
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeM(); });
+function openAdd(fid) {
+  $("a-fil").innerHTML = D.filaments.map(f => `<option value="${f.id}" ${f.id === fid ? "selected" : ""}>${esc(f.vendor)} · ${esc(f.name)} ${esc(f.material)}</option>`).join("");
+  $("a-count").value = 1; $("a-weight").value = ""; $("a-price").value = ""; $("a-loc").value = D.storage;
+  $("m-add").classList.add("open"); $("a-count").focus();
+}
+async function saveAdd() {
+  const d = await api("/api/lager/spools", "POST", {filament_id: +$("a-fil").value, count: +$("a-count").value,
+    initial_weight: $("a-weight").value, price: $("a-price").value, location: $("a-loc").value});
+  closeM(); PH.toast(`${d.ids.length} Rolle(n) angelegt: #${d.ids.join(", #")}`);
+  if ($("a-labels").checked) return printLabels(d.ids);
+  open.add(+$("a-fil").value); load();
+}
+function openFil(fid) {
+  const f = fid ? D.filaments.find(x => x.id === fid) : null;
+  $("f-title").textContent = f ? `Sorte bearbeiten: ${f.vendor} ${f.name}` : "Neue Sorte";
+  $("f-vendor").innerHTML = D.vendors.map(v => `<option value="${v.id}">${esc(v.name)}</option>`).join("") + `<option value="new">＋ Neuer Hersteller …</option>`;
+  $("f-vendor").value = f ? (f.vendor_id ?? "new") : (D.vendors[0]?.id ?? "new");
+  $("f-newv").style.display = $("f-vendor").value === "new" ? "" : "none";
+  $("f-id").value = f ? f.id : ""; $("f-vname").value = "";
+  $("f-name").value = f ? f.name : ""; $("f-mat").value = f ? f.material : "";
+  $("f-color").value = f && f.color ? f.color : "#000000";
+  $("f-weight").value = f ? (f.weight ?? "") : 1000; $("f-sw").value = f ? (f.spool_weight ?? "") : "";
+  $("f-price").value = f ? (f.price ?? "") : ""; $("f-et").value = f ? (f.extruder_temp ?? "") : "";
+  $("f-bt").value = f ? (f.bed_temp ?? "") : ""; $("f-count").value = 0;
+  $("f-countbox").style.display = f ? "none" : "";
+  $("f-dbbox").style.display = f ? "none" : "";
+  $("f-db").value = ""; $("f-dbres").innerHTML = ""; $("f-dbsel").textContent = "";
+  $("f-dbman").value = ""; $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; dbPicked = null;
+  if (!f) loadMans();
+  $("f-ext").value = ""; $("f-dens").value = f ? (f.density ?? "") : ""; $("f-diam").value = f ? (f.diameter ?? "") : "";
+  $("m-fil").classList.add("open"); $("f-name").focus();
+}
+$("f-vendor").onchange = () => $("f-newv").style.display = $("f-vendor").value === "new" ? "" : "none";
+async function saveFil() {
+  const newV = $("f-vendor").value === "new";
+  const body = {id: $("f-id").value || null, vendor_id: newV ? null : +$("f-vendor").value, vendor_name: newV ? $("f-vname").value : "",
+    vendor_spool_weight: newV ? $("f-sw").value : "", name: $("f-name").value, material: $("f-mat").value, color: $("f-color").value,
+    weight: $("f-weight").value, spool_weight: $("f-sw").value, price: $("f-price").value, extruder_temp: $("f-et").value,
+    bed_temp: $("f-bt").value, count: +$("f-count").value || 0,
+    external_id: dbPicked && dbPicked.name === $("f-name").value && dbPicked.color === $("f-color").value ? $("f-ext").value : "",
+    density: $("f-dens").value, diameter: $("f-diam").value};
+  const d = await api("/api/lager/filament", "POST", body);
+  closeM(); PH.toast("Sorte gespeichert"); open.add(d.id); load();
+}
+
+// --- Suche in der SpoolmanDB ---
+let dbT, dbRes = [], dbMans = null, dbPicked = null;
+async function loadMans() {
+  if (dbMans) return;
+  const r = await (await fetch("/api/lager/external/manufacturers")).json();
+  if (r.error) { $("f-dbman").innerHTML = `<option value="">Datenbank nicht verfügbar</option>`; return; }
+  dbMans = r;
+  $("f-dbman").innerHTML = `<option value="">Hersteller wählen … (${r.length})</option>` +
+    r.map(m => `<option value="${esc(m.name)}">${esc(m.name)} (${m.count})</option>`).join("");
+}
+$("f-dbman").onchange = () => { $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; dbSearch(true); };
+$("f-dbmat").onchange = () => dbSearch();
+$("f-db").oninput = () => dbSearch();
+function dbSearch(fillMats) {
+  clearTimeout(dbT);
+  const q = $("f-db").value.trim(), man = $("f-dbman").value, mat = $("f-dbmat").value;
+  if (q.length < 2 && !man) { $("f-dbres").innerHTML = ""; return; }
+  dbT = setTimeout(async () => {
+    $("f-dbres").innerHTML = `<div class="muted small dbitem">Suche …</div>`;
+    const p = new URLSearchParams({q, manufacturer: man, material: mat});
+    const resp = await (await fetch("/api/lager/external?" + p)).json();
+    if (resp.error) { $("f-dbres").innerHTML = `<div class="err small dbitem">${esc(resp.error)}</div>`; return; }
+    const r = resp.items;
+    if (fillMats || !mat) {
+      const keep = $("f-dbmat").value;
+      $("f-dbmat").innerHTML = `<option value="">Alle Materialien (${resp.materials.length})</option>` +
+        resp.materials.map(m => `<option ${m === keep ? "selected" : ""}>${esc(m)}</option>`).join("");
+    }
+    dbRes = r;
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const own = D.filaments.filter(f => {
+      const hay = `${f.vendor} ${f.name} ${f.material}`.toLowerCase();
+      return (!man || f.vendor.toLowerCase() === man.toLowerCase()) && (!mat || f.material.toUpperCase().startsWith(mat)) &&
+             words.every(w => hay.includes(w)) && (words.length || man);
+    }).slice(0, 8);
+    const ownHtml = own.map(f => `<div class="dbitem own" onclick="closeM();openAdd(${f.id})" title="Schon in deinem Lager – Rollen hinzufügen">
+        <span class="dot" style="background:${f.color || "transparent"}"></span>
+        <span><b>${esc(f.vendor)}</b> ${esc(f.name)} <span class="mtag">${esc(f.material)}</span>
+        <span class="owntag">schon vorhanden → Rollen hinzufügen</span></span></div>`).join("");
+    const more = resp.total > r.length ? `<div class="muted small dbitem dbmore">${r.length} von ${resp.total} Einträgen – bitte ${mat ? "mit Farbe oder Name" : "mit Material oder Farbe"} eingrenzen</div>` : "";
+    $("f-dbres").innerHTML = ownHtml + more + (r.length ? r.map((f, i) => `<div class="dbitem" onclick="pickDb(${i})">
+        <span class="dot" style="background:${f.color || "transparent"}"></span>
+        <span><b>${esc(f.manufacturer)}</b> ${esc(f.name)} <span class="mtag">${esc(f.material)}</span>
+        <span class="muted small">${f.weight ? f.weight + " g" : ""}${f.diameter ? " · " + f.diameter + " mm" : ""}${f.finish ? " · " + esc(f.finish) : ""}${f.multi ? " · mehrfarbig" : ""}</span></span>
+      </div>`).join("") : (own.length ? "" : `<div class="muted small dbitem">Nichts gefunden – andere Begriffe probieren oder unten selbst ausfüllen.</div>`));
+  }, 250);
+}
+function pickDb(i) {
+  const f = dbRes[i];
+  const v = D.vendors.find(x => x.name.toLowerCase() === (f.manufacturer || "").toLowerCase());
+  $("f-vendor").value = v ? v.id : "new";
+  $("f-newv").style.display = v ? "none" : "";
+  if (!v) $("f-vname").value = f.manufacturer || "";
+  $("f-name").value = f.name || ""; $("f-mat").value = f.material || "";
+  if (f.color) $("f-color").value = f.color.slice(0, 7).toLowerCase();
+  $("f-weight").value = f.weight ?? ""; $("f-sw").value = f.spool_weight ?? "";
+  $("f-et").value = f.extruder_temp ?? ""; $("f-bt").value = f.bed_temp ?? "";
+  $("f-ext").value = f.external_id || ""; $("f-dens").value = f.density ?? ""; $("f-diam").value = f.diameter ?? "";
+  dbPicked = {name: $("f-name").value, color: $("f-color").value};
+  $("f-dbres").innerHTML = "";
+  $("f-dbsel").textContent = `✓ Übernommen: ${f.manufacturer} ${f.name} – Preis bitte selbst eintragen.`;
+  $("f-price").focus();
+}
+
+["q"].forEach(id => $(id).oninput = render);
+["mat", "show"].forEach(id => $(id).onchange = render);
+
+load();
+</script>
+</body>
+</html>

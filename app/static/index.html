@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a1220">
+<title>PrintHub</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#0a1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+<script src="/static/common.js"></script>
+<script src="/static/ui.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Print<span>Hub</span></h1>
+    <div class="sub"><i id="live"></i><span id="summary">verbinde …</span> <span id="sp-err" class="err"></span></div>
+  </div>
+  <div id="stops" class="stops"></div>
+  <div class="dd edit-only"><button class="small-btn" onclick="this.parentNode.classList.toggle('open')">Bausteine ▾</button><div class="dd-m" id="hiddenlist"></div></div>
+  <button class="small-btn edit-only" onclick="resetBoard()" title="Übersicht auf Standard zurücksetzen">↺</button>
+  <button class="small-btn edit-tg" id="edit" onclick="toggleEdit()" title="Bausteine verschieben, Größe ändern, aus- und einblenden">✎ Anordnen</button>
+  <nav class="nav"><a href="/">Übersicht</a><a href="/lager">Lager</a><a href="/verlauf">Verlauf</a><a href="/statistik">Statistik</a><a href="/einstellungen">Einstellungen</a></nav>
+</header>
+<main id="board" class="board"></main>
+<div id="lightbox" onclick="if(event.target===this)closeCam()">
+  <div class="lbbox">
+    <div class="lbhead"><b id="lbtitle">Kamera</b><button class="small-btn" onclick="closeCam()">✕ Schließen</button></div>
+    <img id="lbimg" alt="Kamera groß">
+  </div>
+</div>
+<footer>
+  <span id="notify-state">Benachrichtigungen: –</span>
+  <a class="small" href="/einstellungen">Einstellungen →</a>
+</footer>
+<script>
+let spools = [];
+let editing = false; // während ein Auswahlfeld offen ist, nicht neu zeichnen
+const cams = {};      // pro Drucker: {on, wrap, img, msg, busy, url}
+
+// ---------- Kamera (klein, Klick = groß) ----------
+function camEl(id) {
+  if (!cams[id]) {
+    const wrap = document.createElement("div"); wrap.className = "camthumb"; wrap.title = "Klicken zum Vergrößern";
+    const img = document.createElement("img"); img.alt = "Kamera";
+    const msg = document.createElement("div"); msg.className = "msg"; msg.textContent = "verbinde …";
+    const live = document.createElement("span"); live.className = "live"; live.textContent = "LIVE";
+    const zoom = document.createElement("span"); zoom.className = "zoom"; zoom.textContent = "⤢";
+    wrap.append(img, msg, live, zoom);
+    wrap.onclick = () => openCam(id);
+    cams[id] = {wrap, img, msg, busy: false, url: null, last: 0, visible: true};
+    if ("IntersectionObserver" in window)        // nur aktualisieren, solange das Bild im sichtbaren Bereich ist
+      new IntersectionObserver(es => es.forEach(e => { cams[id].visible = e.isIntersecting; if (e.isIntersecting) cams[id].last = 0; })).observe(wrap);
+  }
+  return cams[id];
+}
+function placeCams() {
+  for (const [id, c] of Object.entries(cams)) {
+    const slot = document.getElementById("cam-" + id);
+    if (slot && c.wrap.parentNode !== slot) slot.appendChild(c.wrap);
+  }
+}
+let bigCam = null;
+function openCam(id) {
+  bigCam = id;
+  const lb = document.getElementById("lightbox");
+  const c = cams[id];
+  if (c && c.img.src) document.getElementById("lbimg").src = c.img.src;
+  document.getElementById("lbtitle").textContent = (lastPrinters.find(p => p.id === id) || {}).name || "Kamera";
+  lb.classList.add("open");
+  camTick();
+}
+function closeCam() { bigCam = null; document.getElementById("lightbox").classList.remove("open"); }
+function showImg(src, title) {
+  bigCam = null;
+  document.getElementById("lbimg").src = src;
+  document.getElementById("lbtitle").textContent = title || "Bild";
+  document.getElementById("lightbox").classList.add("open");
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeCam(); });
+async function camTick() {
+  if (document.hidden) return;
+  const now = Date.now();
+  for (const [id, c] of Object.entries(cams)) {
+    const big = bigCam === id;
+    // klein: alle 3 s (Mobilfunk 10 s, Datensparmodus nur auf Antippen), nur wenn sichtbar · groß: so schnell wie möglich
+    const every = PH.saving() ? Infinity : PH.cellular() ? 10000 : 3000;
+    if (c.busy || (!big && (now - c.last < every || !c.wrap.isConnected || !c.visible))) {
+      if (!big && every === Infinity && !c.url) c.msg.textContent = "Datensparmodus – antippen für Bild";
+      continue;
+    }
+    c.busy = true; c.last = now;
+    try {
+      const r = await fetch(`/api/printers/${id}/camera.jpg?t=${now}`);
+      if (!r.ok) { c.msg.textContent = (await r.json()).error || "Kein Bild"; }
+      else {
+        const u = URL.createObjectURL(await r.blob());
+        c.img.src = u; if (big) document.getElementById("lbimg").src = u;
+        if (c.url) setTimeout(((old) => () => URL.revokeObjectURL(old))(c.url), 2000);
+        c.url = u; c.msg.textContent = "";
+      }
+    } catch { c.msg.textContent = "nicht erreichbar"; }
+    c.busy = false;
+  }
+}
+
+// ---------- Helfer ----------
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num = (v, d = "–") => (v === null || v === undefined || v === "") ? d : v;
+const deg = v => v == null ? "–" : `${Math.round(v)}°`;
+function fmtMin(m) {
+  if (m == null) return "–";
+  const h = Math.floor(m / 60), mm = m % 60;
+  return h ? `${h} h ${String(mm).padStart(2, "0")} min` : `${mm} min`;
+}
+function finishAt(m) {
+  if (m == null) return "–";
+  const d = new Date(Date.now() + m * 60000);
+  const today = new Date().toDateString() === d.toDateString();
+  return (today ? "" : d.toLocaleDateString("de-DE", {weekday: "short"}) + " ") +
+    d.toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
+}
+function heatColor(t) {
+  if (t == null || t < 45) return "#475569";
+  if (t < 120) return "#f59e0b";
+  if (t < 200) return "#f97316";
+  return "#ef4444";
+}
+function textOn(hex) {
+  const h = (hex || "").replace("#", "");
+  if (h.length < 6) return "#fff";
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
+  return (r * 0.299 + g * 0.587 + b * 0.114) > 150 ? "#0a1220" : "#fff";
+}
+
+async function loadSpools(fresh) {
+  try { spools = await (await fetch("/api/spools" + (fresh ? "?fresh=1" : ""))).json(); if (!Array.isArray(spools)) spools = []; }
+  catch { spools = []; }
+}
+
+function spoolOptions(selected) {
+  // Gruppiert nach Filamentsorte. Angebrochene Rollen einzeln (wenig Rest zuerst),
+  // ungeöffnete Rollen als ein Eintrag "Neue Rolle". Rollen in anderen Slots werden ausgeblendet.
+  let o = `<option value="">– leer –</option>`;
+  const groups = {};
+  for (const s of spools) {
+    if (s.slot && s.id !== selected) continue;
+    const k = s.filament_id ?? s.name;
+    (groups[k] ||= {name: s.name, opened: [], fresh: []});
+    const opened = s.id === selected || (s.used || 0) > 0.5 || s.first_used;
+    (opened ? groups[k].opened : groups[k].fresh).push(s);
+  }
+  const g = (s) => s.remaining != null ? `${Math.round(s.remaining)} g` : "";
+  for (const grp of Object.values(groups).sort((a, b) => a.name.localeCompare(b.name, "de"))) {
+    o += `<optgroup label="${esc(grp.name)}">`;
+    grp.opened.sort((a, b) => (a.remaining ?? 1e9) - (b.remaining ?? 1e9));
+    for (const s of grp.opened) {
+      const tag = s.id === selected ? "eingelegt" : "angebrochen";
+      o += `<option value="${s.id}" ${s.id === selected ? "selected" : ""}>#${s.id} · ${g(s)} · ${tag}</option>`;
+    }
+    if (grp.fresh.length) {
+      grp.fresh.sort((a, b) => a.id - b.id);
+      o += `<option value="${grp.fresh[0].id}">Neue Rolle (#${grp.fresh[0].id}) · ${grp.fresh.length} im Lager</option>`;
+    }
+    o += `</optgroup>`;
+  }
+  return o;
+}
+
+// ---------- Düsengrafik ----------
+function hotendSvg(p, info) {
+  const {nozzle, bed, color, material, toolNo} = info;
+  const c = color || "#64748b";
+  const heat = heatColor(nozzle && nozzle.actual);
+  const heating = nozzle && nozzle.target > 0 && nozzle.actual < nozzle.target - 3;
+  const bedHeating = bed && bed.target > 0 && bed.actual < bed.target - 2;
+  const fan = (p.fans || [])[0];
+  const fanOn = fan && fan.pct > 0;
+  const layer = p.layer != null ? `${p.layer}` : "–";
+  const total = p.total_layers != null ? `/ ${p.total_layers}` : "";
+  const prog = p.progress || 0;
+  const rows = Math.max(1, Math.round(prog / 100 * 7));
+  let layers = "";
+  for (let i = 0; i < 7; i++) {
+    const y = 250 - i * 5;
+    layers += `<rect x="145" y="${y}" width="110" height="3.2" rx="1.6" style="fill:${i < rows && p.printing ? "var(--layer)" : "var(--trk)"}"/>`;
+  }
+  let fins = "";
+  for (let i = 0; i < 8; i++) fins += `<rect x="168" y="${62 + i * 9}" width="64" height="5" rx="1.5" class="metal"/>`;
+  const leftMid = p.type === "moonraker"
+    ? {l: "Fluss", v: p.flow != null ? p.flow : "–", u: p.flow != null ? "mm³/s" : ""}
+    : {l: "Speed-Modus", v: num(p.speed), u: p.speed_pct ? `${p.speed_pct} %` : ""};
+  const rightMid = p.type === "moonraker"
+    ? {l: "Speed", v: num(p.speed), u: p.speed_pct && p.speed_pct !== 100 ? `${p.speed_pct} %` : ""}
+    : {l: "Hotend-Lüfter", v: (p.fans || [])[1] && p.fans[1].pct != null ? `${p.fans[1].pct} %` : "–", u: ""};
+  return `<svg viewBox="0 0 400 300" role="img" aria-label="Düse">
+    <!-- Material -->
+    <text class="lbl" x="18" y="34">MATERIAL</text>
+    <text class="val" x="18" y="58">${esc(material || "–")}</text>
+    <polyline class="lead" points="18,64 110,64 150,27"/>
+    <!-- Lüfter -->
+    <text class="lbl" x="18" y="108">LÜFTER</text>
+    <text class="val" x="18" y="132">${fan && fan.pct != null ? fan.pct + " %" : "–"}</text>
+    <polyline class="lead" points="18,138 92,138 116,112"/>
+    <!-- Fluss / Speed-Modus -->
+    <text class="lbl" x="18" y="192">${esc(leftMid.l.toUpperCase())}</text>
+    <text class="val" x="18" y="216">${esc(leftMid.v)} <tspan class="unit">${esc(leftMid.u)}</tspan></text>
+    <polyline class="lead" points="18,222 150,222 190,200"/>
+    <!-- Hotend-Lüfter / Speed -->
+    <text class="lbl" x="382" y="34" text-anchor="end">${esc(rightMid.l.toUpperCase())}</text>
+    <text class="val" x="382" y="58" text-anchor="end">${esc(rightMid.v)} <tspan class="unit">${esc(rightMid.u)}</tspan></text>
+    <polyline class="lead" points="382,64 290,64 236,84"/>
+    <!-- Düse -->
+    <text class="lbl" x="382" y="128" text-anchor="end">DÜSE</text>
+    <text class="val" x="382" y="152" text-anchor="end" style="fill:${nozzle && nozzle.actual >= 45 ? heat : "var(--fg)"}">${deg(nozzle && nozzle.actual)}<tspan class="unit"> / ${deg(nozzle && nozzle.target)}</tspan></text>
+    <polyline class="lead" points="382,158 290,158 236,158"/>
+    <!-- Layer -->
+    <text class="lbl" x="382" y="206" text-anchor="end">LAYER</text>
+    <text class="val acc" x="382" y="230" text-anchor="end">${layer} <tspan class="unit">${total}</tspan></text>
+    <polyline class="lead" points="382,236 300,236 258,244"/>
+
+    <!-- Filament -->
+    <line x1="200" y1="44" x2="200" y2="206" stroke="${c}" stroke-width="3"/>
+    <rect x="150" y="10" width="100" height="34" rx="8" fill="${c}" stroke="#ffffff30"/>
+    <text x="200" y="32" text-anchor="middle" font-size="14" font-weight="800" fill="${textOn(c)}">${esc(material || "–")}</text>
+    <!-- Kühlkörper + Lüfter -->
+    ${fins}
+    <rect class="fanbox" x="112" y="62" width="40" height="68" rx="6" fill="none" stroke-width="2"/>
+    <g class="${fanOn ? "spin" : ""}" style="animation-duration:${fanOn ? Math.max(0.25, 1.6 - fan.pct / 70) : 1}s">
+      <circle class="fanc" cx="132" cy="96" r="14" fill="none" stroke-width="1.5"/>
+      <path d="M132 96 L132 83 A13 13 0 0 1 143 90 Z M132 96 L143 103 A13 13 0 0 1 132 109 Z M132 96 L121 103 A13 13 0 0 1 121 89 Z" class="fanf"/>
+    </g>
+    <circle cx="200" cy="96" r="19" fill="#e6edf7" stroke="${c}" stroke-width="3"/>
+    <text x="200" y="103" text-anchor="middle" font-size="20" font-weight="800" fill="#0a1220">${toolNo}</text>
+    <!-- Heizblock + Düse -->
+    <rect x="166" y="138" width="68" height="40" rx="5" fill="${heat}" class="${heating ? "heating" : ""}"/>
+    <rect x="166" y="138" width="68" height="40" rx="5" fill="url(#shine-${p.id})"/>
+    <polygon points="184,178 216,178 205,204 195,204" fill="#eab308"/>
+    ${p.printing ? `<polygon points="195,204 205,204 200,214" fill="#facc15"/>` : ""}
+    <!-- Druckteil + Bett -->
+    ${layers}
+    <polygon points="96,262 304,262 326,284 74,284" class="metal ${bedHeating ? "heating" : ""}"/>
+    <path d="M186 258 q4 -5 0 -10 M200 258 q4 -5 0 -10 M214 258 q4 -5 0 -10" stroke="${heatColor(bed && bed.actual)}" stroke-width="2" fill="none" opacity="${bed && bed.actual >= 40 ? 1 : .25}"/>
+    <text x="200" y="279" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">BETT ${deg(bed && bed.actual)}${bed && bed.target ? ` / ${deg(bed.target)}` : ""}</text>
+    <defs><linearGradient id="shine-${p.id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".25"/><stop offset="1" stop-color="#000" stop-opacity=".15"/></linearGradient></defs>
+  </svg>`;
+}
+
+// ---------- Druckerkarte ----------
+const eur = v => v == null ? "–" : v.toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €";
+const kwh = v => v == null ? "–" : v.toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " kWh";
+
+function pickInfo(p) {
+  const bed = p.temps.find(t => t.label === "Bett");
+  let nozzle, toolNo = 1;
+  if (p.type === "moonraker") {
+    const cur = p.current_slot || (p.temps.find(t => t.label.startsWith("T") && t.target > 0) || {}).label || "T0";
+    nozzle = p.temps.find(t => t.label === cur);
+    toolNo = Number(cur.replace("T", "")) + 1;
+  } else {
+    nozzle = p.temps.find(t => t.label === "Düse") || p.temps[0];
+    if (p.current_slot && p.current_slot.startsWith("ams")) toolNo = Number(p.current_slot.split("-")[1]) + 1;
+  }
+  const curSlot = p.slots.find(s => s.key === (p.current_slot || (p.type === "moonraker" ? `T${toolNo - 1}` : null)))
+    || (!p.printing ? p.slots.find(s => s.spool) : null);
+  const color = curSlot ? ((curSlot.spool && curSlot.spool.color) || curSlot.color) : "";
+  const material = curSlot ? ((curSlot.spool && curSlot.spool.material) || curSlot.material) : "";
+  return {nozzle, bed, toolNo, color, material};
+}
+
+function statusBadge(p) {
+  if (!p.online) return `<span class="badge off">offline</span>`;
+  const cls = p.paused ? "pause" : p.printing ? "busy" : "ok";
+  return `<span class="badge ${cls}">${esc(p.state)}</span>`;
+}
+
+function ringHtml(p, lastJob) {
+  const pct = p.printing ? Math.max(0, Math.min(100, p.progress || 0)) : (p.online ? 100 : 0);
+  const C = 2 * Math.PI * 52;
+  const off = C * (1 - pct / 100);
+  const center = p.printing
+    ? `<div><div class="pct">${pct}<small>%</small></div><div class="st">${esc(p.state)}</div></div>`
+    : `<div><div class="pct" style="font-size:20px">${p.online ? "✓" : "–"}</div><div class="st">${esc(p.online ? p.state : "offline")}</div></div>`;
+  const short = (p.short || []).map(n => `<div class="${n.ok ? "muted" : "err"} small">⚠ ${esc(n.slot)}: ${n.rest} g übrig, braucht ~${n.need} g${n.ok ? ` – Ersatz: ${esc(n.backup.join(", "))}` : ""}</div>`).join("");
+  const info = p.printing ? `
+      <div class="job" style="display:flex;gap:10px;align-items:center">${p.thumb ? `<img class="jobthumb" src="${p.thumb}" alt="" onclick="showImg('${p.thumb}', '${esc(p.job).replace(/'/g, "")}')">` : ""}<span>${esc(p.job || "Druck")}</span></div>
+      ${short}
+      <div class="kv">
+        <span>Noch</span><b>${fmtMin(p.remaining_min)}</b>
+        <span>Fertig um</span><b class="acc">${finishAt(p.remaining_min)}</b>
+      </div>` : `
+      <div class="job">${p.online ? "Bereit für den nächsten Druck" : "Drucker nicht erreichbar"}</div>
+      ${lastJob ? `<div class="kv"><span>Zuletzt</span><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(lastJob.job)}</b>
+        <span>Ergebnis</span><b>${esc(lastJob.result)}</b></div>` : ""}`;
+  return `<div class="ringbox">
+    <div class="ring">
+      <svg viewBox="0 0 120 120"><defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0ea5e9"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+        <circle class="trk" cx="60" cy="60" r="52" fill="none" stroke-width="10"/>
+        <circle class="val" cx="60" cy="60" r="52" fill="none" stroke-width="10" stroke-dasharray="${C}" stroke-dashoffset="${off}" style="${p.printing ? "" : `stroke:${p.online ? "var(--ok)" : "var(--off)"};filter:none;opacity:.6`}"/>
+      </svg>
+      <div class="ctr">${center}</div>
+    </div>
+    <div class="ringinfo">${info}</div>
+  </div>`;
+}
+
+function energyTiles(p) {   // 4 Kacheln als Liste
+  const html = energyTilesHtml(p);
+  return [...html.matchAll(/<div class="etile">[\s\S]*?<\/div><\/div>/g)].map(m => m[0]);
+}
+function energyTilesHtml(p) {
+  const e = p.energy || {};
+  const t = (l, v, sub, cls = "") => `<div class="etile"><div class="label">${l}</div><div class="v ${cls}">${v}</div><div class="s">${sub}</div></div>`;
+  const plug = !p.shelly ? "kein Shelly eingerichtet" : !e.plug_online ? "Shelly offline" : e.plug_on === false ? "Steckdose aus" : "Shelly-Steckdose";
+  const power = t("Leistung", e.watts != null ? `${Math.round(e.watts)} W` : "–", plug, "y");
+  if (p.printing) {
+    const parts = [e.job_energy_cost, e.filament_cost, e.wear_cost];
+    const total = parts.some(v => v != null) ? parts.reduce((a, v) => a + (v || 0), 0) : null;
+    return `<div class="etiles">
+      ${power}
+      ${t("Strom Druck", kwh(e.job_kwh), e.job_energy_cost != null ? eur(e.job_energy_cost) : "–")}
+      ${t("Filament", e.filament_g != null ? `${e.filament_g.toLocaleString("de-DE")} g` : "–", e.filament_cost != null ? eur(e.filament_cost) : "kein Preis hinterlegt")}
+      ${t("Kosten Druck", eur(total), e.wear_cost != null ? `inkl. ${eur(e.wear_cost)} Verschleiß` : "Strom + Filament", "acc")}
+    </div>`;
+  }
+  const assigned = p.slots.filter(s => s.spool).length;
+  return `<div class="etiles">
+    ${power}
+    ${t("Heute", kwh(e.today_kwh), e.today_cost != null ? eur(e.today_cost) : "–")}
+    ${t("Spulen", `${assigned} / ${p.slots.length}`, "zugewiesen")}
+    ${t(p.wifi ? "WLAN" : "Strompreis", p.wifi ? esc(p.wifi) : (e.price_kwh ? eur(e.price_kwh) + "/kWh" : "–"), p.wifi ? (e.price_kwh ? `${eur(e.price_kwh)}/kWh` : "") : "")}
+  </div>`;
+}
+
+// Grundmaterial vergleichen: PLA+ / PLA Matte / PLA-CF zählen als PLA, PETG-HF als PETG usw.
+function baseMat(m) {
+  const u = String(m || "").toUpperCase().replace(/[^A-Z]/g, " ").trim();
+  for (const b of ["PETG", "PLA", "ABS", "ASA", "TPU", "PA", "PC", "PET", "PVA", "HIPS"]) if (u.startsWith(b)) return b;
+  return u.split(" ")[0];
+}
+const sameMaterial = (a, b) => baseMat(a) === baseMat(b);
+const stripMat = (name, mat) => mat && name.toUpperCase().endsWith(mat.toUpperCase()) ? name.slice(0, -mat.length).trim() : name;
+function isDark(hex) {
+  const h = (hex || "").replace("#", "");
+  if (h.length < 6) return false;
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
+  return (r * 0.299 + g * 0.587 + b * 0.114) < 60;
+}
+
+function firstMarks(p) {
+  // Bei mehreren Spulen derselben Sorte: die mit dem wenigsten Rest zuerst aufbrauchen
+  const groups = {};
+  for (const s of p.slots) if (s.spool && s.spool.filament_id != null) (groups[s.spool.filament_id] ||= []).push(s);
+  const first = new Set();
+  for (const g of Object.values(groups)) if (g.length > 1) {
+    g.sort((a, b) => (a.spool.remaining ?? 1e9) - (b.spool.remaining ?? 1e9) || a.spool.id - b.spool.id);
+    first.add(g[0].key);
+  }
+  return first;
+}
+
+function aspool(p, s, i) {
+  const sp = s.spool;
+  const color = (sp && sp.color) || s.color || "";
+  let pct = sp ? 100 : (color ? 100 : 0);
+  if (sp && sp.remaining != null && sp.initial) pct = Math.max(2, Math.min(100, sp.remaining / sp.initial * 100));
+  const isExt = s.key === "ext";
+  const hub = p.type === "moonraker" ? i + 1 : (isExt ? "E" : i + 1);
+  const mat = (sp && sp.material) || s.material || "–";
+  let extra = "";
+  if (p.type === "moonraker") {
+    const tmp = p.temps.find(t => t.label === s.key);
+    extra = `<div class="a-temp" style="color:${tmp && tmp.actual >= 45 ? heatColor(tmp.actual) : "var(--muted)"}">${deg(tmp && tmp.actual)}</div>`;
+  } else if (sp && s.material && sp.material && !sameMaterial(s.material, sp.material)) {
+    extra = `<div class="a-warn" title="Am Drucker/Bambu Studio ist für diesen Slot ${esc(s.material)} eingestellt">⚠ Drucker: ${esc(s.material)}</div>`;
+  }
+  const name = sp ? esc(stripMat(sp.name, sp.material)) : (color || s.material ? "frei" : "leer");
+  return `<div class="aspool ${p.current_slot === s.key ? "active" : ""}" title="${esc(s.label)} – tippen zum Zuweisen">
+    <div class="reel ${sp || color ? "" : "empty"} ${isDark(color) ? "dark" : ""}" style="--c:${color || "#64748b"};--p:${pct}"><div class="hub">${hub}</div></div>
+    <div class="a-mat">${esc(mat)}</div>
+    <div class="a-g">${sp && sp.remaining != null ? `<b>${Math.round(sp.remaining)} g</b>` : (sp ? `#${sp.id}` : "&nbsp;")}</div>
+    <div class="a-name">${name}</div>
+    ${extra}
+    ${p._first && p._first.has(s.key) ? `<div class="a-first" title="Gleiche Sorte liegt mehrfach im AMS – diese zuerst aufbrauchen (beim Sync diesen Slot wählen)">▲ zuerst</div>` : ""}
+    <select class="overlay" aria-label="${esc(s.label)}: Spule wählen" onfocus="editing=true" onblur="editing=false" onchange="assign('${p.id}','${s.key}',this.value)">${spoolOptions(s.spool_id)}</select>
+  </div>`;
+}
+
+function amsBody(p) {
+  p._first = firstMarks(p);
+  const main = p.slots.filter(s => s.key !== "ext");
+  const ext = p.slots.find(s => s.key === "ext");
+  return `<div class="ams">
+    <div class="ams-row">
+      <div class="ams-unit" style="--n:${main.length}">${main.map((s, i) => aspool(p, s, i)).join("")}</div>
+      ${ext ? `<div class="ams-ext">${aspool(p, ext, 0)}</div>` : ""}
+    </div>
+    ${p.track_usage ? "" : `<div class="muted small note">Verbrauch wird hier nicht gebucht (Firmware/SpoolLink bucht selbst).</div>`}
+  </div>`;
+}
+
+// ---------- Layout der Übersicht: Bausteine (pro Gerät gemerkt) ----------
+// Seite: Dienste, je Drucker eine Karte, Warteschlange, letzte Drucke (Raster mit 6 Spalten)
+// Druckerkarte: Fortschritt, Düse, 4 Kacheln, Kamera, AMS, Temperaturverlauf, Wartung (Raster mit 12 Spalten)
+const BLK = {
+  progress: {t: "Fortschritt", span: 6}, hotend: {t: "Düse", span: 6},
+  e1: {t: "Leistung", span: 3}, e2: {t: "Strom / Heute", span: 3}, e3: {t: "Filament / Spulen", span: 3}, e4: {t: "Kosten / Strompreis", span: 3},
+  camera: {t: "Kamera", span: 4}, ams: {t: "Spulen", span: 12}, temps: {t: "Temperaturverlauf", span: 12}, maint: {t: "Wartung", span: 12},
+};
+const PAGE = {services: {t: "Dienste", span: 6}, queue: {t: "Warteschlange (Bambuddy)", span: 6}, history: {t: "Letzte Drucke", span: 6}};
+let layout = {page: {order: [], span: {}, hidden: []}, blk: {}, collapsed: {}};
+try {
+  const l = JSON.parse(localStorage.getItem("ph-board") || "null");
+  if (l && l.page) layout = l;
+  else {   // alte Einstellungen übernehmen, soweit möglich
+    const o = JSON.parse(localStorage.getItem("ph-layout") || "null");
+    if (o && o.collapsed) layout.collapsed = o.collapsed;
+  }
+} catch {}
+layout.page ||= {order: [], span: {}, hidden: []}; layout.blk ||= {}; layout.collapsed ||= {};
+function saveLayout() { try { localStorage.setItem("ph-board", JSON.stringify(layout)); } catch {} }
+const isCol = (pid, k) => !!(layout.collapsed[pid] || {})[k];
+function toggleSec(pid, k) { (layout.collapsed[pid] ||= {})[k] = !isCol(pid, k); saveLayout(); refresh(true); if (!isCol(pid, k)) loadExtras(pid, k === "maint" ? "stats" : k); }
+function bl(pid) {   // Layout eines Druckers
+  const L = layout.blk[pid] ||= {order: [], span: {}, h: {}, hidden: []};
+  for (const k of Object.keys(BLK)) if (!L.order.includes(k)) L.order.push(k);
+  L.order = L.order.filter(k => BLK[k]);
+  return L;
+}
+function pageKeys() {
+  const keys = ["services", ...lastPrinters.map(p => "p:" + p.id), "queue", "history"];
+  const o = layout.page.order.filter(k => keys.includes(k));
+  for (const k of keys) if (!o.includes(k)) {   // neue Bausteine an ihren Standardplatz
+    const i = keys.indexOf(k), before = keys.slice(i + 1).find(x => o.includes(x));
+    o.splice(before ? o.indexOf(before) : o.length, 0, k);
+  }
+  return layout.page.order = o;
+}
+function pageSpan(k) {
+  if (layout.page.span[k]) return layout.page.span[k];
+  if (k.startsWith("p:")) return lastPrinters.length === 1 ? 6 : 3;
+  return PAGE[k].span;
+}
+function hideBlk(pid, k) {
+  if (pid) bl(pid).hidden.push(k); else layout.page.hidden.push(k);
+  saveLayout(); renderBoard();
+}
+function showBlk(pid, k) {
+  if (pid) { const L = bl(pid); L.hidden = L.hidden.filter(x => x !== k); } else layout.page.hidden = layout.page.hidden.filter(x => x !== k);
+  saveLayout(); renderBoard();
+}
+function resetBoard() {
+  if (!confirm("Übersicht auf diesem Gerät auf den Standard zurücksetzen (Raster)?")) return;
+  layout = {page: {order: [], span: {}, hidden: []}, blk: {}, collapsed: layout.collapsed}; saveLayout(); renderBoard();
+  if (document.body.classList.contains("editing")) setTimeout(ensureFree, 50);
+}
+
+// ---------- Freie Anordnung (ab Tablet-Breite) ----------
+const DESK = () => innerWidth >= 900;
+const autoH = el => el.dataset.b && (el.dataset.b.startsWith("p:") || el.dataset.b === "services");
+function freePos(map, cont, sel, defW) {   // fehlende Positionen unten anhängen
+  const items = [...cont.children].filter(x => x.matches(sel));
+  let bottom = 0;
+  for (const el of items) { const p = map[el.dataset.b]; if (p) bottom = Math.max(bottom, p.y + (autoH(el) ? el.offsetHeight : p.h)); }
+  return items.map(el => {
+    if (!map[el.dataset.b]) { map[el.dataset.b] = {x: 0, y: bottom + (bottom ? 12 : 0), w: defW, h: Math.max(80, el.offsetHeight || 160)}; bottom = map[el.dataset.b].y + map[el.dataset.b].h; }
+    return {el, pos: map[el.dataset.b]};
+  });
+}
+function applyFree() {
+  const desk = DESK();
+  for (const p of lastPrinters) {
+    const cont = document.querySelector(`.pcard[data-pid="${p.id}"] .pgrid12`);
+    if (!cont) continue;
+    const L = bl(p.id), on = desk && L.pos && Object.keys(L.pos).length > 0;
+    cont.classList.toggle("ff", !!on);
+    if (on) PHUI.freeLayout(cont, freePos(L.pos, cont, ".blk", 0.5));
+    else { cont.style.height = ""; [...cont.children].forEach(el => { if (el.matches(".blk")) el.style.cssText = el.style.cssText.replace(/(left|top|width|height):[^;]+;?/g, ""); }); }
+  }
+  const board = document.getElementById("board");
+  const pp = layout.page.pos, on = desk && pp && Object.keys(pp).length > 0;
+  board.classList.toggle("ff", !!on);
+  if (on) PHUI.freeLayout(board, freePos(pp, board, ".pblk", 1), autoH);
+  else { board.style.height = ""; [...board.children].forEach(el => { el.style.left = el.style.top = el.style.width = el.style.height = ""; }); }
+}
+function ensureFree() {   // beim ersten „Anordnen“: aktuelle Raster-Positionen übernehmen
+  if (!DESK()) return;
+  let changed = false;
+  for (const p of lastPrinters) {
+    const cont = document.querySelector(`.pcard[data-pid="${p.id}"] .pgrid12`), L = bl(p.id);
+    if (cont && !(L.pos && Object.keys(L.pos).length)) { L.pos = PHUI.measure(cont, ".blk"); changed = true; }
+  }
+  const board = document.getElementById("board");
+  if (!(layout.page.pos && Object.keys(layout.page.pos).length)) { layout.page.pos = PHUI.measure(board, ".pblk"); changed = true; }
+  if (changed) saveLayout();
+  applyFree();
+}
+addEventListener("resize", () => { clearTimeout(window._rf); window._rf = setTimeout(() => { applyFree(); refresh(true); }, 200); });
+function sec(p, k, body, extra = "", title) {
+  const col = isCol(p.id, k);
+  return `<div class="sec ${col ? "col" : ""}" data-k="${k}">
+    <div class="sec-h" onclick="toggleSec('${p.id}','${k}')">
+      <span class="label">${title || BLK[k].t}</span>
+      <span class="sec-x" onclick="event.stopPropagation()">${col ? "" : extra}</span>
+      <span class="chev">${col ? "▸" : "▾"}</span>
+    </div>
+    ${col ? "" : `<div class="sec-b">${body}</div>`}
+  </div>`;
+}
+const blkCtl = (pid, k) => `<span class="bgrip" title="Ziehen zum Verschieben">⠿</span><button class="bx edit-only" title="${BLK[k] ? BLK[k].t : ""} ausblenden" onclick="hideBlk('${pid}','${k}')">👁</button><span class="brz" title="Ziehen: Breite und Höhe"></span>`;
+
+// Seite zeichnen (nur wenn sich Bausteine oder Reihenfolge ändern – Inhalte füllen refresh(), loadServices(), loadQueue())
+let boardSig = "";
+function renderBoard() {
+  const keys = pageKeys().filter(k => !layout.page.hidden.includes(k));
+  const html = keys.map(k => {
+    const ctl = `<span class="pgrip" title="Ziehen zum Verschieben">⠿</span><button class="px edit-only" title="ausblenden" onclick="hideBlk('','${k}')">👁</button><span class="prz" title="Breite ziehen"></span>`;
+    const st = `style="--ps:${pageSpan(k)}"`;
+    if (k === "services") return `<section class="pblk" data-b="services" ${st}>${ctl}<div id="svchips" class="svchips" onclick="this.parentNode.classList.toggle('svopen')"></div><div id="svcs" class="svcs"></div></section>`;
+    if (k === "queue") return `<section class="pblk card queue" data-b="queue" ${st} id="queuecard">${ctl}
+      <div class="section-h"><span class="label">Warteschlange · Bambuddy</span><a id="q-open" href="#" target="_blank" class="small">In Bambuddy öffnen ↗</a></div>
+      <div id="queue" class="muted small">${queueOn ? "Lade …" : "Bambuddy ist nicht eingerichtet oder die Warteschlange ist in den Einstellungen ausgeschaltet."}</div></section>`;
+    if (k === "history") return `<section class="pblk card" data-b="history" ${st}>${ctl}
+      <div class="section-h"><span class="label">Letzte Drucke</span><a href="/verlauf" class="small">Alle Drucke &amp; Auswertung →</a></div>
+      <div id="history" class="muted">Noch keine Drucke erfasst.</div></section>`;
+    const pid = k.slice(2);
+    return `<section class="pblk card pcard" data-b="${k}" data-pid="${pid}" ${st}>${ctl}<div id="pc-${pid}"></div></section>`;
+  }).join("");
+  document.getElementById("board").innerHTML = html;
+  boardSig = keys.join(",") + "|" + lastPrinters.map(p => p.id).join(",");
+  const hid = [...layout.page.hidden.filter(k => PAGE[k] || k.startsWith("p:")).map(k => ["", k, PAGE[k] ? PAGE[k].t : (lastPrinters.find(p => "p:" + p.id === k) || {}).name || k]),
+    ...lastPrinters.flatMap(p => bl(p.id).hidden.map(k => [p.id, k, `${p.name}: ${BLK[k].t}`]))];
+  document.getElementById("hiddenlist").innerHTML = hid.length
+    ? `<div class="muted small" style="padding:4px 8px">Ausgeblendet – zum Einblenden anklicken:</div>` + hid.map(([pid, k, t]) => `<button onclick="showBlk('${pid}','${k}')">＋ ${esc(t)}</button>`).join("")
+    : `<div class="muted small" style="padding:6px 8px">Alle Bausteine sind sichtbar.<br>Mit 👁 kannst du welche ausblenden.</div>`;
+  document.getElementById("history") && (document.getElementById("history").innerHTML = historyHtml(lastHistory));
+  fillPrinters(); loadServices().then(applyFree); loadQueue().then(applyFree);
+}
+document.addEventListener("click", e => { if (!e.target.closest(".dd")) document.querySelectorAll(".dd.open").forEach(d => d.classList.remove("open")); });
+
+// ---------- Zusatzdaten (Temperatur, Strom, Statistik) ----------
+const X = {temps: {}, trange: {}, energy: {}, erange: {}, stats: {}};
+async function loadExtras(pid, only) {
+  const p = lastPrinters.find(x => x.id === pid); if (!p) return;
+  try {
+    if ((!only || only === "temps") && !isCol(pid, "temps")) {
+      X.temps[pid] = await (await fetch(`/api/printers/${pid}/temps?range=${X.trange[pid] || "15"}`)).json();
+    }
+    if (false) {
+      X.energy[pid] = await (await fetch(`/api/printers/${pid}/energy?range=${X.erange[pid] || "day"}`)).json();
+    }
+    if ((!only || only === "stats") && !isCol(pid, "maint")) {
+      const st = await (await fetch(`/api/stats`)).json(); Object.assign(X.stats, st);
+    }
+  } catch {}
+  if (!editing && !PHUI.busy) fillPrinters();   // nur neu zeichnen – Druckerdaten sind schon da
+}
+function setRange(kind, pid, v) { X[kind][pid] = v; loadExtras(pid, kind === "trange" ? "temps" : "energy"); }
+const segBtns = (kind, pid, opts, cur) => `<div class="seg">${opts.map(([v, l]) =>
+  `<button class="${v === cur ? "on" : ""}" onclick="setRange('${kind}','${p_(pid)}','${v}')">${l}</button>`).join("")}</div>`;
+const p_ = x => x;
+
+const PAL = ["#22d3ee", "#a78bfa", "#f59e0b", "#34d399", "#f472b6", "#60a5fa"];
+function lineChart(points, Wpx, Hpx) {
+  if (!points || points.length < 2) return `<div class="muted small" style="padding:20px 0">Noch keine Messwerte – sie sammeln sich ab jetzt alle 5 Sekunden.</div>`;
+  const labels = [...new Set(points.flatMap(p => Object.keys(p[1])))];
+  const W = Math.max(300, Wpx || 640), H = Math.max(110, Hpx || 200), L = 34, B = 20, T = 8;
+  const t0 = points[0][0], t1 = points[points.length - 1][0] || t0 + 1;
+  let max = 0; for (const p of points) for (const v of Object.values(p[1])) max = Math.max(max, v[0] || 0, v[1] || 0);
+  max = Math.max(60, Math.ceil(max / 50) * 50);
+  const x = t => L + (t - t0) / Math.max(1, t1 - t0) * (W - L - 6), y = v => T + (1 - v / max) * (H - T - B);
+  let g = "";
+  for (let v = 0; v <= max; v += max / 4) g += `<line x1="${L}" x2="${W - 6}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${L - 5}" y="${y(v) + 4}" text-anchor="end" class="ax">${Math.round(v)}°</text>`;
+  const fmt = t => new Date(t * 1000).toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
+  g += `<text x="${L}" y="${H - 4}" class="ax">${fmt(t0)}</text><text x="${W - 6}" y="${H - 4}" text-anchor="end" class="ax">${fmt(t1)}</text>`;
+  const lines = labels.map((lab, i) => {
+    const c = lab === "Bett" ? "#f472b6" : PAL[i % PAL.length];
+    const act = points.filter(p => p[1][lab]).map(p => `${x(p[0]).toFixed(1)},${y(p[1][lab][0] || 0).toFixed(1)}`).join(" ");
+    const hasT = points.some(p => p[1][lab] && p[1][lab][1] > 0);
+    const tgt = hasT ? points.filter(p => p[1][lab]).map(p => `${x(p[0]).toFixed(1)},${y(p[1][lab][1] || 0).toFixed(1)}`).join(" ") : "";
+    return `${tgt ? `<polyline points="${tgt}" fill="none" stroke="${c}" stroke-width="1" stroke-dasharray="4 4" opacity=".55"/>` : ""}<polyline points="${act}" fill="none" stroke="${c}" stroke-width="2"/>`;
+  }).join("");
+  const legend = labels.map((lab, i) => `<span><i style="background:${lab === "Bett" ? "#f472b6" : PAL[i % PAL.length]}"></i>${esc(lab)}</span>`).join("");
+  // Hover: Fadenkreuz + Werte (auf ~80 Spalten verdichtet)
+  const nb = Math.min(80, points.length), per = points.length / nb, cw = (W - L - 6) / nb;
+  let hit = `<g class="xh" style="display:none"><line y1="${T}" y2="${H - B}"/>${labels.map(() => `<circle r="3.5"/>`).join("")}</g>`;
+  for (let b = 0; b < nb; b++) {
+    const pt = points[Math.min(points.length - 1, Math.round((b + 0.5) * per))];
+    const lab2 = labels.filter(l => pt[1][l]);
+    const col = l => l === "Bett" ? "#f472b6" : PAL[labels.indexOf(l) % PAL.length];
+    const rows = lab2.map(l => [col(l), l, `${Math.round(pt[1][l][0])}°${pt[1][l][1] > 0 ? " / " + Math.round(pt[1][l][1]) + "°" : ""}`]);
+    const ys = lab2.map(l => `${y(pt[1][l][0] || 0).toFixed(1)}|${col(l)}`).join(";");
+    hit += `<rect class="hit" x="${(L + b * cw).toFixed(1)}" y="${T}" width="${cw.toFixed(1)}" height="${H - T - B}" data-x="${x(pt[0]).toFixed(1)}" data-ys="${ys}"${PHUI.tipAttr(new Date(pt[0] * 1000).toLocaleTimeString("de-DE"), rows)}/>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart-svg">${g}${lines}${hit}</svg><div class="legend2">${legend}<span class="muted">gestrichelt = Soll</span></div>`;
+}
+
+function barChart(d) {
+  if (!d) return `<div class="muted small">Lade …</div>`;
+  if (!d.shelly) return `<div class="muted small" style="padding:12px 0">Kein Shelly für diesen Drucker eingerichtet (config.yaml → shelly).</div>`;
+  const max = Math.max(0.001, ...d.bars.map(b => b.kwh));
+  return `<div class="ebars">${d.bars.map(b => `<div class="eb" title="${esc(b.label)}: ${kwh(b.kwh)}"><div class="ebar" style="height:${Math.max(1, b.kwh / max * 100)}%"></div><div class="m">${esc(b.label)}</div></div>`).join("")}</div>
+    <div class="muted small" style="margin-top:6px">Summe: <b style="color:var(--fg)">${kwh(d.kwh)}</b> · ${eur(d.cost)} <span class="muted">(${eur(d.price)}/kWh)</span></div>`;
+}
+
+function maintBody(p) {
+  const s = X.stats[p.id];
+  if (!s) return `<div class="muted small">Lade …</div>`;
+  const m = s.maintenance || {};
+  return `
+    <div class="maint ${m.due ? "due" : ""}" style="margin-top:0">
+      <div class="maint-h"><b>🔧 ${(s.hours_total || 0).toLocaleString("de-DE")} Druckstunden</b>
+        <span class="small muted" style="margin-right:auto">${m.due ? `<b style="color:var(--warn)">${m.due} fällig</b>` : m.warn ? `${m.warn} bald fällig` : "alles im grünen Bereich"}</span>
+        <a class="small" href="/einstellungen#wartung">Alle Aufgaben →</a></div>
+      ${(m.items || []).map(i => `<div class="mline ${i.due ? "due" : i.warn ? "warn" : ""}">
+        <span>${esc(i.icon)} ${esc(i.name)}</span>
+        <div class="mini"><div style="width:${i.pct}%"></div></div>
+        <span class="small muted">${i.due ? `<b>fällig</b>` : `noch ${(i.remaining || 0).toLocaleString("de-DE", {maximumFractionDigits: 1})} ${i.unit === "d" ? "Tage" : "h"}`}</span>
+        <button class="small-btn" title="erledigt" onclick="maintDone('${p.id}','${i.id}','${esc(i.name)}')">✓</button>
+      </div>`).join("")}
+    </div>`;
+}
+async function maintDone(pid, tid, name) {
+  if (!confirm(`„${name}“ als erledigt eintragen? Der Zähler startet neu.`)) return;
+  const r = await (await fetch(`/api/maintenance/${pid}/${tid}/done`, {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"})).json();
+  if (r.error) PH.toast(r.error, true); else PH.toast("Wartung eingetragen ✓");
+  loadExtras(pid, "stats");
+}
+async function light(pid, on) {
+  const r = await (await fetch(`/api/printers/${pid}/light`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({on})})).json();
+  if (r.error) PH.toast(r.error, true); else setTimeout(refresh, 1800);
+}
+
+async function powerSet(pid, on) {
+  const p = lastPrinters.find(x => x.id === pid);
+  if (!confirm(`${p ? p.name : "Drucker"} ${on ? "einschalten" : "ausschalten"}?`)) return;
+  PH.toast(on ? "Schalte ein …" : "Schalte aus …");
+  const r = await (await fetch(`/api/printers/${pid}/power`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({on})})).json();
+  PH.toast(r.error || (on ? "Eingeschaltet ✓" : "Ausgeschaltet ✓") + (r.via && r.via !== "Bambuddy" ? ` (${r.via})` : ""), !!r.error);
+  setTimeout(refresh, 2500);
+}
+function powerChip(p) {
+  const w = p.power;
+  if (!w || !w.available) return "";
+  const on = w.on, mins = w.off_in_s != null ? Math.max(1, Math.round(w.off_in_s / 60)) : null;
+  const sub = on && mins != null ? ` · aus in ${mins} min` : on && w.auto && w.keep ? "" : "";
+  const title = on ? (w.auto ? (mins != null ? `Geht automatisch aus in ${mins} min (${w.mode || ""})` : w.keep ? `Bleibt an: ${w.keep}` : "Automatik aktiv")
+                             : (w.bb_auto_off ? "Bambuddy schaltet nach dem Druck aus" : "Automatisches Ausschalten ist aus")) + " – klicken zum Ausschalten"
+                   : on === false ? "Drucker ist aus – klicken zum Einschalten" : "Steckdose gerade nicht erreichbar – klicken zum Einschalten";
+  return `<button class="small-btn pwrbtn ${on ? "on" : ""}" title="${esc(title)}" onclick="powerSet('${p.id}', ${!on})">⚡ ${on ? "An" : on === false ? "Aus" : "?"}${on && w.watts != null ? ` · ${Math.round(w.watts)} W` : ""}${sub}</button>`;
+}
+
+function stopsHtml(ps) {
+  return ps.filter(p => p.printing).map(p => `<button class="stopbtn" onclick="ctl('${p.id}','stop')">■ ${esc(p.type === "moonraker" ? "U1" : "A1")} STOPP</button>`).join("");
+}
+
+let lastHistory = [];
+let lastPrinters = [];
+const cardW = {};   // gemessene Breite der Bausteine (für 1:1-Diagramme)
+function printerCard(p) {
+  const info = pickInfo(p);
+  const lastJob = lastHistory.find(h => h.printer === p.name);
+  const L = bl(p.id);
+  const ctrl = p.printing ? `<div class="btns">
+      ${p.paused ? `<button onclick="ctl('${p.id}','resume')">▶ Fortsetzen</button>` : `<button onclick="ctl('${p.id}','pause')">❚❚ Pause</button>`}
+      <button class="danger" onclick="ctl('${p.id}','stop')">■ Abbrechen</button></div>` : "";
+  const tiles = energyTiles(p);
+  const tr = X.trange[p.id] || "15";
+  const fp = DESK() && L.pos && L.pos.temps;
+  const tw = cardW[p.id + ":temps"], th = fp ? fp.h - 95 : (L.h.temps ? L.h.temps - 90 : 0);
+  const bodies = {
+    progress: () => `${ringHtml(p, lastJob)}${ctrl}`,
+    hotend: () => `<div class="hotend">${hotendSvg(p, info)}</div>`,
+    e1: () => tiles[0] || "", e2: () => tiles[1] || "", e3: () => tiles[2] || "", e4: () => tiles[3] || "",
+    camera: () => p.camera ? `<div class="camrow"><div id="cam-${p.id}"></div><div class="camhint"><div class="label">Kamera</div><div class="muted small">Zum Vergrößern<br>aufs Bild klicken</div></div></div>` : "",
+    ams: () => sec(p, "ams", amsBody(p), `<span class="legend">Spule antippen zum Wechseln</span>`, p.type === "moonraker" ? "Werkzeugköpfe" : "AMS lite"),
+    temps: () => sec(p, "temps", lineChart(X.temps[p.id], tw, th), segBtns("trange", p.id, [["5", "5 Min"], ["15", "15 Min"], ["60", "1 h"], ["job", "Druck"]], tr)),
+    maint: () => sec(p, "maint", maintBody(p), `<a class="small" href="/statistik">Statistik →</a>`),
+  };
+  const lightBtn = p.light === undefined ? "" :
+    `<button class="small-btn lightbtn ${p.light ? "on" : ""}" title="Licht ${p.light ? "aus" : "an"}schalten" onclick="light('${p.id}', ${!p.light})">💡 ${p.light ? "An" : p.light === false ? "Aus" : "Licht"}</button>`;
+  const blocks = L.order.filter(k => !L.hidden.includes(k) && !(k === "camera" && !p.camera)).map(k => {
+    const h = L.h[k] && k !== "temps" ? `--bh:${L.h[k]}px;` : "";
+    return `<div class="blk${h ? " hset" : ""}" data-b="${k}" style="--bs:${L.span[k] || BLK[k].span};${h}">${blkCtl(p.id, k)}${bodies[k]()}</div>`;
+  }).join("");
+  return `<div class="head">
+      <h2><span class="icon">${p.type === "moonraker" ? "U1" : "A1"}</span>${esc(p.name)}</h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${p.maint_due ? `<a class="mchip" href="/einstellungen#wartung" title="Wartung fällig">🔧 ${p.maint_due}</a>` : ""}${p.online ? lightBtn : ""}${powerChip(p)}${statusBadge(p)}</div>
+    </div>
+    ${p.error ? `<div class="err" style="margin-bottom:8px">${esc(p.error)}</div>` : ""}
+    <div class="pgrid12">${blocks}</div>`;
+}
+function fillPrinters() {
+  for (const p of lastPrinters) {
+    const el = document.getElementById("pc-" + p.id);
+    if (el) el.innerHTML = printerCard(p);
+  }
+  placeCams();
+  applyFree();   // erst anordnen, dann messen (sonst wird die Raster-Breite gemessen)
+  // Breite des Temperatur-Bausteins merken -> Diagramm in echter Größe
+  document.querySelectorAll('.pcard .blk[data-b="temps"]').forEach(b => {
+    const pid = b.closest(".pcard").dataset.pid, w = Math.round(b.clientWidth);
+    if (w && Math.abs((cardW[pid + ":temps"] || 0) - w) > 20) { cardW[pid + ":temps"] = w; setTimeout(() => { if (!PHUI.busy) fillPrinters(); }, 0); }
+  });
+}
+
+function historyHtml(h) {
+  if (!h.length) return "Noch keine Drucke erfasst.";
+  return h.map(e => {
+    const ok = e.result === "fertig";
+    const use = e.usage.map(u => `${esc(u.slot)}: <b>${String(u.grams).replace(".", ",")} g</b> ${u.booked ? `→ #${u.spool} ✓` : u.slot === "aus Bambuddy" ? `<span class="muted">${esc(u.material || "")}</span>` : `<span class="err">nicht gebucht (${esc(u.error || "")})</span>`}`).join(" · ")
+      || "kein Filamentbedarf ermittelt";
+    const chips = [];
+    if (e.duration != null) chips.push(`⏱ ${fmtMin(Math.round(e.duration / 60))}`);
+    if (e.kwh != null) chips.push(`⚡ ${kwh(e.kwh)} · ${eur(e.energy_cost)}`);
+    if (e.filament_cost != null) chips.push(`🧵 ${eur(e.filament_cost)}`);
+    if (e.wear_cost != null) chips.push(`🔧 ${eur(e.wear_cost)}`);
+    if (e.total_cost != null) chips.push(`Σ ${eur(e.total_cost)}`);
+    const img = e.thumb ? `<img class="hthumb" src="/media/${e.thumb}" alt="" onclick="showImg('/media/${e.photo || e.thumb}', '')">` : "";
+    return `<div class="hist">
+      <span class="when">${img}${new Date(e.time * 1000).toLocaleString("de-DE", {day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"})}</span>
+      <span><b>${esc(e.printer)}</b> · ${esc(e.job)}</span>
+      <span class="res ${ok ? "ok" : "bad"}">${esc(e.result)}</span>
+      <div class="use">${use}</div>
+      ${chips.length ? `<div class="chips">${chips.map(c => `<span class="chip">${c}</span>`).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+async function refresh(force) {
+  if ((editing && !force) || PHUI.busy) return;
+  try {
+    const st = await (await fetch("/api/state")).json();
+    lastHistory = st.history || [];
+    document.getElementById("sp-err").textContent = st.spoolman_error || "";
+    lastPrinters = st.printers;
+    for (const p of st.printers) if (p.camera) camEl(p.id);
+    if (!(boardSig.split("|")[1] === st.printers.map(p => p.id).join(","))) renderBoard();
+    else fillPrinters();
+    document.getElementById("stops").innerHTML = stopsHtml(st.printers);
+    const hEl = document.getElementById("history"); if (hEl) hEl.innerHTML = historyHtml(lastHistory);
+    if (st.theme && st.theme !== document.documentElement.dataset.theme) PH.setTheme(st.theme);
+    const online = st.printers.filter(p => p.online).length;
+    document.getElementById("summary").textContent = `${online} von ${st.printers.length} verbunden`;
+    document.getElementById("live").style.background = online ? "" : "var(--off)";
+    if (!!st.queue !== queueOn) { queueOn = !!st.queue; renderBoard(); }
+    document.getElementById("notify-state").textContent = `Benachrichtigungen: ${st.notify ? "an (ntfy)" : "aus"}`;
+  } catch (e) { console.warn(e); document.getElementById("sp-err").textContent = "PrintHub nicht erreichbar"; }
+}
+
+async function testNotify() {
+  const r = await (await fetch("/api/notify/test", {method: "POST"})).json();
+  alert(r.error || "Testnachricht verschickt – schau aufs Handy.");
+}
+
+async function assign(printer, slot, spool_id) {
+  editing = false;
+  const r = await (await fetch("/api/assign", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({printer, slot, spool_id: spool_id ? Number(spool_id) : null})})).json();
+  if (r.warning) alert(r.warning);
+  if (r.error) alert(r.error);
+  await loadSpools(true); refresh(true);
+}
+
+async function ctl(id, action) {
+  if (action === "stop" && !confirm("Druck wirklich abbrechen?")) return;
+  const r = await (await fetch(`/api/printers/${id}/${action}`, {method: "POST"})).json();
+  if (r.error) alert(r.error);
+  setTimeout(refresh, 1500);
+}
+
+// ---------- Dienste-Kacheln & Bambuddy-Warteschlange ----------
+async function loadServices() {
+  if (!document.getElementById("svcs")) return;
+  try {
+    const d = await (await fetch("/api/services")).json();
+    const chips = document.getElementById("svchips");
+    if (chips) chips.innerHTML = d.services.map(s => {
+      const st = s.online === false || s.error ? "bad" : s.warn ? "warn" : s.online === true ? "on" : "";
+      return `<span class="svchip ${st}" title="${esc(s.name)}"><i></i>${s.icon} ${esc(s.name)}</span>`;
+    }).join("") + `<span class="svchip more">Details ▾</span>`;
+    document.getElementById("svcs").innerHTML = d.services.map(s => {
+      const c = (s.containers || [])[0];
+      const dot = s.online === true ? "on" : s.online === false ? "bad" : "";
+      const lines = s.error ? [s.error] : (s.lines || []);
+      const cont = c && !c.error ? (c.running ? "" : `Container ${esc(c.state)}`) : "";
+      return `<div class="svc">
+        <span class="svc-ic">${s.icon}</span>
+        <div class="bd"><div class="nm"><i class="${dot}"></i>${esc(s.name)}${s.version ? ` <small>v${esc(s.version)}</small>` : ""}</div>
+          ${lines.map((l, i) => `<div class="ln ${s.warn && i === (s.warn_line ?? (s.id === "spoolman" ? 1 : 0)) ? "w" : ""}">${esc(l)}</div>`).join("")}
+          ${cont ? `<div class="ln w">${cont}</div>` : ""}</div>
+        <div class="act">
+          ${s.internal ? `<a href="${esc(s.url)}" title="Einstellungen">⚙</a>` : s.url ? `<a href="${esc(s.url)}" target="_blank" title="${esc(s.name)} öffnen">↗</a>` : `<a href="/einstellungen#dienste" title="Einrichten">⚙</a>`}
+          ${(c && !c.error) || (s.internal && s.online) ? `<button title="Neu starten" onclick="svcRestart('${s.id}','${esc(s.name)}')">⟳</button>` : ""}
+        </div></div>`;
+    }).join("");
+  } catch {}
+}
+async function svcRestart(id, name) {
+  if (!confirm(`${name} neu starten?`)) return;
+  PH.toast(`${name} wird neu gestartet …`);
+  const r = await (await fetch(`/api/services/${id}/restart`, {method: "POST"})).json();
+  PH.toast(r.error || `${name} neu gestartet ✓`, !!r.error);
+  setTimeout(loadServices, 4000);
+}
+let queueOn = false;
+async function loadQueue() {
+  const card = document.getElementById("queuecard");
+  if (!card || !queueOn) return;
+  try {
+    const d = await (await fetch("/api/queue")).json();
+    if (!d.enabled) return;
+    document.getElementById("q-open").href = (d.url || "") + "/queue";
+    const el = document.getElementById("queue");
+    if (d.error) { el.innerHTML = `<span class="err">${esc(d.error)}</span>`; return; }
+    if (!d.items.length) { el.textContent = "Nichts in der Warteschlange."; return; }
+    const CI = {ok: "✅", warn: "⚠️", bad: "❌", unknown: "❔"};
+    qData = Object.fromEntries(d.items.map(q => [q.id, q]));
+    const sm = d.schedule || {};
+    const head = (sm.end || sm.printing_until) ? `<div class="qsched">${sm.printing_until ? `<span>🖨 läuft bis <b>${esc(sm.printing_until)}</b></span>` : ""}${sm.end ? `<span>🏁 alles fertig <b>${esc(sm.end)}</b></span>` : ""}${sm.window ? `<span class="muted">Druckfenster ${esc(sm.window)}</span>` : ""}</div>` : "";
+    el.innerHTML = head + d.items.map(q => {
+      const pq = q.plan || {};
+      const pl = q.status === "pending" && (pq.text || q.sched_text) ? `<div class="qplan ${pq.start ? "" : "no"}">🕘 ${esc(pq.text || "")}${q.sched_text && !(pq.note === "geplant") ? ` <span class="muted">· geplant ${esc(q.sched_text)}</span>` : ""}${q.forced ? ` <span class="qtag">trotz Druckfenster</span>` : ""}</div>` : "";
+      const c = q.check || {};
+      const chk = q.status === "pending" && c.text ? `<div class="qchk ${c.state}" title="${esc((c.lines || []).map(l => `${l.type} ${l.grams} g → ${l.slot || "?"}${l.have != null ? ` (${Math.round(l.have)} g da)` : ""}${l.msg ? " – " + l.msg : ""}`).join("\n"))}">${CI[c.state] || ""} ${esc(c.text)}</div>` : "";
+      return `<div class="qi" data-q="${q.id}">
+      ${q.status === "pending" ? `<span class="qgrip" title="Ziehen: Reihenfolge ändern">⠿</span>` : `<span class="qgrip off"></span>`}
+      <div class="qimg" style="${q.thumb ? `background-image:url('/api/bambuddy/thumb?p=${encodeURIComponent(q.thumb)}')` : ""}">${q.thumb ? "" : "🧊"}</div>
+      <div style="min-width:0"><div class="qn">${esc(q.name)}${q.status === "printing" ? `<span class="qtag">druckt</span>` : q.manual ? `<span class="qtag">wartet auf Start</span>` : ""}</div>
+        <div class="qm">${esc(q.printer)}${q.seconds ? " · ⏱ " + PH.dur(q.seconds) : ""}${q.grams ? " · " + PH.g(q.grams) : ""}${q.plate ? " · " + esc(q.plate) : ""}
+          ${q.waiting && q.status === "pending" ? ` · <span class="w">${esc(q.waiting)}</span>` : ""}</div>${chk}${pl}</div>
+      <div class="qb">${q.status === "pending" ? `<button class="small-btn primary" onclick="qAct(${q.id},'jetzt')" title="${d.waechter ? "Über den Druckwächter: einschalten, Licht, Plattenprüfung, dann Start" : "Bambuddy startet sofort"}">▶ Jetzt</button>
+        <button class="small-btn${q.scheduled ? " on" : ""}" onclick="qPlan(${q.id})" title="Startzeit planen">🕘</button>
+        <button class="small-btn" onclick="qAct(${q.id},'top')" title="Nach vorne holen">⬆</button>
+        <button class="small-btn" onclick="qAct(${q.id},'cancel')" title="Aus der Warteschlange nehmen">🗑</button>` : ""}</div>
+    </div>`; }).join("");
+    qWaechter = d.waechter;
+  } catch {}
+}
+let qWaechter = false, qData = {};
+// ---------- Startzeit planen ----------
+function _dtl(ts) { const d = new Date(ts), z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`; }
+function qPlan(id) {
+  const q = qData[id]; if (!q) return;
+  let m = document.getElementById("m-plan");
+  if (!m) {
+    m = document.createElement("div"); m.className = "modal"; m.id = "m-plan";
+    m.onclick = e => { if (e.target === m) m.classList.remove("open"); };
+    m.innerHTML = `<form class="mbox card" onsubmit="event.preventDefault();qPlanSave()">
+      <h2>🕘 Startzeit planen</h2><div id="pl-name" class="muted"></div>
+      <div class="plseg" id="pl-mode"><label><input type="radio" name="plm" value="start" checked> Start um</label><label><input type="radio" name="plm" value="end"> Fertig um</label></div>
+      <div class="field"><span class="lab" id="pl-lab">Startzeit</span><input id="pl-time" type="datetime-local" required></div>
+      <div id="pl-hint" class="muted small"></div>
+      <label class="chk"><input type="checkbox" id="pl-force"> trotz Druckfenster (Nachtruhe-Zeiten ignorieren)</label>
+      <div class="muted small">Der Druckwächter startet den Auftrag frühestens zur geplanten Zeit – mit Einschalten, Licht und Plattenprüfung. Die anderen Aufträge laufen bis dahin normal weiter.</div>
+      <div class="mact"><button type="button" id="pl-clear" onclick="qPlanSave(true)">Planung entfernen</button><span style="flex:1"></span><button type="button" onclick="document.getElementById('m-plan').classList.remove('open')">Abbrechen</button><button class="primary" type="submit">Planen</button></div>
+    </form>`;
+    document.body.appendChild(m);
+    m.querySelectorAll("input[name=plm]").forEach(r => r.onchange = () => {   // Zeit mitnehmen: Start ⇄ Ende
+      const q = qData[m.dataset.id] || {}, el = document.getElementById("pl-time");
+      if (el.value && q.seconds) el.value = _dtl(new Date(el.value).getTime() + (r.value === "end" ? 1 : -1) * q.seconds * 1000);
+      qPlanHint();
+    });
+    m.querySelector("#pl-time").oninput = qPlanHint;
+  }
+  m.dataset.id = id;
+  document.getElementById("pl-name").textContent = `${q.name}${q.seconds ? " · ⏱ " + PH.dur(q.seconds) : " · Dauer unbekannt"}`;
+  const st = q.scheduled ? new Date(q.scheduled.endsWith("Z") || q.scheduled.includes("+") ? q.scheduled : q.scheduled + "Z").getTime()
+           : (q.plan && q.plan.start ? q.plan.start * 1000 : Math.ceil((Date.now() + 3600e3) / 900e3) * 900e3);
+  m.querySelector("input[value=start]").checked = true;
+  m.querySelector("input[value=end]").disabled = !q.seconds;
+  document.getElementById("pl-time").value = _dtl(st);
+  document.getElementById("pl-force").checked = !!q.forced;
+  document.getElementById("pl-clear").style.display = q.scheduled || q.forced ? "" : "none";
+  qPlanHint(); m.classList.add("open");
+}
+function qPlanHint() {
+  const m = document.getElementById("m-plan"), q = qData[m.dataset.id] || {};
+  const mode = m.querySelector("input[name=plm]:checked").value, v = document.getElementById("pl-time").value;
+  document.getElementById("pl-lab").textContent = mode === "end" ? "Fertig um" : "Startzeit";
+  if (!v || !q.seconds) { document.getElementById("pl-hint").textContent = ""; return; }
+  const t = new Date(v).getTime(), o = mode === "end" ? t - q.seconds * 1000 : t + q.seconds * 1000;
+  const f = x => new Date(x).toLocaleString("de-DE", {weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"});
+  document.getElementById("pl-hint").textContent = mode === "end" ? `→ Start ${f(o)}` : `→ fertig ca. ${f(o)}`;
+}
+async function qPlanSave(clear, force) {
+  const m = document.getElementById("m-plan"), id = m.dataset.id;
+  const body = clear ? {mode: "clear"} : {mode: m.querySelector("input[name=plm]:checked").value, time: document.getElementById("pl-time").value,
+                                          force: force || document.getElementById("pl-force").checked};
+  const r = await (await fetch(`/api/queue/${id}/plan`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();
+  if (r.needs_confirm) { if (confirm(r.message)) return qPlanSave(false, true); return; }
+  PH.toast(r.error || r.message || "✓", !!r.error);
+  if (!r.error) { m.classList.remove("open"); setTimeout(loadQueue, 500); }
+}
+async function qAct(id, action) {
+  const name = (document.querySelector(`.qi[data-q="${id}"] .qn`) || {}).textContent || "Auftrag";
+  if (action === "cancel" && !confirm(`„${name}“ aus der Warteschlange nehmen?`)) return;
+  if (action === "jetzt" && !confirm(qWaechter ? `„${name}“ jetzt starten?\nDer Druckwächter schaltet ein, macht Licht an, prüft die Platte und startet – ohne Rücksicht aufs Druckfenster.`
+                                              : `„${name}“ jetzt starten? Bambuddy schickt ihn sofort an den Drucker.`)) return;
+  const r = await (await fetch(`/api/queue/${id}/${action}`, {method: "POST"})).json();
+  PH.toast(r.error || r.message || "✓", !!r.error);
+  setTimeout(loadQueue, 800);
+}
+// Reihenfolge der Aufträge per Ziehen
+PHUI.sortable(document.getElementById("board"), {items: ".qi", handle: ".qgrip:not(.off)", key: "q", axis: "y", onDrop: async keys => {
+  const r = await (await fetch("/api/queue/reorder", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ids: keys.map(Number)})})).json();
+  PH.toast(r.error || "Reihenfolge gespeichert ✓", !!r.error); loadQueue();
+}});
+
+// ---------- Drag & Drop / Größe auf der Übersicht (nur im Modus „Anordnen“) ----------
+function toggleEdit() {
+  const on = document.body.classList.toggle("editing");
+  document.getElementById("edit").textContent = on ? "✓ Fertig" : "✎ Anordnen";
+  if (on) ensureFree();
+}
+const board = document.getElementById("board");
+// Seiten-Bausteine (Dienste, Drucker, Warteschlange, Verlauf)
+PHUI.sortable(board, {items: ".pblk", handle: ".pgrip", key: "b", onDrop: keys => {
+  layout.page.order = [...keys, ...layout.page.order.filter(k => !keys.includes(k))]; saveLayout(); renderBoard();
+}});
+PHUI.resizable(board, {handle: ".prz", item: ".pblk", cols: () => innerWidth >= 1100 ? 6 : 0,
+  onResize: (c, {span}) => { if (span) layout.page.span[c.dataset.b] = span; saveLayout(); renderBoard(); }});
+// Freie Anordnung: Seite und Bausteine in den Druckerkarten
+PHUI.freeform(board, {items: ".pblk", handle: ".pgrip", resize: ".prz",
+  set: (el, pos, resized) => {
+    const k = el.dataset.b, old = layout.page.pos[k] || pos;
+    layout.page.pos[k] = autoH(el) ? {...pos, h: old.h} : pos;
+    saveLayout(); applyFree(); if (resized) refresh(true);
+  }});
+PHUI.freeform(board, {items: ".blk", handle: ".bgrip", resize: ".brz", minW: 60, minH: 40,
+  set: (el, pos, resized) => {
+    const pid = el.closest(".pcard").dataset.pid, L = bl(pid);
+    L.pos[el.dataset.b] = pos; cardW[pid + ":temps"] = 0;
+    saveLayout(); refresh(true);
+  }});
+// Bausteine in der Druckerkarte (Raster, z. B. am Handy)
+PHUI.sortable(board, {items: ".blk", handle: ".bgrip", key: "b", onDrop: (keys, cont) => {
+  const L = bl(cont.closest(".pcard").dataset.pid);
+  L.order = [...keys, ...L.order.filter(k => !keys.includes(k))]; saveLayout(); refresh(true);
+}});
+PHUI.resizable(board, {handle: ".brz", item: ".blk", heightEl: ".blk", minH: 60, maxH: 1200,
+  cols: it => getComputedStyle(it.parentNode).gridTemplateColumns.split(" ").length,
+  onResize: (c, {span, height}) => {
+    const pid = c.closest(".pcard").dataset.pid, k = c.dataset.b, L = bl(pid);
+    if (span) L.span[k] = span;
+    if (height) L.h[k] = height;
+    c.style.height = ""; c.style.overflow = "";
+    cardW[pid + ":temps"] = 0; saveLayout(); refresh(true);
+  }});
+
+// ---------- Aktualisieren: im Hintergrund pausieren, beim Zurückholen sofort alles neu ----------
+const vis = fn => () => { if (!document.hidden) fn(); };
+let lastRefresh = 0, extrasN = 0;
+loadSpools().then(refresh);
+loadServices(); setInterval(vis(loadServices), 30000);
+setTimeout(loadQueue, 600); setInterval(vis(loadQueue), 15000);
+setInterval(vis(() => {                  // Druckerdaten: alle 3 s, im Datensparmodus alle 10 s
+  const every = PH.saving() ? 10000 : 3000;
+  if (Date.now() - lastRefresh < every - 200) return;
+  lastRefresh = Date.now(); refresh();
+}), 1000);
+setInterval(vis(() => {   // Temperaturen alle 10 s (Datensparmodus 30 s), Strom & Statistik jede Minute
+  extrasN++;
+  if (PH.saving() && extrasN % 3) return;
+  for (const p of lastPrinters) {
+    loadExtras(p.id, "temps");
+    if (extrasN % 6 === 1) { loadExtras(p.id, "energy"); loadExtras(p.id, "stats"); }
+  }
+}), 10000);
+setTimeout(() => lastPrinters.forEach(p => loadExtras(p.id)), 800);
+setInterval(camTick, 700);
+setInterval(vis(() => loadSpools()), 30000);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  lastRefresh = Date.now(); refresh(); loadServices(); loadQueue(); loadSpools();
+  lastPrinters.forEach(p => loadExtras(p.id));
+  for (const c of Object.values(cams)) c.last = 0;   // Kamerabild sofort neu
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a1220">
+<title>Statistik – PrintHub</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#0a1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+<script src="/static/common.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Print<span>Hub</span></h1>
+    <div class="sub">Statistik · „✎ Anordnen“ schaltet Verschieben und Größe ändern frei</div>
+  </div>
+  <nav class="nav"><a href="/">Übersicht</a><a href="/lager">Lager</a><a href="/verlauf">Verlauf</a><a href="/statistik">Statistik</a><a href="/einstellungen">Einstellungen</a></nav>
+</header>
+
+<div class="page wide">
+  <div class="stool">
+    <div class="seg" id="range">
+      <button data-v="week">7 Tage</button><button data-v="month">30 Tage</button><button data-v="year">12 Monate</button><button data-v="all">Gesamt</button>
+    </div>
+    <select id="printer"><option value="">Alle Drucker</option></select>
+    <span style="flex:1"></span>
+    <button class="small-btn bb-only" onclick="importBB()">⇩ Verlauf aus Bambuddy übernehmen</button>
+    <button class="small-btn edit-tg" id="edit" onclick="toggleEdit()">✎ Anordnen</button>
+    <div class="dd edit-only">
+      <button class="small-btn" onclick="this.parentNode.classList.toggle('open')">Bausteine ▾</button>
+      <div class="dd-m" id="hiddenlist"></div>
+    </div>
+    <button class="small-btn edit-only" onclick="resetLayout()">Layout zurücksetzen</button>
+    <a class="small-btn btnlink" id="csv" href="#">⇩ CSV</a>
+  </div>
+  <div id="note"></div>
+  <div class="sgrid2" id="grid"></div>
+</div>
+
+<script src="/static/ui.js"></script>
+<script>
+const {esc} = PH;
+const $ = id => document.getElementById(id);
+const nf = (v, d = 0) => v == null ? "–" : Number(v).toLocaleString("de-DE", {maximumFractionDigits: d, minimumFractionDigits: 0});
+const eur = v => PH.eur(v);
+const g = v => PH.g(v);
+const hrs = v => v == null ? "–" : (v >= 100 ? nf(v, 0) : nf(v, 1)) + " h";
+const C = i => `var(--c${(i % 8) + 1})`;   // Kategorienfarben: feste Reihenfolge
+const TA = PHUI.tipAttr;
+let CW = 640, CH = 170, KEY = "";          // Breite/Höhe/Schlüssel des Bausteins, der gerade gezeichnet wird
+
+// ---------- Bausteine & Layout ----------
+const W = {
+  kpi: {t: "Kennzahlen", span: 6},
+  success: {t: "Erfolgsrate", span: 2},
+  failures: {t: "Fehleranalyse", span: 2},
+  records: {t: "Rekorde", span: 2},
+  calendar: {t: "Druckaktivität", span: 6},
+  filament: {t: "Verbrauch im Zeitverlauf", span: 6, h: 200, views: [["m", [["g", "Gewicht"], ["n", "Drucke"], ["h", "Druckzeit"]]], ["t", [["bar", "Balken"], ["line", "Kurve"]]]]},
+  materials: {t: "Nach Material", span: 2, h: 170, views: [["m", [["g", "Gewicht"], ["n", "Drucke"], ["h", "Druckzeit"], ["t", "Zeitverlauf"]]]]},
+  colors: {t: "Farbverteilung", span: 2, views: [["m", [["g", "Gewicht"], ["n", "Drucke"]]]]},
+  vendors: {t: "Nach Hersteller", span: 2, views: [["m", [["g", "Gewicht"], ["c", "Kosten"]]]]},
+  duration: {t: "Druckdauer", span: 2, h: 150},
+  weekday: {t: "Wochentage", span: 2, h: 150, views: [["m", [["n", "Drucke"], ["g", "Gewicht"], ["h", "Zeit"]]]]},
+  hour: {t: "Tageszeit (Druckstart)", span: 2, h: 150},
+  energy: {t: "Strom (Shelly-Zähler)", span: 3, h: 170, views: [["t", [["bar", "Balken"], ["line", "Kurve"]]]]},
+  costs: {t: "Kosten im Zeitverlauf", span: 3, h: 170, views: [["t", [["bar", "Balken"], ["line", "Kurve"]]]]},
+  accuracy: {t: "Zeitgenauigkeit", span: 2},
+  printers: {t: "Pro Drucker", span: 4, views: [["t", [["table", "Tabelle"], ["bars", "Balken"]]]]},
+};
+const KT = {
+  prints: {l: "Drucke", v: k => nf(k.prints), s: k => `${k.ok} fertig · ${k.fail} Fehler · ${k.cancel} abgebr.`, d: "prints"},
+  hours: {l: "Druckzeit", v: k => hrs(k.hours), d: "hours"},
+  grams: {l: "Filament", v: k => g(k.grams), s: k => `Ø ${g(k.avg_grams)} pro Druck`, d: "grams"},
+  kwh: {l: "Strom", v: k => PH.kwh(k.kwh), s: k => eur(k.energy_cost), d: "kwh"},
+  filament_cost: {l: "Filamentkosten", v: k => eur(k.filament_cost), d: "filament_cost"},
+  energy_cost: {l: "Stromkosten", v: k => eur(k.energy_cost), d: "energy_cost"},
+  wear_cost: {l: "Verschleiß", v: k => eur(k.wear_cost), d: "wear_cost"},
+  total_cost: {l: "Kosten gesamt", v: k => eur(k.total_cost), s: k => `Ø ${eur(k.avg_cost)} pro Druck`, d: "total_cost", c: "acc"},
+  avg_cost: {l: "Ø Kosten pro Druck", v: k => eur(k.avg_cost), d: "avg_cost"},
+  avg_grams: {l: "Ø Filament pro Druck", v: k => g(k.avg_grams), d: "avg_grams"},
+  success_rate: {l: "Erfolgsrate", v: k => k.success_rate == null ? "–" : nf(k.success_rate) + " %", s: k => `${k.ok} von ${k.ok + k.fail}`, d: "success_rate"},
+  fail: {l: "Fehlgeschlagen", v: k => nf(k.fail), d: "fail", inv: true},
+  cancel: {l: "Abgebrochen", v: k => nf(k.cancel), d: "cancel", inv: true},
+};
+const KPI_DEF = ["prints", "hours", "grams", "kwh", "filament_cost", "total_cost"].map(k => ({k, span: 1}));
+let L = {order: Object.keys(W), hidden: [], span: {}, h: {}, v: {}, off: {}, kpi: KPI_DEF};
+try {
+  const l = JSON.parse(localStorage.getItem("ph-stats") || "null");
+  if (l && l.order) { L = Object.assign(L, l); for (const k of (l.wide || [])) L.span[k] = 6; delete L.wide; }
+} catch {}
+for (const k of ["span", "h", "v", "off"]) L[k] ||= {};
+if (!Array.isArray(L.kpi) || !L.kpi.length) L.kpi = KPI_DEF.map(x => ({...x}));
+function kpiAdd(k) { if (k) { L.kpi.push({k, span: 1}); saveL(); renderOne("kpi"); } }
+function kpiDel(k) { L.kpi = L.kpi.filter(t => t.k !== k); saveL(); renderOne("kpi"); }
+for (const k of Object.keys(W)) if (!L.order.includes(k)) L.order.push(k);
+L.order = L.order.filter(k => W[k]);
+const saveL = () => { try { localStorage.setItem("ph-stats", JSON.stringify(L)); } catch {} };
+const view = (k, i) => (L.v[k] || [])[i] ?? W[k].views[i][1][0][0];
+function setView(k, i, v) { (L.v[k] ||= [])[i] = v; saveL(); renderOne(k); }
+const isOff = (k, s) => (L.off[k] || []).includes(s);
+function tog(k, s) { const a = L.off[k] ||= []; const i = a.indexOf(s); if (i >= 0) a.splice(i, 1); else a.push(s); saveL(); renderOne(k); }
+function hide(k) { L.hidden.push(k); saveL(); render(); }
+function unhide(k) { L.hidden = L.hidden.filter(x => x !== k); saveL(); render(); }
+function resetLayout() { L = {order: Object.keys(W), hidden: [], span: {}, h: {}, v: {}, off: {}, kpi: KPI_DEF.map(x => ({...x}))}; saveL(); render(); PH.toast("Layout zurückgesetzt"); }
+
+// ---------- Zustand ----------
+let S = null;
+let range = localStorage.getItem("ph-stats-range") || "month";
+function toggleEdit() { document.body.classList.toggle("editing"); $("edit").textContent = document.body.classList.contains("editing") ? "✓ Fertig" : "✎ Anordnen"; }
+let printer = "";
+async function load() {
+  try { S = await (await fetch(`/api/statistics?range=${range}&printer=${encodeURIComponent(printer)}`)).json(); }
+  catch { $("grid").innerHTML = `<div class="err">Statistik nicht erreichbar</div>`; return; }
+  const sel = $("printer");
+  if (sel.options.length - 1 !== S.printers.length)
+    sel.innerHTML = `<option value="">Alle Drucker</option>` + S.printers.map(p => `<option ${p === printer ? "selected" : ""}>${esc(p)}</option>`).join("");
+  $("csv").href = `/api/statistics/export.csv?range=${range}&printer=${encodeURIComponent(printer)}`;
+  render();
+}
+document.querySelectorAll("#range button").forEach(b => b.onclick = () => {
+  range = b.dataset.v; try { localStorage.setItem("ph-stats-range", range); } catch {} load();
+});
+$("printer").onchange = e => { printer = e.target.value; load(); };
+document.addEventListener("click", e => { if (!e.target.closest(".dd")) document.querySelectorAll(".dd.open").forEach(d => d.classList.remove("open")); });
+
+// ---------- Links in den Verlauf ----------
+function vhref(extra) {
+  const p = new URLSearchParams(Object.entries({printer, ...extra}).filter(([, v]) => v));
+  return "/verlauf?" + p;
+}
+function keyRange(key) {   // "2026-11-09" oder "2026-11" -> {from, to}
+  if (key.length === 10) return {from: key, to: key};
+  const [y, m] = key.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return {from: `${key}-01`, to: `${key}-${String(last).padStart(2, "0")}`};
+}
+const dayKey = t => { const d = new Date(t * 1000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
+// ---------- Diagramm-Helfer ----------
+function niceMax(v) { const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return v; }
+const empty = () => `<div class="muted small sempty">Keine Daten im Zeitraum.</div>`;
+function axes(Wd, H, L0, T, B, nice, fmt) {
+  let s = "";
+  const y = v => T + (1 - v / nice) * (H - T - B);
+  for (let i = 0; i <= 4; i++) { const v = nice * i / 4; s += `<line x1="${L0}" x2="${Wd}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${L0 - 5}" y="${y(v) + 3.5}" text-anchor="end" class="ax">${fmt(v, true)}</text>`; }
+  return {s, y};
+}
+// items: [{label, key?, …}], series: [{k, l, c}] (gestapelt), fmt(v, axis?), href(item)?
+function bars(items, series, {fmt, every = 1, href, title = x => x.label} = {}) {
+  if (!items.length) return empty();
+  series = series.filter(s => !isOff(KEY, s.k));
+  const n = items.length, Wd = Math.max(260, CW), H = CH, B = 20, T = 6, L0 = 42;
+  const tot = x => series.reduce((a, s) => a + (x[s.k] || 0), 0);
+  const nice = niceMax(Math.max(...items.map(tot), 0) || 1), bw = (Wd - L0 - 4) / n, gap = Math.min(8, bw * 0.25);
+  const {s: grid, y} = axes(Wd, H, L0, T, B, nice, fmt);
+  let s = grid;
+  items.forEach((x, i) => {
+    const x0 = L0 + i * bw + gap / 2, w = Math.max(1, bw - gap);
+    let acc = 0;
+    series.forEach((st, si) => {
+      const v = x[st.k] || 0; if (!v) return;
+      const y1 = y(acc + v), y2 = y(acc);
+      s += `<rect class="cbar" x="${x0}" y="${y1}" width="${w}" height="${Math.max(0, y2 - y1 - (acc ? 2 : 0))}" rx="${acc ? 1 : 3}" fill="${st.c}"/>`;
+      acc += v;
+    });
+    const rows = series.length > 1 ? series.filter(st => x[st.k]).map(st => [st.c, st.l, fmt(x[st.k])]).concat([["", "Summe", fmt(tot(x))]])
+      : [[series[0] ? series[0].c : "", series[0] ? series[0].l : "", fmt(tot(x))]];
+    s += `<rect class="hit" x="${L0 + i * bw}" y="${T}" width="${bw}" height="${H - T - B}"${TA(title(x), rows, href ? href(x) : "")}/>`;
+    if (i % every === 0) s += `<text x="${x0 + w / 2}" y="${H - 5}" text-anchor="middle" class="ax">${esc(x.label)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${Wd} ${H}" class="chart-svg flat">${s}</svg>`;
+}
+function lines(items, series, {fmt, every = 1, href, title = x => x.label, area = true} = {}) {
+  if (!items.length) return empty();
+  series = series.filter(s => !isOff(KEY, s.k));
+  const n = items.length, Wd = Math.max(260, CW), H = CH, B = 20, T = 8, L0 = 42, R0 = 8;
+  const nice = niceMax(Math.max(...items.flatMap(x => series.map(s => x[s.k] || 0)), 0) || 1);
+  const {s: grid, y} = axes(Wd, H, L0, T, B, nice, fmt);
+  const step = n > 1 ? (Wd - L0 - R0) / (n - 1) : 0;
+  const X = i => n > 1 ? L0 + i * step : (L0 + Wd) / 2;
+  let s = grid;
+  series.forEach((st, si) => {
+    const pts = items.map((x, i) => [X(i), y(x[st.k] || 0)]);
+    const d = smooth(pts);
+    if (area && series.length === 1) s += `<path d="${d} L${X(n - 1)},${y(0)} L${X(0)},${y(0)} Z" fill="${st.c}" opacity=".16"/>`;
+    s += `<path d="${d}" fill="none" stroke="${st.c}" stroke-width="2"/>`;
+  });
+  s += `<g class="xh" style="display:none"><line y1="${T}" y2="${H - B}"/>${series.map(() => `<circle r="4"/>`).join("")}</g>`;
+  items.forEach((x, i) => {
+    const rows = series.map(st => [st.c, st.l, fmt(x[st.k] || 0)]);
+    const ys = series.map(st => `${y(x[st.k] || 0)}|${st.c}`).join(";");
+    s += `<rect class="hit" x="${X(i) - step / 2}" y="${T}" width="${Math.max(step, 6)}" height="${H - T - B}" data-x="${X(i)}" data-ys="${ys}"${TA(title(x), rows, href ? href(x) : "")}/>`;
+    if (i % every === 0) s += `<text x="${X(i)}" y="${H - 5}" text-anchor="${i === 0 ? "start" : i === n - 1 ? "end" : "middle"}" class="ax">${esc(x.label)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${Wd} ${H}" class="chart-svg flat">${s}</svg>`;
+}
+function smooth(p) {   // weiche Kurve (monoton genug für Verbrauchswerte)
+  if (p.length < 3) return "M" + p.map(q => q.join(",")).join(" L");
+  let d = `M${p[0][0]},${p[0][1]}`;
+  for (let i = 0; i < p.length - 1; i++) {
+    const [x0, y0] = p[i], [x1, y1] = p[i + 1], cx = (x0 + x1) / 2;
+    d += ` C${cx},${y0} ${cx},${y1} ${x1},${y1}`;
+  }
+  return d;
+}
+function hbars(items, {val, fmt, color = () => "var(--acc)", sub = () => "", href}) {
+  if (!items.length) return empty();
+  const max = Math.max(...items.map(val)) || 1;
+  return `<div class="hb">${items.map((x, i) => `<div class="hbr ${href ? "lnk" : ""}"${TA(x.name, [[color(x, i), "", fmt(val(x)) + (sub(x) || "")]], href ? href(x) : "")}>
+      <span class="hbn">${x.hex !== undefined ? `<i style="background:${x.hex || "var(--tile2)"}"></i>` : ""}${esc(x.name || x.hex || "")}</span>
+      <div class="hbt"><div style="width:${val(x) / max * 100}%;background:${color(x, i)}"></div></div>
+      <span class="hbv">${fmt(val(x))}${sub(x) ? `<small>${sub(x)}</small>` : ""}</span></div>`).join("")}</div>`;
+}
+function donut(parts, center, sub) {
+  parts = parts.filter(p => p.v > 0);
+  const tot = parts.reduce((a, p) => a + p.v, 0);
+  if (!tot) return empty();
+  const R = 52, r = 34, cx = 60, cy = 60, gapA = parts.length > 1 ? 0.03 : 0;
+  let a0 = -Math.PI / 2, s = "";
+  for (const p of parts) {
+    const a1 = a0 + p.v / tot * Math.PI * 2 - gapA, large = a1 - a0 > Math.PI ? 1 : 0;
+    const pt = (rad, a) => `${cx + rad * Math.cos(a)},${cy + rad * Math.sin(a)}`;
+    const tipA = TA(p.l, [[p.c, p.fmt || "", `${Math.round(p.v / tot * 100)} %`]], p.h || "");
+    s += parts.length === 1
+      ? `<circle class="seg" cx="${cx}" cy="${cy}" r="${(R + r) / 2}" fill="none" stroke="${p.c}" stroke-width="${R - r}"${tipA}/>`
+      : `<path class="seg" d="M${pt(R, a0)} A${R},${R} 0 ${large} 1 ${pt(R, a1)} L${pt(r, a1)} A${r},${r} 0 ${large} 0 ${pt(r, a0)}Z" fill="${p.c}"${tipA}/>`;
+    a0 = a1 + gapA;
+  }
+  return `<svg viewBox="0 0 120 120" class="donut">${s}<text x="60" y="60" text-anchor="middle" class="dv">${center}</text><text x="60" y="75" text-anchor="middle" class="ds">${sub || ""}</text></svg>`;
+}
+function ring(pct, color, big, small) {
+  const r = 48, c = 2 * Math.PI * r, v = Math.max(0, Math.min(100, pct || 0));
+  return `<svg viewBox="0 0 120 120" class="donut"><circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--tile2)" stroke-width="10"/>
+    <circle cx="60" cy="60" r="${r}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${c * v / 100} ${c}" transform="rotate(-90 60 60)"/>
+    <text x="60" y="62" text-anchor="middle" class="dv">${big}</text><text x="60" y="78" text-anchor="middle" class="ds">${small || ""}</text></svg>`;
+}
+// anklickbare Legende: Serie aus-/einblenden
+const legend = (items, k) => `<div class="legend2">${items.map(x => k
+  ? `<button class="lg ${isOff(k, x.k) ? "off" : ""}" onclick="tog('${k}','${esc(x.k)}')" title="ein-/ausblenden"><i style="background:${x.c}"></i>${esc(x.l)}${x.v != null ? ` <b>${x.v}</b>` : ""}</button>`
+  : `<span><i style="background:${x.c}"></i>${esc(x.l)}${x.v != null ? ` <b>${x.v}</b>` : ""}</span>`).join("")}</div>`;
+function delta(cur, prev, inv) {
+  if (prev == null || !S.prev || !S.prev.prints || !prev) return "";
+  const d = (cur - prev) / prev * 100;
+  if (Math.abs(d) < 1) return `<span class="dl">±0 %</span>`;
+  return `<span class="dl ${(d > 0) !== !!inv ? "up" : "down"}">${d > 0 ? "▲" : "▼"} ${nf(Math.abs(d))} %</span>`;
+}
+const everyFor = (n, px = 50) => Math.max(1, Math.ceil(n / Math.max(3, CW / px)));
+const fmtG = (v, ax) => ax ? (v >= 1000 ? nf(v / 1000, 1) + " kg" : nf(v) + " g") : g(v);
+const fmtN = (v, ax) => nf(v, ax ? 1 : 0) + (ax ? "" : v === 1 ? " Druck" : " Drucke");
+const fmtH = (v, ax) => ax ? nf(v, 1) + " h" : hrs(v);
+const bucketHref = x => x.key ? vhref(keyRange(x.key)) : "";
+
+// ---------- Bausteine ----------
+const R = {
+  kpi() {
+    const k = S.kpis, p = S.prev || {};
+    const cmp = {week: "vs. Woche davor", month: "vs. 30 Tage davor", year: "vs. Jahr davor"}[range] || "";
+    const tiles = L.kpi.filter(t => KT[t.k]);
+    const add = Object.entries(KT).filter(([key]) => !L.kpi.some(t => t.k === key));
+    return `<div class="kgrid2">${tiles.map(t => {
+        const d = KT[t.k];
+        return `<div class="etile kt" data-t="${t.k}" style="--ks:${t.span || 1}">
+          <span class="kgrip" title="Ziehen zum Verschieben">⠿</span><button class="kx edit-only" title="Kachel entfernen" onclick="kpiDel('${t.k}')">×</button>
+          <div class="label">${d.l}</div><div class="v ${d.c || ""}">${d.v(k)}</div>
+          <div class="s">${d.s ? d.s(k) : ""} ${d.d ? delta(k[d.d], p[d.d], d.inv) : ""}</div><span class="krz" title="Breite ziehen"></span></div>`;
+      }).join("")}</div>
+      <div class="kfoot">${S.prev && S.prev.prints ? `<span class="muted small">Pfeile: ${cmp}</span>` : ""}
+        ${add.length ? `<select class="edit-only kadd" onchange="kpiAdd(this.value)"><option value="">＋ Kachel hinzufügen …</option>${add.map(([key, d]) => `<option value="${key}">${d.l}</option>`).join("")}</select>` : ""}</div>`;
+  },
+  success() {
+    const k = S.kpis;
+    if (!k.prints) return empty();
+    return `<div class="rowc">${ring(k.success_rate, "var(--ok)", k.success_rate == null ? "–" : nf(k.success_rate) + " %", "Erfolg")}
+      <div class="kv2"><div><span class="st ok">✓</span> Erfolgreich <b>${k.ok}</b></div><a href="${periodHref()}&result=fail" title="Fehlgeschlagene Drucke anzeigen"><span class="st bad">✕</span> Fehlgeschlagen <b>${k.fail}</b></a>
+      <div><span class="st warn">■</span> Abgebrochen <b>${k.cancel}</b></div><div class="muted small" style="margin-top:6px">Abbrüche durch dich zählen nicht als Fehler.</div></div></div>`;
+  },
+  failures() {
+    const f = S.failures;
+    if (!S.kpis.prints) return empty();
+    return `<div class="bigv ${f.fail_rate ? "w" : ""}">${f.fail_rate ? "⚠ " : ""}${nf(f.fail_rate, 1)} %</div>
+      <div class="muted small">${S.kpis.fail} von ${S.kpis.prints} Drucken fehlgeschlagen · letzte 7 Tage: ${f.fail_rate_7d == null ? "–" : nf(f.fail_rate_7d, 1) + " %"}</div>
+      <div class="label" style="margin:12px 0 6px">Häufigste Gründe (Fehler + Abbrüche)</div>
+      ${f.reasons.length ? f.reasons.map(([r, n]) => `<a class="kvl" href="${periodHref()}&result=fail" title="Diese Drucke im Verlauf"><span>${esc(r)}</span><b>${n}</b></a>`).join("") : `<div class="muted small">Keine – alles fertig geworden 👍</div>`}`;
+  },
+  records() {
+    const r = S.records;
+    const row = (ic, l, v, sub, t) => `<a class="rec" ${t ? `href="${vhref({from: dayKey(t), to: dayKey(t)})}"` : ""}><span class="ric">${ic}</span><div><div class="muted small">${l}</div><b>${v}</b> <span class="muted small">${sub || ""}</span></div></a>`;
+    if (!S.kpis.prints) return empty();
+    const bd = r.busiest_day;
+    return row("⏱", "Längster Druck", r.longest ? PH.dur(r.longest.value) : "–", r.longest ? esc(r.longest.job) : "", r.longest && r.longest.time)
+      + row("⚖", "Schwerster Druck", r.heaviest ? g(r.heaviest.value) : "–", r.heaviest ? esc(r.heaviest.job) : "", r.heaviest && r.heaviest.time)
+      + row("€", "Teuerster Druck", r.priciest ? eur(r.priciest.value) : "–", r.priciest ? esc(r.priciest.job) : "", r.priciest && r.priciest.time)
+      + row("📅", "Aktivster Tag", bd ? `${bd.n} Drucke` : "–", bd ? new Date(bd.date).toLocaleDateString("de-DE") : "", bd && new Date(bd.date + "T12:00").getTime() / 1000)
+      + row("🔥", "Erfolgsserie", `${r.streak} am Stück`, `aktuell ${r.streak_now}`);
+  },
+  calendar() {
+    const today = new Date(); today.setHours(12, 0, 0, 0);
+    const start = new Date(today); start.setDate(start.getDate() - 52 * 7 - ((today.getDay() + 6) % 7));
+    const max = Math.max(1, ...Object.values(S.calendar).map(v => v.n));
+    const Z = Math.max(9, Math.min(19, (CW - 30) / 53)), Q = Z - 2;
+    let cells = "", months = "", lastM = -1, x = 0;
+    for (let d = new Date(start), i = 0; d <= today; d.setDate(d.getDate() + 1), i++) {
+      const wd = (d.getDay() + 6) % 7; x = Math.floor(i / 7);
+      const key = dayKey(d.getTime() / 1000), v = S.calendar[key];
+      const lvl = v ? Math.min(4, Math.ceil(v.n / max * 4)) : 0;
+      const tipA = TA(d.toLocaleDateString("de-DE", {weekday: "short", day: "numeric", month: "long", year: "numeric"}),
+        v ? [["var(--acc)", "Drucke", String(v.n)], ["", "Filament", g(v.g)]] : [["", "kein Druck", ""]], v ? vhref({from: key, to: key}) : "");
+      cells += `<rect x="${28 + x * Z}" y="${16 + wd * Z}" width="${Q}" height="${Q}" rx="2" class="hm l${lvl}"${tipA}/>`;
+      if (wd === 0 && d.getMonth() !== lastM) { lastM = d.getMonth(); months += `<text x="${28 + x * Z}" y="10" class="ax">${d.toLocaleDateString("de-DE", {month: "short"})}</text>`; }
+    }
+    const days = ["Mo", "", "Mi", "", "Fr", "", ""].map((l, i) => `<text x="0" y="${16 + i * Z + Q * 0.8}" class="ax">${l}</text>`).join("");
+    const vw = 28 + (x + 1) * Z;
+    return `<div class="hmwrap"><svg viewBox="0 0 ${vw} ${20 + 7 * Z}" width="${vw}" class="heat">${months}${days}${cells}</svg></div>
+      <div class="legend2" style="justify-content:flex-end">weniger ${[0, 1, 2, 3, 4].map(l => `<svg width="12" height="12"><rect width="11" height="11" rx="2" class="hm l${l}"/></svg>`).join("")} mehr · letzte 12 Monate · Tag anklicken = Drucke anzeigen</div>`;
+  },
+  filament() {
+    const m = view("filament", 0), type = view("filament", 1);
+    const every = everyFor(S.timeline.length, type === "line" ? 60 : 45);
+    if (m !== "g") {
+      const ser = [{k: m, l: m === "n" ? "Drucke" : "Druckzeit", c: C(0)}];
+      const fmt = m === "n" ? fmtN : fmtH;
+      return (type === "line" ? lines : bars)(S.timeline, ser, {fmt, every});
+    }
+    const mats = S.materials.map(x => x.name), top = mats.slice(0, 7);
+    const ser = top.map((x, i) => ({k: x, l: x, c: C(i)}));
+    if (mats.length > 7) ser.push({k: "_rest", l: "Andere", c: "var(--off)"});
+    const items = S.timeline.map(t => { const o = {label: t.label, key: t.key}; for (const [mm, v] of Object.entries(t.mats)) { if (top.includes(mm)) o[mm] = v; else o._rest = (o._rest || 0) + v; } return o; });
+    return (type === "line" ? lines : bars)(items, ser, {fmt: fmtG, every})
+      + (ser.length > 1 ? legend(ser, "filament") : "");
+  },
+  materials() {
+    const by = view("materials", 0);
+    const m = S.materials;
+    if (!m.length) return empty();
+    const col = i => i < 7 ? C(i) : "var(--off)";
+    if (by === "t") {   // Verbrauch je Material über die Zeit
+      const top = m.slice(0, 7).map(x => x.name);
+      const ser = top.map((x, i) => ({k: x, l: x, c: C(i)}));
+      if (m.length > 7) ser.push({k: "_rest", l: "Andere", c: "var(--off)"});
+      const items = S.timeline.map(t => { const o = {label: t.label}; for (const [mm, v] of Object.entries(t.mats)) { if (top.includes(mm)) o[mm] = v; else o._rest = (o._rest || 0) + v; } return o; });
+      return lines(items, ser, {fmt: fmtG, every: everyFor(items.length, 55), area: false}) + legend(ser, "materials");
+    }
+    const val = x => by === "n" ? x.n : by === "h" ? x.h : x.g;
+    const fmtv = v => by === "n" ? fmtN(v) : by === "h" ? hrs(v) : g(v);
+    const vis = m.map((x, i) => ({...x, c: col(i)})).filter(x => !isOff("materials", x.name));
+    const tot = vis.reduce((a, x) => a + val(x), 0);
+    return `<div class="rowc">${donut(vis.map(x => ({v: val(x), c: x.c, l: x.name, fmt: fmtv(val(x))})), by === "n" ? nf(tot) : by === "h" ? hrs(tot) : g(tot), by === "n" ? "Drucke" : by === "h" ? "Druckzeit" : vis.length + " Materialien")}
+      <div class="lst">${m.map((x, i) => `<div class="kvl lgrow ${isOff("materials", x.name) ? "off" : ""}"><button class="lgb" onclick="tog('materials','${esc(x.name)}')" title="ein-/ausblenden"><i class="sw" style="background:${col(i)}"></i>${esc(x.name)}</button>
+        <b>${fmtv(val(x))}${tot && !isOff("materials", x.name) ? ` · ${Math.round(val(x) / tot * 100)} %` : ""}</b></div>
+        ${x.success != null ? `<div class="msucc" title="Erfolgsrate ${esc(x.name)}"><div style="width:${x.success}%"></div><span>${x.success} % Erfolg · ${x.n} Drucke</span></div>` : ""}`).join("")}</div></div>`;
+  },
+  colors() {
+    const by = view("colors", 0), val = x => by === "n" ? x.n : x.g, fmtv = v => by === "n" ? fmtN(v) : g(v);
+    const c = S.colors;
+    if (!c.length) return empty();
+    const key = x => x.hex || x.name;
+    const vis = c.filter(x => !isOff("colors", key(x)));
+    const tot = vis.reduce((a, x) => a + val(x), 0);
+    return `<div class="rowc">${donut(vis.map(x => ({v: val(x), c: x.hex || "var(--off)", l: x.name || x.hex, fmt: fmtv(val(x))})), by === "n" ? nf(tot) : g(tot), c.length + " Farben")}
+      <div class="lst">${c.map(x => `<div class="kvl lgrow ${isOff("colors", key(x)) ? "off" : ""}"><button class="lgb" onclick="tog('colors','${esc(key(x))}')"><i class="sw ring" style="background:${x.hex || "var(--off)"}"></i>${esc(x.name || x.hex)}</button><b>${tot && !isOff("colors", key(x)) ? Math.round(val(x) / tot * 100) + " %" : fmtv(val(x))}</b></div>`).join("")}</div></div>`;
+  },
+  vendors() {
+    if (!S.vendors.length) return `<div class="muted small sempty">Noch keine Daten – kommt automatisch über die Spulen aus Spoolman, sobald PrintHub Drucke bucht.</div>`;
+    const by = view("vendors", 0);
+    return hbars(S.vendors, by === "c"
+      ? {val: x => x.cost, fmt: eur, sub: x => " · " + g(x.g), color: (x, i) => C(i)}
+      : {val: x => x.g, fmt: g, sub: x => x.cost ? " · " + eur(x.cost) : "", color: (x, i) => C(i)});
+  },
+  duration() { return bars(S.habits.duration, [{k: "n", l: "Drucke", c: C(0)}], {fmt: fmtN, every: CW < 420 ? 2 : 1}); },
+  weekday() {
+    const m = view("weekday", 0);
+    return bars(S.habits.weekday, [{k: m, l: {n: "Drucke", g: "Filament", h: "Druckzeit"}[m], c: C(0)}], {fmt: m === "n" ? fmtN : m === "g" ? fmtG : fmtH});
+  },
+  hour() {
+    const ser = [{k: "ok", l: "Fertig", c: C(0)}, {k: "bad", l: "Fehler/Abbruch", c: C(1)}];
+    return bars(S.habits.hour, ser, {fmt: fmtN, every: CW < 420 ? 6 : 3, title: x => `${x.label}:00–${x.label}:59 Uhr`})
+      + legend(ser, "hour");
+  },
+  energy() {
+    const m = S.meter;
+    if (!m.printers.length) return `<div class="muted small sempty">Kein Shelly eingerichtet (config.yaml → shelly).</div>`;
+    const fmt = (v, ax) => ax ? nf(v, 1) : PH.kwh(v);
+    return (view("energy", 0) === "line" ? lines : bars)(m.bars, [{k: "kwh", l: "Strom", c: C(0)}], {fmt, every: everyFor(m.bars.length, 45)})
+      + `<div class="muted small" style="margin-top:6px">Summe <b style="color:var(--fg)">${PH.kwh(m.kwh)}</b> · ${eur(m.cost)} (${eur(m.price)}/kWh) · gemessen, auch Standby</div>`;
+  },
+  costs() {
+    const ser = [{k: "fc", l: "Filament", c: C(0)}, {k: "ec", l: "Strom", c: C(1)}, {k: "wc", l: "Verschleiß", c: C(2)}];
+    const k = S.kpis, vals = {fc: eur(k.filament_cost), ec: eur(k.energy_cost), wc: eur(k.wear_cost)};
+    const fmt = (v, ax) => ax ? nf(v, v < 10 ? 1 : 0) + " €" : eur(v);
+    return (view("costs", 0) === "line" ? lines : bars)(S.timeline, ser, {fmt, every: everyFor(S.timeline.length, 45), area: false})
+      + legend(ser.map(s => ({...s, v: vals[s.k]})), "costs");
+  },
+  accuracy() {
+    const a = S.accuracy;
+    if (!a.n) return `<div class="muted small sempty">Sammelt sich ab jetzt: PrintHub merkt sich bei jedem Druck die Schätzung des Druckers und vergleicht sie mit der echten Dauer.</div>`;
+    return `<div class="rowc">${ring(Math.min(100, a.avg), "var(--c1)", a.avg + " %", a.avg > 100 ? `${a.avg - 100} % schneller` : a.avg < 100 ? `${100 - a.avg} % langsamer` : "genau")}
+      <div class="lst">${Object.entries(a.printers).map(([p, v]) => `<div class="kvl"><span>${esc(p)}</span><b>${v} %</b></div>`).join("")}
+      ${a.recent.map(r => `<div class="kvl"${TA(r.job, [["", "geschätzt", PH.dur(r.est)], ["", "tatsächlich", PH.dur(r.real)]])}><span class="muted">${esc(r.job)}</span><b>${Math.round(r.est / r.real * 100)} %</b></div>`).join("")}
+      <div class="muted small" style="margin-top:6px">100 % = Schätzung stimmt genau, über 100 % = schneller als geschätzt (${a.n} Drucke)</div></div></div>`;
+  },
+  printers() {
+    if (!S.by_printer.length) return empty();
+    if (view("printers", 0) === "bars") {
+      return hbars(S.by_printer, {val: x => x.hours, fmt: hrs, sub: x => ` · ${x.prints} Drucke · ${g(x.grams)}`, color: (x, i) => C(i), });
+    }
+    return `<div style="overflow-x:auto"><table class="list small"><tr><th>Drucker</th><th class="num">Drucke</th><th class="num">Erfolg</th><th class="num">Druckzeit</th><th class="num">Filament</th><th class="num">Strom</th><th class="num">Kosten</th></tr>
+      ${S.by_printer.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.prints}</td><td class="num">${p.success_rate == null ? "–" : nf(p.success_rate) + " %"}</td>
+        <td class="num">${hrs(p.hours)}</td><td class="num">${g(p.grams)}</td><td class="num">${PH.kwh(p.kwh)}</td><td class="num">${eur(p.total_cost)}</td></tr>`).join("")}</table></div>`;
+  },
+};
+function periodRange() {
+  const days = {week: 7, month: 30, year: 365}[range];
+  if (!days) return {};
+  return {from: dayKey(Date.now() / 1000 - (days - 1) * 86400), to: dayKey(Date.now() / 1000)};
+}
+const periodHref = () => vhref(periodRange()) + "&x=1";
+
+// ---------- Zeichnen ----------
+function cardHtml(k, i, n) {
+  const span = L.span[k] || W[k].span;
+  const views = (W[k].views || []).map((vw, vi) => `<div class="seg segs">${vw[1].map(([v, l]) =>
+    `<button class="${view(k, vi) === v ? "on" : ""}" onclick="setView('${k}',${vi},'${v}')">${l}</button>`).join("")}</div>`).join("");
+  return `<section class="card sw-card" data-k="${k}" style="--span:${span}">
+    <div class="sw-h"><span class="grip" title="Ziehen zum Verschieben">⠿</span><span class="label">${W[k].t}</span>
+      <span class="sw-x">${views}</span>
+      <span class="sw-b edit-only"><button title="ausblenden" onclick="hide('${k}')">👁</button></span></div>
+    <div class="sw-body"></div>
+    <span class="sw-rz" title="Ziehen: Breite und Höhe ändern"></span></section>`;
+}
+function renderOne(k) {
+  const c = document.querySelector(`.sw-card[data-k="${k}"]`);
+  if (!c || !S) return;
+  const body = c.querySelector(".sw-body");
+  body.style.height = "";
+  CW = body.clientWidth || 640; KEY = k;
+  CH = Math.max(90, (W[k].h || 170) + (L.h[k] || 0));
+  let html; try { html = R[k](); } catch (e) { html = `<div class="err small">${esc(e.message)}</div>`; }
+  body.innerHTML = html;
+  // Kacheln ohne Diagramm: gezogene Höhe fest übernehmen (Inhalt scrollt bei Bedarf)
+  const hb = !W[k].h && (L.hb || {})[k];
+  body.style.height = hb ? hb + "px" : ""; body.style.overflow = hb ? "auto" : "";
+  // Umschalter-Zustand im Kopf aktualisieren
+  const views = W[k].views || [];
+  c.querySelectorAll(".sw-x .seg").forEach((seg, vi) => seg.querySelectorAll("button").forEach((b, bi) =>
+    b.classList.toggle("on", views[vi][1][bi][0] === view(k, vi))));
+  c.querySelectorAll(".hmwrap").forEach(h => h.scrollLeft = h.scrollWidth);
+}
+function render() {
+  if (!S) return;
+  PHUI.hideTip();
+  document.querySelectorAll("#range button").forEach(b => b.classList.toggle("on", b.dataset.v === range));
+  $("note").innerHTML = S.empty ? `<div class="card snote">Im gewählten Zeitraum gibt es noch keine Drucke.</div>` : "";
+  const vis = L.order.filter(k => !L.hidden.includes(k));
+  $("grid").innerHTML = vis.map((k, i) => cardHtml(k, i, vis.length)).join("");
+  vis.forEach(renderOne);
+  $("hiddenlist").innerHTML = L.hidden.length ? `<div class="muted small" style="padding:4px 8px">Ausgeblendet – zum Einblenden anklicken:</div>` +
+    L.hidden.map(k => `<button onclick="unhide('${k}')">＋ ${W[k].t}</button>`).join("") : `<div class="muted small" style="padding:6px 8px">Alle Bausteine sind sichtbar.<br>Mit 👁 kannst du welche ausblenden.</div>`;
+}
+PHUI.sortable($("grid"), {items: ".sw-card", handle: ".grip", key: "k", onDrop: keys => {
+  L.order = [...keys, ...L.order.filter(k => !keys.includes(k))]; saveL(); render();
+}});
+PHUI.sortable($("grid"), {items: ".kt", handle: ".kgrip", key: "t", onDrop: keys => {
+  L.kpi = keys.map(k => L.kpi.find(t => t.k === k)).filter(Boolean); saveL(); renderOne("kpi");
+}});
+PHUI.resizable($("grid"), {handle: ".krz", item: ".kt", cols: it => getComputedStyle(it.parentNode).gridTemplateColumns.split(" ").length,
+  onResize: (it, {span}) => { const t = L.kpi.find(x => x.k === it.dataset.t); if (t && span) t.span = span; saveL(); renderOne("kpi"); }});
+PHUI.resizable($("grid"), {handle: ".sw-rz", item: ".sw-card", cols: () => innerWidth > 760 ? 6 : 0, heightEl: ".sw-body",
+  onResize: (c, {span, dh, height}) => {
+    const k = c.dataset.k;
+    if (span) L.span[k] = span;
+    if (dh && W[k].h) L.h[k] = (L.h[k] || 0) + dh;
+    else if (dh && height) { L.hb = L.hb || {}; L.hb[k] = height; }
+    c.style.gridColumn = ""; c.style.setProperty("--span", L.span[k] || W[k].span);
+    saveL(); renderOne(k);
+  }});
+
+async function importBB() {
+  if (!confirm("Bisherige Drucke aus dem Bambuddy-Druckprotokoll übernehmen?\nSchon vorhandene werden übersprungen. Spoolman wird dabei NICHT verändert.")) return;
+  PH.toast("Übernehme Verlauf aus Bambuddy …");
+  const r = await (await fetch("/api/history/import/bambuddy", {method: "POST"})).json();
+  if (r.error) return PH.toast(r.error, true);
+  PH.toast(`${r.added} Drucke übernommen${r.skipped ? `, ${r.skipped} schon vorhanden` : ""} ✓`);
+  load();
+}
+fetch("/api/settings").then(r => r.json()).then(d => document.body.classList.toggle("bb-import", !!d.settings.bambuddy_import)).catch(() => {});
+load();
+setInterval(load, 120000);
+let rsz, lastW = innerWidth; addEventListener("resize", () => { if (innerWidth === lastW) return; lastW = innerWidth; clearTimeout(rsz); rsz = setTimeout(render, 200); });
+</script>
+
+</body>
+</html>

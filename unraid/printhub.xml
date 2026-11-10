@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>printhub</Name>
+  <Repository>ghcr.io/milan941899/printhub:latest</Repository>
+  <Registry>https://github.com/milan941899/printhub/pkgs/container/printhub</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/milan941899/printhub</Support>
+  <Project>https://github.com/milan941899/printhub</Project>
+  <Overview>PrintHub – Cockpit für Bambu Lab A1 und Snapmaker U1: Status, Spulen (Spoolman), Kosten, Verlauf, Lager und Etiketten.</Overview>
+  <Category>Tools: Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:8095]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/google/material-design-icons/master/png/action/print/materialicons/48dp/2x/baseline_print_black_48dp.png</Icon>
+  <Config Name="WebUI-Port" Target="8095" Default="8095" Mode="tcp" Description="Weboberfläche" Type="Port" Display="always" Required="true" Mask="false">8095</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/printhub/config" Mode="rw" Description="config.yaml mit Druckern und Zugangsdaten" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/printhub/config</Config>
+  <Config Name="Daten" Target="/data" Default="/mnt/user/appdata/printhub/data" Mode="rw" Description="Verlauf, Einstellungen, Bilder" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/printhub/data</Config>
+  <Config Name="Docker-Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Optional: für den automatischen OctoEverywhere-Neustart" Type="Path" Display="advanced" Required="false" Mask="false">/var/run/docker.sock</Config>
+  <Config Name="Zeitzone" Target="TZ" Default="Europe/Rome" Mode="" Description="" Type="Variable" Display="advanced" Required="false" Mask="false">Europe/Rome</Config>
+</Container>

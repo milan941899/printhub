@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a1220">
+<title>Verlauf – PrintHub</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#0a1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+<script src="/static/common.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Print<span>Hub</span></h1>
+    <div class="sub">Druckverlauf &amp; Auswertung</div>
+  </div>
+  <nav class="nav"><a href="/">Übersicht</a><a href="/lager">Lager</a><a href="/verlauf">Verlauf</a><a href="/statistik">Statistik</a><a href="/einstellungen">Einstellungen</a></nav>
+</header>
+
+<div class="page">
+  <div class="seg" id="vtab" style="margin-bottom:14px">
+    <button data-v="prints" class="on">🖨️ Drucke</button><button data-v="queue">📥 Warteschlange</button>
+  </div>
+  <div id="v-queue" hidden>
+    <section class="card">
+      <div class="section-h"><div><span class="label">Was mit deinen Aufträgen passiert ist</span>
+        <div class="d muted small" style="margin-top:4px">Aus Bambuddy (fertig, abgebrochen …), vom Druckwächter (wartet, Platte belegt, gestartet) und aus PrintHub (Knöpfe, Telegram).</div></div>
+        <div class="seg" id="qh-src"><button data-v="" class="on">Alles</button><button data-v="Druckwächter">Druckwächter</button><button data-v="Bambuddy">Bambuddy</button><button data-v="PrintHub">PrintHub</button></div></div>
+      <div id="qh" class="qh muted small">Lade …</div>
+    </section>
+  </div>
+  <div id="v-prints">
+  <section class="card">
+    <div class="filters">
+      <div class="field">
+        <span class="lab">Zeitraum</span>
+        <select id="f-range">
+          <option value="month">Dieser Monat</option>
+          <option value="lastmonth">Letzter Monat</option>
+          <option value="30">Letzte 30 Tage</option>
+          <option value="year">Dieses Jahr</option>
+          <option value="all" selected>Alles</option>
+          <option value="custom">Eigener Zeitraum …</option>
+        </select>
+      </div>
+      <div class="field" id="f-custom" style="display:none;flex-direction:row;gap:6px">
+        <div class="field"><span class="lab">Von</span><input type="date" id="f-from"></div>
+        <div class="field"><span class="lab">Bis</span><input type="date" id="f-to"></div>
+      </div>
+      <div class="field"><span class="lab">Drucker</span><select id="f-printer"><option value="">Alle</option></select></div>
+      <div class="field"><span class="lab">Material</span><select id="f-material"><option value="">Alle</option></select></div>
+      <div class="field"><span class="lab">Spule</span><select id="f-spool"><option value="">Alle</option></select></div>
+      <div class="field"><span class="lab">Ergebnis</span>
+        <select id="f-result"><option value="">Alle</option><option value="ok">Fertig</option><option value="fail">Fehler / Abbruch</option></select>
+      </div>
+      <div class="field" style="flex:1;min-width:150px"><span class="lab">Suche Modell</span><input type="search" id="f-q" placeholder="z. B. Wichtel"></div>
+      <div class="field"><span class="lab">&nbsp;</span><a id="csv" class="small-btn" style="text-decoration:none;display:inline-block;border:1px solid var(--line);border-radius:9px;padding:8px 12px;background:var(--tile2);color:var(--fg);font-weight:600">⬇ CSV / Excel</a></div>
+    </div>
+  </section>
+
+  <div class="sum" id="sum" style="margin-bottom:16px"></div>
+
+  <section class="card">
+    <div class="section-h">
+      <span class="label">Monatsübersicht (letzte 12 Monate)</span>
+      <div class="seg" id="metric">
+        <button data-m="tc" class="on">Kosten</button><button data-m="g">Filament</button><button data-m="k">Strom</button><button data-m="n">Drucke</button>
+      </div>
+    </div>
+    <div class="chart" id="chart"><span class="muted small">Noch keine Daten.</span></div>
+  </section>
+
+  <section class="card">
+    <div class="section-h"><span class="label">Drucke</span><span class="muted small" id="count"></span></div>
+    <div style="overflow-x:auto">
+      <table class="list">
+        <thead><tr>
+          <th></th><th>Datum</th><th>Modell / Spulen</th><th class="hide-s">Drucker</th><th class="num hide-s">Dauer</th>
+          <th class="num">Filament</th><th class="num hide-s">Strom</th><th class="num">Kosten</th><th></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div style="text-align:center;margin-top:12px"><button id="more" style="display:none">Weitere laden</button></div>
+  </section>
+  </div>
+</div>
+
+<div id="lightbox" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="lbbox">
+    <div class="lbhead"><b id="lbtitle"></b><button class="small-btn" onclick="document.getElementById('lightbox').classList.remove('open')">✕ Schließen</button></div>
+    <div id="lbpics" class="lbpics"></div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const {esc, eur, kwh, g, dur} = PH;
+// ---------- Reiter: Drucke / Warteschlange ----------
+let QH = [];
+function vTab(v) {
+  document.querySelectorAll("#vtab button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  $("v-prints").hidden = v !== "prints"; $("v-queue").hidden = v !== "queue";
+  try { history.replaceState(null, "", v === "queue" ? "#warteschlange" : location.pathname + location.search); } catch {}
+  if (v === "queue") qhLoad();
+}
+document.querySelectorAll("#vtab button").forEach(b => b.onclick = () => vTab(b.dataset.v));
+document.querySelectorAll("#qh-src button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#qh-src button").forEach(x => x.classList.toggle("on", x === b)); qhDraw();
+});
+async function qhLoad() {
+  try { const d = await (await fetch("/api/queue/history")).json(); QH = d.entries || []; if (!d.enabled) { $("qh").textContent = "Bambuddy ist nicht eingerichtet."; return; } } catch { return; }
+  qhDraw();
+}
+function qhDraw() {
+  const src = (document.querySelector("#qh-src button.on") || {}).dataset?.v || "";
+  const rows = QH.filter(e => !src || e.src === src);
+  const ic = e => /fertig|gestartet/.test(e.text) ? "✅" : /abgebrochen|fehlgeschlagen|nicht gestartet|gestoppt/.test(e.text) ? "❌" : /wartet|zurückgestellt/.test(e.text) ? "⏳" : /übersprungen/.test(e.text) ? "⏭️" : "•";
+  let lastDay = "";
+  $("qh").innerHTML = rows.length ? rows.map(e => {
+    const d = e.time ? new Date(e.time * 1000) : null;
+    const day = d ? d.toLocaleDateString("de-DE", {weekday: "short", day: "2-digit", month: "2-digit", year: "numeric"}) : "";
+    const head = day && day !== lastDay ? `<div class="qh-day">${day}</div>` : ""; lastDay = day || lastDay;
+    return head + `<div class="qh-r"><span class="qh-t">${d ? d.toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"}) : ""}</span>
+      <span class="qh-i">${ic(e)}</span><span><b>${esc(e.name || "")}</b> – ${esc(e.text || "")}</span><span class="qh-s">${esc(e.src)}</span></div>`;
+  }).join("") : "Noch keine Einträge.";
+}
+if (location.hash === "#warteschlange") setTimeout(() => vTab("queue"), 0);
+function openPics(list, title) {
+  $("lbtitle").textContent = title;
+  $("lbpics").innerHTML = list.map((n, i) => `<figure><img src="/media/${n}"><figcaption>${n.includes("-foto-") ? "Foto nach dem Druck" : "Modell (aus der Druckdatei)"}</figcaption></figure>`).join("");
+  $("lightbox").classList.add("open");
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("lightbox").classList.remove("open"); });
+let offset = 0, metric = "tc", lastMonths = [];
+const PAGE = 50;
+
+function range() {
+  const v = $("f-range").value, now = new Date();
+  const ts = d => Math.floor(d.getTime() / 1000);
+  if (v === "month") return {from: ts(new Date(now.getFullYear(), now.getMonth(), 1))};
+  if (v === "lastmonth") return {from: ts(new Date(now.getFullYear(), now.getMonth() - 1, 1)), to: ts(new Date(now.getFullYear(), now.getMonth(), 1))};
+  if (v === "30") return {from: ts(new Date(Date.now() - 30 * 864e5))};
+  if (v === "year") return {from: ts(new Date(now.getFullYear(), 0, 1))};
+  if (v === "custom") {
+    const r = {};
+    if ($("f-from").value) r.from = ts(new Date($("f-from").value + "T00:00"));
+    if ($("f-to").value) r.to = ts(new Date($("f-to").value + "T00:00")) + 86400;
+    return r;
+  }
+  return {};
+}
+function params(extra = {}) {
+  const p = {...range(), printer: $("f-printer").value, material: $("f-material").value, spool: $("f-spool").value,
+             result: $("f-result").value, q: $("f-q").value.trim(), ...extra};
+  return new URLSearchParams(Object.entries(p).filter(([, v]) => v !== "" && v != null));
+}
+
+async function loadFacets() {
+  const d = await (await fetch("/api/history/stats?months=12")).json();
+  const f = d.facets;
+  $("f-printer").innerHTML = `<option value="">Alle</option>` + f.printers.map(p => `<option>${esc(p)}</option>`).join("");
+  $("f-material").innerHTML = `<option value="">Alle</option>` + f.materials.map(m => `<option>${esc(m)}</option>`).join("");
+  $("f-spool").innerHTML = `<option value="">Alle</option>` + f.spools.map(s =>
+    `<option value="${s.spool}">#${s.spool} ${esc(s.name || "")} (${g(s.g)})</option>`).join("");
+  const q = new URLSearchParams(location.search);
+  if (q.get("spool")) $("f-spool").value = q.get("spool");
+  // Aufruf aus der Statistik: Zeitraum, Drucker, Material, Ergebnis übernehmen
+  if (q.get("from") || q.get("to")) {
+    $("f-range").value = "custom"; $("f-custom").style.display = "flex";
+    $("f-from").value = q.get("from") || ""; $("f-to").value = q.get("to") || "";
+  }
+  if (q.get("printer")) { if (![...$("f-printer").options].some(o => o.value === q.get("printer"))) $("f-printer").add(new Option(q.get("printer"), q.get("printer"))); $("f-printer").value = q.get("printer"); }
+  if (q.get("material")) { const m = q.get("material").toUpperCase(); if (![...$("f-material").options].some(o => o.value === m)) $("f-material").add(new Option(m, m)); $("f-material").value = m; }
+  if (q.get("result")) $("f-result").value = q.get("result");
+}
+
+function sumTiles(t) {
+  const tile = (l, v, s = "", cls = "") => `<div class="etile"><div class="label">${l}</div><div class="v ${cls}">${v}</div><div class="s">${s}</div></div>`;
+  const fail = (t.n || 0) - (t.ok || 0);
+  $("sum").innerHTML =
+    tile("Drucke", (t.n || 0).toLocaleString("de-DE"), fail ? `${fail} abgebrochen` : "alle fertig") +
+    tile("Druckzeit", dur(t.d), "") +
+    tile("Filament", g(t.g), t.fc != null ? eur(t.fc) : "") +
+    tile("Strom", kwh(t.k), t.ec != null ? eur(t.ec) : "", "y") +
+    tile("Kosten gesamt", eur(t.tc), t.wc ? `inkl. ${eur(t.wc)} Verschleiß` : "", "acc");
+}
+
+function drawChart() {
+  const m = lastMonths;
+  if (!m.length) { $("chart").innerHTML = `<span class="muted small">Noch keine Daten.</span>`; return; }
+  const val = r => r[metric] || 0;
+  const max = Math.max(...m.map(val), 0.0001);
+  const fmt = v => metric === "tc" ? eur(v) : metric === "g" ? g(v) : metric === "k" ? kwh(v) : String(v);
+  $("chart").innerHTML = m.map(r => {
+    const [y, mo] = r.m.split("-");
+    const label = new Date(+y, +mo - 1, 1).toLocaleDateString("de-DE", {month: "short"}) + (mo === "01" ? " " + y.slice(2) : "");
+    return `<div class="b" title="${label}: ${fmt(val(r))}"><div class="bar2" style="height:${Math.max(2, val(r) / max * 100)}%"><span>${val(r) ? fmt(val(r)) : ""}</span></div><div class="m">${label}</div></div>`;
+  }).join("");
+}
+
+function row(e) {
+  const d = new Date(e.time * 1000);
+  const ok = e.result === "fertig";
+  const uses = e.usage.map(u => `<span class="use-chip" title="${esc(u.slot)}${u.booked ? "" : " – nicht gebucht: " + esc(u.error || "")}">
+      <span class="dot" style="background:${u.color || "transparent"}"></span>${u.spool ? `<a href="?spool=${u.spool}" onclick="event.preventDefault();filterSpool(${u.spool})">#${u.spool}</a> ` : ""}${esc(u.spool_name || (u.material ? u.material + " (Bambuddy)" : u.slot))} · ${String(u.grams).replace(".", ",")} g${u.booked || u.slot === "aus Bambuddy" ? "" : " ⚠"}</span>`).join("");
+  const imgs = [e.thumb, e.photo].filter(Boolean);
+  const pic = imgs.length ? `<div class="pics" onclick='openPics(${JSON.stringify(imgs)}, ${JSON.stringify(e.job || "")})'>
+      ${e.thumb ? `<img src="/media/${e.thumb}" alt="Modell">` : ""}${e.photo ? `<img src="/media/${e.photo}" alt="Foto" class="${e.thumb ? "ph" : ""}">` : ""}</div>` : `<div class="pics none">–</div>`;
+  return `<tr>
+    <td style="width:64px">${pic}</td>
+    <td style="white-space:nowrap">${d.toLocaleDateString("de-DE")}<div class="muted small">${d.toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"})}</div></td>
+    <td><b>${esc(e.job)}</b> <span class="res ${ok ? "ok" : "bad"}" style="font-size:10.5px;padding:1px 7px;border-radius:99px">${esc(e.result)}</span><div class="uses">${uses}</div></td>
+    <td class="hide-s">${esc(e.printer)}</td>
+    <td class="num hide-s">${dur(e.duration)}</td>
+    <td class="num">${g(e.grams)}<div class="muted small">${e.filament_cost != null ? eur(e.filament_cost) : ""}</div></td>
+    <td class="num hide-s">${e.kwh != null ? kwh(e.kwh) : "–"}<div class="muted small">${e.energy_cost != null ? eur(e.energy_cost) : ""}</div></td>
+    <td class="num"><b>${eur(e.total_cost)}</b>${e.wear_cost ? `<div class="muted small">🔧 ${eur(e.wear_cost)}</div>` : ""}</td>
+    <td><button class="small-btn" title="Eintrag löschen (Spoolman bleibt unverändert)" onclick="del(${e.id})">✕</button></td>
+  </tr>`;
+}
+
+async function load(reset = true) {
+  if (reset) offset = 0;
+  const p = params({limit: PAGE, offset});
+  const [d, st] = await Promise.all([
+    fetch("/api/history?" + p).then(r => r.json()),
+    reset ? fetch("/api/history/stats?months=12&" + params()).then(r => r.json()) : null,
+  ]);
+  if (st) { lastMonths = st.months; drawChart(); }
+  if (reset) { sumTiles(d.totals); $("rows").innerHTML = ""; }
+  $("rows").insertAdjacentHTML("beforeend", d.entries.map(row).join("") ||
+    (reset ? `<tr><td colspan="9" class="muted">Keine Drucke für diese Auswahl.</td></tr>` : ""));
+  offset += d.entries.length;
+  $("count").textContent = `${Math.min(offset, d.totals.n || 0)} von ${d.totals.n || 0}`;
+  $("more").style.display = offset < (d.totals.n || 0) ? "" : "none";
+  $("csv").href = "/api/history/export.csv?" + params();
+}
+
+function filterSpool(id) { $("f-spool").value = String(id); load(); window.scrollTo({top: 0, behavior: "smooth"}); }
+async function del(id) {
+  if (!confirm("Diesen Eintrag aus dem Verlauf löschen?\n(Spoolman wird dadurch nicht verändert.)")) return;
+  await fetch(`/api/history/${id}`, {method: "DELETE"});
+  PH.toast("Eintrag gelöscht"); load();
+}
+
+$("f-range").onchange = () => { $("f-custom").style.display = $("f-range").value === "custom" ? "flex" : "none"; load(); };
+["f-from", "f-to", "f-printer", "f-material", "f-spool", "f-result"].forEach(id => $(id).onchange = () => load());
+let qt; $("f-q").oninput = () => { clearTimeout(qt); qt = setTimeout(load, 300); };
+$("more").onclick = () => load(false);
+document.querySelectorAll("#metric button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#metric button").forEach(x => x.classList.toggle("on", x === b));
+  metric = b.dataset.m; drawChart();
+});
+loadFacets().then(() => load());
+</script>
+</body>
+</html>

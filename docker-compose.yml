@@ -1,0 +1,14 @@
+# Alternative zur Unraid-Vorlage (unraid/printhub.xml)
+services:
+  printhub:
+    image: ghcr.io/milan941899/printhub:latest
+    container_name: printhub
+    restart: unless-stopped
+    ports:
+      - "8095:8095"
+    volumes:
+      - /mnt/user/appdata/printhub/config:/config
+      - /mnt/user/appdata/printhub/data:/data
+      - /var/run/docker.sock:/var/run/docker.sock   # für den OctoEverywhere-Neustart
+    environment:
+      - TZ=Europe/Rome

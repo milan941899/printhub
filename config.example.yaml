@@ -1,0 +1,25 @@
+# PrintHub – Beispiel-Konfiguration
+# Kopieren nach /mnt/user/appdata/printhub/config/config.yaml und anpassen.
+# Strompreis, Benachrichtigungen, PIN usw. stellst du bequem in PrintHub unter "Einstellungen" ein.
+
+spoolman_url: http://192.168.1.10:7912
+# bambuddy_url: http://192.168.1.10:8000   # optional, geht auch in PrintHub unter Einstellungen -> Dienste
+
+printers:
+  - id: a1
+    name: Bambu A1
+    type: bambu
+    host: 192.168.1.50            # IP des Druckers (feste IP im Router)
+    serial: "SERIENNUMMER"        # Druckerdisplay: Einstellungen > Gerät
+    access_code: "12345678"       # LAN-Zugangscode
+    track_usage: true             # Verbrauch an Spoolman buchen
+    shelly: 192.168.1.51          # optional: Shelly-Steckdose vor dem Drucker
+    # camera_url: http://192.168.1.10:1984/api/frame.jpeg?src=a1   # optional: eigene Kamera (z. B. go2rtc)
+
+  # - id: u1
+  #   name: Snapmaker U1
+  #   type: moonraker
+  #   host: 192.168.1.60
+  #   port: 7125
+  #   channels: 4
+  #   track_usage: true           # false, wenn SpoolLink/Moonraker selbst bucht

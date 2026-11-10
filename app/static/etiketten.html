@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Etiketten – PrintHub</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#0a1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+<script src="/static/common.js"></script>
+<style id="pagecss"></style>
+<style>
+  .lbl { background:#fff; color:#000; border:1px dashed #9aa; display:flex; align-items:center; gap:2.5mm; padding:2mm; overflow:hidden; box-sizing:border-box; break-inside:avoid; }
+  .lbl img { height:100%; aspect-ratio:1; flex:none; image-rendering:pixelated; }
+  .lbl .tx { min-width:0; display:flex; flex-direction:column; gap:.6mm; font-family:system-ui, sans-serif; line-height:1.1; }
+  .lbl .id { font-size:5.2mm; font-weight:800; }
+  .lbl .nm { font-size:3mm; font-weight:700; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .lbl .mt { font-size:2.6mm; display:flex; align-items:center; gap:1.2mm; }
+  .lbl .mt i { width:3mm; height:3mm; border-radius:50%; border:.3mm solid #000; display:inline-block; }
+  .lbl .hint { font-size:2mm; color:#444; }
+  .lbl.round { border-radius:50%; flex-direction:column; justify-content:center; text-align:center; gap:1mm; }
+  .lbl.round img { height:55%; }
+  .lbl.round .tx { align-items:center; }
+  #sheet { display:flex; flex-wrap:wrap; gap:3mm; }
+  @media print {
+    html, body { background:#fff !important; padding:0 !important; margin:0 !important; }
+    header, .noprint { display:none !important; }
+    .lbl { border:none; }
+    #sheet { gap:0; }
+  }
+</style>
+</head>
+<body>
+<header class="noprint">
+  <div class="brand"><h1>Print<span>Hub</span></h1><div class="sub">Etiketten für Spulen</div></div>
+  <nav class="nav"><a href="/">Übersicht</a><a href="/lager">Lager</a><a href="/verlauf">Verlauf</a><a href="/statistik">Statistik</a><a href="/einstellungen">Einstellungen</a></nav>
+</header>
+
+<section class="card noprint">
+  <div class="filters">
+    <div class="field"><span class="lab">Format</span>
+      <select id="fmt">
+        <option value="50x30">Etikettendrucker 50 × 30 mm</option>
+        <option value="62x29">Etikettendrucker 62 × 29 mm (Brother)</option>
+        <option value="40x30">Etikettendrucker 40 × 30 mm</option>
+        <option value="round40">Rund 40 mm (Spulenseite)</option>
+        <option value="a4">A4-Bogen 3 × 8 (70 × 37 mm)</option>
+      </select>
+    </div>
+    <div class="field"><span class="lab">&nbsp;</span><button class="primary" id="qlbtn" hidden onclick="qlPrint()">🏷 Auf Brother drucken</button></div>
+    <div class="field"><span class="lab">&nbsp;</span><button id="pbtn" class="primary" onclick="print()">🖨 Über Browser drucken</button></div>
+    <div class="field" style="flex:1;min-width:220px"><span class="lab">QR/NFC-Adresse</span><div class="muted small" id="base"></div></div>
+  </div>
+  <div class="muted small" id="qlhint" style="margin-top:10px"></div>
+  <div class="muted small" style="margin-top:10px">Tipp: Für NFC denselben Link mit der App „NFC Tools“ auf den Tag schreiben (Lager → 🔗 bei der Spule). Beim Scannen öffnet sich die Zuweisung „welcher Slot?“.</div>
+</section>
+
+<div id="sheet"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const FMT = {
+  "50x30": {w: 50, h: 30, page: "50mm 30mm", cls: ""},
+  "62x29": {w: 62, h: 29, page: "62mm 29mm", cls: ""},
+  "40x30": {w: 40, h: 30, page: "40mm 30mm", cls: ""},
+  "round40": {w: 40, h: 40, page: "40mm 40mm", cls: "round"},
+  "a4": {w: 70, h: 37, page: "A4", cls: "", sheet: true},
+};
+let L = [];
+
+function render() {
+  const f = FMT[$("fmt").value];
+  try { localStorage.setItem("ph-label-fmt", $("fmt").value); } catch {}
+  $("pagecss").textContent = f.sheet
+    ? `@page { size: A4; margin: 0; } @media print { #sheet { width:210mm; padding:0; } }`
+    : `@page { size: ${f.page}; margin: 0; } @media print { #sheet { display:block; } .lbl { page-break-after: always; } }`;
+  $("sheet").innerHTML = L.map(s => `<div class="lbl ${f.cls}" style="width:${f.w}mm;height:${f.h}mm">
+      <img src="/api/qr.svg?text=${encodeURIComponent(s.url)}" alt="">
+      <div class="tx">
+        <div class="id">#${s.id}</div>
+        <div class="nm">${PH.esc(s.name)}</div>
+        <div class="mt"><i style="background:${s.color || "#fff"}"></i>${PH.esc(s.material)}</div>
+        ${f.cls ? "" : `<div class="hint">Scannen → Slot wählen</div>`}
+      </div>
+    </div>`).join("") || `<div class="card muted noprint">Keine Spulen ausgewählt. Wähl im Lager Spulen aus.</div>`;
+}
+
+async function load() {
+  try { const v = localStorage.getItem("ph-label-fmt"); if (v && FMT[v]) $("fmt").value = v; } catch {}
+  const ids = new URLSearchParams(location.search).get("spools") || "";
+  const d = await (await fetch("/api/labels?spools=" + encodeURIComponent(ids))).json();
+  L = d.labels || [];
+  $("base").textContent = (d.base || "") + "/assign?spool=…";
+  render();
+}
+$("fmt").onchange = render;
+async function qlPrint() {
+  if (!L.length) return PH.toast("Keine Spulen ausgewählt", true);
+  const b = $("qlbtn"); b.disabled = true; PH.toast(`Sende ${L.length} Etikett(en) …`);
+  try {
+    const r = await (await fetch("/api/labels/print", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({spools: L.map(s => s.id)})})).json();
+    PH.toast(r.error || `${r.printed} Etikett(en) gedruckt ✓`, !!r.error);
+  } finally { b.disabled = false; }
+}
+fetch("/api/labels/media").then(r => r.json()).then(d => {
+  if (!d.host) return;
+  $("qlbtn").hidden = false; $("pbtn").classList.remove("primary");
+  $("qlhint").innerHTML = `Brother ${PH.esc(d.host)} · Etikett ${PH.esc(d.media[d.current] || d.current)} (änderbar unter Einstellungen → Spulen). Die Vorschau unten gilt für den Browserdruck.`;
+}).catch(() => {});
+load();
+</script>
+</body>
+</html>

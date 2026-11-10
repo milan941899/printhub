@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a1220">
+<title>Anmelden – PrintHub</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#0a1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+<style>
+  .login { max-width:340px; margin:12vh auto 0; text-align:center; }
+  .login h1 { font-size:28px; margin-bottom:6px; }
+  #pin { font-size:28px; letter-spacing:10px; text-align:center; width:100%; padding:12px; margin:18px 0 12px; }
+  .login button { width:100%; padding:12px; font-size:16px; }
+</style>
+</head>
+<body>
+<section class="card login">
+  <h1>Print<span style="color:var(--acc)">Hub</span></h1>
+  <div class="muted">Bitte PIN eingeben</div>
+  <form id="f">
+    <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="8" autofocus>
+    <button class="primary" type="submit">Anmelden</button>
+  </form>
+  <div id="err" class="err" style="margin-top:10px"></div>
+</section>
+<script>
+document.getElementById("f").onsubmit = async e => {
+  e.preventDefault();
+  const r = await fetch("/api/login", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({pin: document.getElementById("pin").value})});
+  const d = await r.json();
+  if (d.ok) { const n = new URLSearchParams(location.search).get("next"); location.href = n && n.startsWith("/") ? n : "/"; }
+  else { document.getElementById("err").textContent = d.error || "Fehler"; document.getElementById("pin").value = ""; }
+};
+</script>
+</body>
+</html>

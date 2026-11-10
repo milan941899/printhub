@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a1220">
+<title>Einstellungen – PrintHub</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#0a1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+<script src="/static/common.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Print<span>Hub</span></h1>
+    <div class="sub">Einstellungen · Änderungen werden sofort gespeichert</div>
+  </div>
+  <nav class="nav"><a href="/">Übersicht</a><a href="/lager">Lager</a><a href="/verlauf">Verlauf</a><a href="/statistik">Statistik</a><a href="/einstellungen">Einstellungen</a></nav>
+</header>
+
+<div class="page">
+<nav class="tabs" id="tabs">
+  <a data-t="allgemein">⚙️ Allgemein</a>
+  <a data-t="drucker">🖨️ Drucker</a>
+  <a data-t="dienste">🔗 Dienste</a>
+  <a data-t="wartung">🔧 Wartung <i id="t-due"></i></a>
+  <a data-t="waechter">🛡️ Druckwächter</a>
+  <a data-t="spulen">🧵 Spulen &amp; Druck</a>
+  <a data-t="kosten">💶 Kosten</a>
+  <a data-t="meldungen">🔔 Benachrichtigungen</a>
+  <a data-t="zugriff">🔒 Zugriff</a>
+  <a data-t="daten">⇄ Import / Export</a>
+  <a data-t="diagnose">🩺 Diagnose</a>
+  <a data-t="system">ℹ️ System</a>
+</nav>
+
+<!-- ============ Allgemein ============ -->
+<div class="set-grid" data-tab="allgemein">
+  <section class="card">
+    <div class="label">Darstellung</div>
+    <div class="row">
+      <div><div class="t">Theme</div><div class="d">Gilt auf allen Geräten</div></div>
+      <div class="seg" id="theme">
+        <button data-v="dark">🌙 Dunkel</button><button data-v="light">☀️ Hell</button><button data-v="auto">Automatisch</button>
+      </div>
+    </div>
+    <div class="row">
+      <div><div class="t">Datensparmodus (nur dieses Gerät)</div><div class="d">Kamerabild nur auf Antippen, Druckerdaten alle 10 s statt 3 s. Im Mobilfunk wird das Kamerabild ohnehin nur alle 10 s erneuert</div></div>
+      <select id="saver" style="width:170px" onchange="try{localStorage.setItem('ph-saver', this.value)}catch{}; PH.toast('Gespeichert ✓ (dieses Gerät)')">
+        <option value="off">Aus</option><option value="cell">Nur im Mobilfunk</option><option value="on">Immer</option></select>
+    </div>
+    <div class="row">
+      <div><div class="t">Fortschritt im Browser-Tab</div><div class="d">Tab-Titel „42 % · PrintHub“ und ein Fortschrittsring als Symbol – auf allen Seiten</div></div>
+      <label class="switch"><input type="checkbox" data-k="tab_progress"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Letzte Drucke auf der Übersicht</div><div class="d">0 = ausblenden</div></div>
+      <input type="number" min="0" max="50" step="1" data-k="history_on_dashboard" style="width:90px">
+    </div>
+    <div class="row">
+      <div><div class="t">Bambuddy-Warteschlange auf der Übersicht</div><div class="d">Nur wenn Bambuddy unter „Dienste“ eingerichtet ist</div></div>
+      <label class="switch"><input type="checkbox" data-k="queue_on_dashboard"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Bereiche auf der Übersicht</div><div class="d">Reihenfolge und Ein-/Ausklappen merkt sich jedes Gerät selbst</div></div>
+      <button class="small-btn" onclick="resetLayout()">Zurücksetzen</button>
+    </div>
+  </section>
+</div>
+
+<!-- ============ Drucker ============ -->
+<div data-tab="drucker">
+  <div class="wtool">
+    <div class="muted small">Zugangsdaten stehen in <code>config/config.yaml</code> auf dem Server. Änderungen gelten nach einem Neustart von PrintHub (dauert ein paar Sekunden). Vorher wird eine Sicherung <code>config.yaml.bak</code> angelegt.</div>
+    <div class="unit-in"><button class="small-btn" onclick="pcAdd()">＋ Drucker hinzufügen</button></div>
+  </div>
+  <div id="pc-list"></div>
+  <div class="nr-save" style="margin-top:12px"><button class="primary" onclick="pcSave()">💾 Speichern &amp; PrintHub neu starten</button>
+    <span class="muted small" id="pc-state"></span></div>
+
+  <section class="card" style="margin-top:16px">
+    <div class="label">⚡ Strom-Verwaltung</div>
+    <div class="d muted small" style="margin:6px 0 4px">PrintHub schaltet den Drucker nach dem Druck oder nach Leerlauf aus – aber nie während eines Drucks, solange die Düse heiß ist,
+      ein Auftrag gleich startet oder der Druckwächter auf deine Antwort wartet. Geschaltet wird über Bambuddys Steckdose (Bambuddy bleibt im Bild), notfalls direkt über die Shelly.</div>
+    <div class="row"><div><div class="t">Automatisch ausschalten</div><div class="d" id="pw-hint">Ersetzt Bambuddys „Auto Aus“</div></div>
+      <label class="switch"><input type="checkbox" data-k="power_auto" onchange="setTimeout(pwHint, 700)"><span></span></label></div>
+    <div class="row"><div><div class="t">Nach dem Druck</div><div class="d">Wartezeit nach Druckende</div></div>
+      <div class="unit-in"><input type="number" min="0" max="240" step="1" data-k="power_after_min" style="width:80px"> min</div></div>
+    <div class="row"><div><div class="t">Leerlauf</div><div class="d">Eingeschaltet, aber kein Druck (z. B. von Hand eingeschaltet und vergessen)</div></div>
+      <div class="unit-in"><input type="number" min="5" max="600" step="5" data-k="power_idle_min" style="width:80px"> min</div></div>
+    <div class="row"><div><div class="t">Erst aus unter</div><div class="d">Düsentemperatur – schont das Hotend</div></div>
+      <div class="unit-in"><input type="number" min="30" max="80" step="1" data-k="power_off_temp" style="width:80px"> °C</div></div>
+    <div class="row" id="pw-bb-row" hidden><div><div class="t">Bambuddy „Auto Aus“</div><div class="d" id="pw-bb">–</div></div>
+      <button class="small-btn" id="pw-bb-btn" onclick="pwBambuddy()">In Bambuddy ausschalten</button></div>
+  </section>
+</div>
+
+<!-- ============ Dienste ============ -->
+<div class="set-grid" data-tab="dienste">
+  <section class="card">
+    <div class="svc-h"><span class="svc-ic">🧵</span><div><div class="t">Spoolman</div><div class="d" id="st-spoolman">–</div></div></div>
+    <div class="row">
+      <div><div class="t">Adresse</div><div class="d">Leer = Wert aus der config.yaml</div></div>
+      <input type="url" data-k="spoolman_url" placeholder="http://192.168.1.10:7912" style="width:230px">
+    </div>
+    <div class="row">
+      <div><div class="t">Container</div><div class="d">Für Status und Neustart</div></div>
+      <div class="unit-in"><input type="text" data-k="spoolman_container" style="width:150px"><button class="small-btn" onclick="dockerTest('spoolman_container')">Prüfen</button></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="svc-h"><span class="svc-ic">🖨️</span><div><div class="t">Bambuddy</div><div class="d" id="st-bambuddy">–</div></div></div>
+    <div class="row">
+      <div><div class="t">Adresse</div><div class="d">Für Warteschlange und Wartungs-Import</div></div>
+      <input type="url" data-k="bambuddy_url" placeholder="http://192.168.1.10:8000" style="width:230px">
+    </div>
+    <div class="row">
+      <div><div class="t">API-Schlüssel</div><div class="d">Nur nötig, wenn in Bambuddy die Anmeldung eingeschaltet ist (Bambuddy → Einstellungen → API-Schlüssel, Rechte „Status lesen“ + „Warteschlange“)</div></div>
+      <input type="password" data-k="bambuddy_key" data-secret autocomplete="off" style="width:230px">
+    </div>
+    <div class="row">
+      <div><div class="t">Container</div></div>
+      <div class="unit-in"><input type="text" data-k="bambuddy_container" style="width:150px"><button class="small-btn" onclick="dockerTest('bambuddy_container')">Prüfen</button></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="svc-h"><span class="svc-ic">🌐</span><div><div class="t">OctoEverywhere</div><div class="d" id="st-octoeverywhere">–</div></div></div>
+    <div class="row">
+      <div><div class="t">Link</div><div class="d">Wohin „Öffnen“ auf der Übersicht führt</div></div>
+      <input type="url" data-k="oe_url" style="width:230px">
+    </div>
+    <div class="row">
+      <div><div class="t">Container</div><div class="d">Name oder Teil davon, mehrere mit Komma</div></div>
+      <div class="unit-in"><input type="text" data-k="oe_container" style="width:150px"><button class="small-btn" onclick="dockerTest('oe_container')">Prüfen</button></div>
+    </div>
+    <div class="row">
+      <div><div class="t">Bei Druckstart neu starten</div><div class="d">Damit Gadget zuverlässig scharf schaltet</div></div>
+      <label class="switch"><input type="checkbox" data-k="oe_restart"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Verzögerung nach Druckstart</div></div>
+      <div class="unit-in"><input type="number" min="0" max="600" step="5" data-k="oe_delay" style="width:90px"> s</div>
+    </div>
+  </section>
+</div>
+
+<!-- ============ Wartung ============ -->
+<div data-tab="wartung">
+  <div class="wtool">
+    <div class="muted small">Gezählt werden Druckstunden. Bei Aufgaben „in Tagen“ zählt die Zeit seit der letzten Erledigung.</div>
+    <button class="small-btn bb-only" onclick="importMaint()">⇩ Stand aus Bambuddy übernehmen</button>
+  </div>
+  <div id="mprinters"></div>
+
+  <section class="card" style="margin-top:16px">
+    <div class="section-h">
+      <div><div class="t" style="font-weight:700">Wartungsaufgaben</div><div class="d muted small">Standardintervalle – pro Drucker oben anpassbar</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="small-btn" onclick="restoreTypes()">Standardaufgaben wiederherstellen</button>
+        <button class="small-btn primary" onclick="editType()">＋ Eigene Aufgabe</button>
+      </div>
+    </div>
+    <div id="tform"></div>
+    <div class="mtypes" id="mtypes"></div>
+  </section>
+
+  <section class="card" style="margin-top:16px">
+    <div class="label">Wartungsbuch</div>
+    <div id="mlog" class="muted small" style="margin-top:8px">–</div>
+  </section>
+</div>
+
+<!-- ============ Druckwächter (früher Nachtruhe) ============ -->
+<div data-tab="waechter">
+  <section class="card nr-status" id="nr-status">Lade …</section>
+  <form id="nr-form" class="set-grid" onsubmit="event.preventDefault();saveNR()">
+    <section class="card">
+      <div class="label">Druckfenster</div>
+      <div class="d muted small" style="margin:6px 0 8px">Ein wartender Auftrag startet nur, wenn er bis „Bis“ (minus Puffer) fertig wird. Leere Felder pro Tag = Standard bzw. Wochenende.</div>
+      <div class="row"><div><div class="t">Standard (alle Tage)</div></div>
+        <div class="unit-in"><input type="time" name="DRUCK_AB" required> – <input type="time" name="DRUCK_BIS" required></div></div>
+      <div class="row"><div><div class="t">Wochenende (Sa + So)</div><div class="d">leer = wie Standard</div></div>
+        <div class="unit-in"><input type="time" name="DRUCK_AB_WE"> – <input type="time" name="DRUCK_BIS_WE"></div></div>
+      <div class="row"><div><div class="t">Puffer</div><div class="d">So viel früher muss der Druck fertig sein</div></div>
+        <div class="unit-in"><input type="number" min="0" max="240" name="PUFFER_MIN" style="width:80px"> min</div></div>
+      <table class="list small nr-week"><tr><th>Tag</th><th>Ab</th><th>Bis</th><th title="An diesem Tag gar nicht drucken">kein Druck</th><th>gilt</th></tr>
+        <tbody id="nr-days"></tbody></table>
+    </section>
+    <section class="card">
+      <div class="label">Plattenprüfung (Kamera)</div>
+      <div class="row"><div><div class="t">Vor dem Start prüfen, ob die Platte leer ist</div><div class="d">Über die Plattenerkennung von Bambuddy</div></div>
+        <label class="switch"><input type="checkbox" name="PLATTE_PRUEFEN"><span></span></label></div>
+      <div class="row"><div><div class="t">Prüfen mit</div><div class="d">PrintHub = eigene Referenzbilder (unten einrichten)</div></div>
+        <select name="PLATTE_QUELLE" style="width:auto"><option value="printhub">PrintHub</option><option value="bambuddy">Bambuddy</option></select></div>
+      <div class="row"><div><div class="t">Schwelle (Bambuddy)</div><div class="d">Bis zu dieser Abweichung gilt die Platte als leer. Für PrintHub gilt die Schwelle unten bei den Referenzbildern</div></div>
+        <div class="unit-in"><input type="number" min="0" max="100" step="0.5" name="PLATTE_SCHWELLE" style="width:80px"> %</div></div>
+      <div class="row"><div><div class="t">Rückfragen, bevor abgebrochen wird</div></div>
+        <div class="unit-in"><input type="number" min="1" max="20" name="PLATTE_VERSUCHE" style="width:70px"> × alle <input type="number" min="1" max="120" name="PLATTE_WARTE_MIN" style="width:70px"> min</div></div>
+      <div class="row"><div><div class="t">Kamerafotos in den Meldungen</div></div>
+        <label class="switch"><input type="checkbox" name="KAMERA_BILD"><span></span></label></div>
+      <div class="row"><div><div class="t">Alles über den Druckwächter starten</div><div class="d">Neue Aufträge in Bambuddy werden sofort auf „manuell starten“ gestellt – Bambuddy startet nichts selbst, sondern der Druckwächter (Druckfenster, Licht, Plattenprüfung)</div></div>
+        <label class="switch"><input type="checkbox" name="ALLES_UEBER_WAECHTER"><span></span></label></div>
+      <div class="label" style="margin-top:14px">Licht &amp; Ausschalten</div>
+      <div class="row"><div><div class="t">Licht aus nach Druckende</div></div>
+        <div class="unit-in"><input type="number" min="0" max="3600" name="LICHT_AUS_NACH" style="width:80px"> s</div></div>
+      <div class="row"><div><div class="t">Nach Fehlschlag/Abbruch Drucker ausschalten</div><div class="d">Sobald die Düse abgekühlt ist</div></div>
+        <label class="switch"><input type="checkbox" name="AUS_BEI_FEHLER"><span></span></label></div>
+      <div class="row"><div><div class="t">Abgekühlt unter</div></div>
+        <div class="unit-in"><input type="number" min="20" max="120" name="AUS_TEMP" style="width:80px"> °C</div></div>
+    </section>
+    <section class="card">
+      <div class="label">Meldungen</div>
+      <div class="d muted small" style="margin:6px 0 10px">Der Druckwächter schickt über die ntfy-Adresse aus <a href="#meldungen">Benachrichtigungen</a>. Welche Meldungen du bekommst, stellst du dort ein (Gruppe „Druckwächter“). Die Antwort-Knöpfe laufen über „Thema-antwort“.</div>
+      <div class="label" style="margin-top:4px">Bambuddy</div>
+      <div class="row"><div><div class="t">Adresse</div></div><input type="url" name="BAMBUDDY_URL" style="width:230px"></div>
+      <div class="row"><div><div class="t">API-Schlüssel</div><div class="d">Braucht Rechte für Warteschlange, Smart Plug und Kamera</div></div><input type="password" name="BAMBUDDY_API_KEY" data-secret autocomplete="off" style="width:230px"></div>
+      <div class="row"><div><div class="t">Warnen, wenn Bambuddy nicht erreichbar</div></div>
+        <div class="unit-in">nach <input type="number" min="1" max="240" name="BAMBUDDY_ALARM_MIN" style="width:70px"> min</div></div>
+      <div class="row"><div><div class="t">Testmodus</div><div class="d">Nur ins Log schreiben, nichts schalten oder starten</div></div>
+        <label class="switch"><input type="checkbox" name="DRY_RUN"><span></span></label></div>
+    </section>
+    <div class="nr-save"><button class="primary" type="submit">💾 Druckwächter-Einstellungen speichern</button>
+      <span class="muted small">Wird sofort übernommen – du bekommst eine Bestätigung per ntfy.</span></div>
+  </form>
+  <section class="card" style="margin-top:16px" id="plate-card">
+    <div class="section-h"><div><span class="label">Plattenerkennung in PrintHub</span>
+      <div class="d muted small" style="margin-top:4px">Nimm Referenzbilder der <b>leeren</b> Platte auf – gern mehrere (Licht an/aus, verschiedene Platten). Geprüft wird gegen das ähnlichste. Den Prüfbereich legst du als Vieleck mit beliebig vielen Punkten fest (oder als Rechteck). Steht die Platte auf manchen Bildern anders, bekommt jedes Referenzbild über „⬠ Bereich für dieses Bild“ sein eigenes Vieleck. Die Abweichung ist der Anteil veränderter Fläche – schon ein kleines Teil ergibt 1–5 %, deshalb ist die Schwelle hier niedriger als bei Bambuddy.</div></div>
+      <select id="pl-printer" style="width:auto"></select></div>
+    <div class="plate-grid">
+      <div>
+        <div class="plate-live" id="pl-live"><img id="pl-img" alt="Kamerabild">
+          <svg id="pl-svg" viewBox="0 0 1600 900" preserveAspectRatio="none"></svg><div class="pl-msg" id="pl-msg">Lade Kamerabild …</div></div>
+        <div id="pl-edit"></div>
+        <div class="pl-mode">
+          <div class="seg"><button id="pm-poly" onclick="plMode('poly')">⬠ Vieleck (Punkte)</button><button id="pm-rect" onclick="plMode('rect')">▭ Rechteck</button></div>
+          <span class="muted small" id="pl-hint"></span>
+          <span style="flex:1"></span>
+          <button class="small-btn" id="pl-clear" onclick="plClear()">Punkte löschen</button>
+          <button class="small-btn primary" id="pl-save" onclick="plSavePoly()">Bereich speichern</button>
+        </div>
+        <div class="unit-in" style="margin-top:8px;flex-wrap:wrap">
+          <button class="small-btn" onclick="plSnap()">⟳ Neues Bild</button>
+          <label class="small"><input type="checkbox" id="pl-light" checked> Licht vorher an</label>
+          <input type="text" id="pl-label" placeholder="Beschriftung, z. B. PEI texturiert" style="width:200px">
+          <button class="small-btn primary" onclick="plAdd()">＋ Als Referenz (leere Platte)</button>
+          <button class="small-btn" onclick="plCheck()">🔍 Jetzt prüfen</button>
+          <span class="unit-in small" title="Größe des größten zusammenhängenden Teils (Anteil am Prüfbereich), ab der die Platte als belegt gilt. Kleiner = empfindlicher.">Teil ab <input type="number" id="pl-obj" min="0.01" max="20" step="0.01" style="width:70px" onchange="plSet('min_obj', this.value)"> %</span>
+          <span class="unit-in small" title="Zusätzlich: gesamte veränderte Fläche, ab der die Platte als belegt gilt (z. B. viele kleine Teile)">Fläche ab <input type="number" id="pl-thr" min="0.1" max="50" step="0.1" style="width:70px" onchange="plSet('threshold', this.value)"> %</span>
+        </div>
+        <div id="pl-result"></div>
+      </div>
+      <div>
+        <div class="label" style="margin-bottom:8px">Referenzbilder</div>
+        <div id="pl-refs" class="pl-refs muted small">–</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:16px">
+    <div class="section-h"><span class="label">Protokoll</span>
+      <span class="unit-in small"><label><input type="checkbox" id="nr-hms" checked> HMS-Meldungen</label><button class="small-btn" onclick="loadNR()">⟳</button></span></div>
+    <pre id="nr-log" class="nr-log">–</pre>
+  </section>
+</div>
+
+<!-- ============ Spulen & Druck ============ -->
+<div class="set-grid" data-tab="spulen">
+  <section class="card">
+    <div class="label">Spulen</div>
+    <div class="row">
+      <div><div class="t">Slot am Drucker einstellen</div><div class="d">Beim Zuweisen Material, Farbe und Profil an den A1 senden (Bambuddy &amp; Bambu Studio sehen es dann)</div></div>
+      <label class="switch"><input type="checkbox" data-k="sync_slots"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Standort für Spulen im Regal</div><div class="d">So heißt der Ort in Spoolman, wenn eine Spule aus dem Drucker kommt</div></div>
+      <input type="text" data-k="storage_location" style="width:150px">
+    </div>
+    <div class="row">
+      <div><div class="t">„Fast leer“ unter</div><div class="d">Für Lager, Dienste-Kachel und Benachrichtigung</div></div>
+      <div class="unit-in"><input type="number" min="0" step="10" data-k="low_spool_g" style="width:90px"> g</div>
+    </div>
+    <div class="row">
+      <div><div class="t">Adresse für QR-Codes &amp; NFC</div><div class="d">Leer = so wie gerade im Browser. Am besten die feste Adresse im WLAN</div></div>
+      <input type="url" data-k="public_url" placeholder="http://192.168.1.10:8095" style="width:230px">
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="label">Druck-Überwachung</div>
+    <div class="row">
+      <div><div class="t">Warnen, wenn das Filament nicht reicht</div><div class="d">Beim Druckstart: geplanter Bedarf gegen den Rest in Spoolman</div></div>
+      <label class="switch"><input type="checkbox" data-k="warn_short"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Sicherheitsreserve</div><div class="d">So viel soll mindestens übrig bleiben</div></div>
+      <div class="unit-in"><input type="number" min="0" step="5" data-k="short_reserve_g" style="width:90px"> g</div>
+    </div>
+    <div class="row">
+      <div><div class="t">Foto nach dem Druck</div><div class="d">Kamerabild vom fertigen Teil im Verlauf speichern</div></div>
+      <label class="switch"><input type="checkbox" data-k="photo_enabled"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Foto bei</div></div>
+      <div class="checks" id="photo_events">
+        <label><input type="checkbox" value="finish"> Fertig</label>
+        <label><input type="checkbox" value="fail"> Abbruch</label>
+      </div>
+    </div>
+    <div class="row">
+      <div><div class="t">Wartezeit bis zum Foto</div><div class="d">Damit das Bett nach vorne gefahren und das Licht an ist</div></div>
+      <div class="unit-in"><input type="number" min="0" max="300" step="1" data-k="photo_delay" style="width:90px"> s</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="label">Etikettendrucker (Brother QL)</div>
+    <div class="d muted small" style="margin:6px 0 4px">Etiketten mit QR-Code direkt aus PrintHub drucken – ohne Druckdialog. Der Drucker muss im WLAN/Netzwerk sein (z. B. QL-810W, Port 9100).</div>
+    <div class="row"><div><div class="t">IP-Adresse</div><div class="d">Leer = Druck wie bisher über den Browser</div></div>
+      <input type="text" data-k="label_host" placeholder="192.168.1.20" style="width:150px"></div>
+    <div class="row"><div><div class="t">Modell</div></div><select data-k="label_model" id="lbl-model" style="width:150px"></select></div>
+    <div class="row"><div><div class="t">Etikett</div><div class="d">Muss zur eingelegten Rolle passen</div></div><select data-k="label_media" id="lbl-media" style="width:210px" onchange="lblPrev()"></select></div>
+    <div class="row"><div><div class="t">Länge bei Endlosband</div></div><div class="unit-in"><input type="number" min="20" max="200" step="1" data-k="label_len" style="width:80px" onchange="setTimeout(lblPrev,600)"> mm</div></div>
+    <div class="row"><div><div class="t">Nach jedem Etikett schneiden</div></div><label class="switch"><input type="checkbox" data-k="label_cut"><span></span></label></div>
+    <div class="row"><div><div class="t">Vorschau</div><div class="d">So sieht das Etikett aus</div></div>
+      <div class="unit-in"><button class="small-btn" onclick="lblTest()">🖨 Testetikett</button></div></div>
+    <img id="lbl-prev" alt="" style="max-width:100%;max-height:160px;background:#fff;border-radius:6px;margin-top:6px;border:1px solid var(--line)">
+  </section>
+
+  <section class="card">
+    <div class="label">Gelernte Bambu-Profile</div>
+    <div class="d muted small" style="margin:6px 0 4px">Wählst du in Bambu Studio (Gerät → Slot) ein eigenes Profil, merkt PrintHub es sich pro Filamentsorte und stellt es bei der nächsten Zuweisung automatisch ein.</div>
+    <div id="profiles" class="muted small">Lade …</div>
+  </section>
+</div>
+
+<!-- ============ Kosten ============ -->
+<div class="set-grid" data-tab="kosten">
+  <section class="card">
+    <div class="label">Kosten</div>
+    <div class="row">
+      <div><div class="t">Strompreis</div><div class="d">Brutto, laut deinem Tarif</div></div>
+      <div class="unit-in"><input type="number" min="0" step="0.001" data-k="price_kwh" style="width:110px"> €/kWh</div>
+    </div>
+    <div class="row">
+      <div><div class="t">Verschleiß / Maschinenkosten</div><div class="d">Pro Druckstunde (Düse, Riemen, PEI, Abschreibung). 0 = aus</div></div>
+      <div class="unit-in"><input type="number" min="0" step="0.01" data-k="wear_per_h" style="width:110px"> €/h</div>
+    </div>
+    <div class="row">
+      <div><div class="t">Ersatz-Filamentpreis</div><div class="d">Wenn in Spoolman kein Preis steht. 0 = aus</div></div>
+      <div class="unit-in"><input type="number" min="0" step="0.5" data-k="fallback_price_kg" style="width:110px"> €/kg</div>
+    </div>
+  </section>
+</div>
+
+<!-- ============ Benachrichtigungen ============ -->
+<div data-tab="meldungen">
+  <div class="set-grid">
+  <section class="card">
+    <div class="label">ntfy</div>
+    <div class="row">
+      <div><div class="t">ntfy-Adresse</div><div class="d">Server + Thema, z. B. https://ntfy.sh/mein-thema. Leer = aus. Gilt auch für den Druckwächter</div></div>
+      <input type="url" data-k="ntfy_url" placeholder="https://ntfy.sh/…" style="width:260px">
+    </div>
+    <div class="row">
+      <div><div class="t">Zugangstoken</div><div class="d">Nur bei geschütztem ntfy-Server</div></div>
+      <input type="password" data-k="ntfy_token" data-secret autocomplete="off" style="width:260px">
+    </div>
+    <div class="row">
+      <div><div class="t">Link beim Antippen</div><div class="d">Öffnet sich, wenn du die Meldung antippst</div></div>
+      <input type="url" data-k="click_url" placeholder="http://192.168.1.10:8095" style="width:260px">
+    </div>
+    <div class="row"><div class="d">PrintHub schickt jetzt alles – die Benachrichtigungen in Bambuddy kannst du abschalten.</div>
+      <div class="unit-in"><select id="test-prio" style="width:120px"><option value="5">dringend</option><option value="4">hoch</option><option value="3" selected>normal</option></select>
+      <button onclick="testNotify()">🔔 Testnachricht</button></div></div>
+  </section>
+  <section class="card">
+    <div class="label">Telegram</div>
+    <div class="d muted small" style="margin:6px 0 4px">Eigener Bot – kommt zuverlässig an, mit Foto und Antwort-Knöpfen (z. B. „Platte belegt“). Läuft parallel zu ntfy; welche Meldungen wohin gehen, wählst du unten mit ✈️.</div>
+    <div id="tg-steps" class="tg-steps">
+      <div><b>1.</b> In Telegram <a href="https://t.me/BotFather" target="_blank">@BotFather</a> öffnen, <code>/newbot</code> schicken, Namen vergeben – du bekommst einen <b>Token</b>.</div>
+      <div><b>2.</b> Token hier eintragen.</div>
+      <div><b>3.</b> „Verbinden“ drücken und dem Bot innerhalb von 10 Minuten irgendeine Nachricht schreiben (z. B. <code>/start</code>).</div>
+    </div>
+    <div class="row">
+      <div><div class="t">Bot-Token</div><div class="d">z. B. 123456789:AA…</div></div>
+      <input type="password" data-k="tg_token" data-secret autocomplete="off" style="width:260px" onchange="setTimeout(tgLoad, 800)">
+    </div>
+    <div class="row">
+      <div><div class="t">Verbindung</div><div class="d" id="tg-state">–</div></div>
+      <div class="unit-in"><button class="small-btn" id="tg-pair" onclick="tgPair()">🔗 Verbinden</button>
+        <button class="small-btn" id="tg-unpair" onclick="tgUnpair()" hidden>Trennen</button></div>
+    </div>
+    <div class="row"><div class="d">Im Chat zeigt <code>/status</code> jederzeit den Stand der Drucker.</div>
+      <button onclick="testNotify('telegram')">✈️ Testnachricht</button></div>
+  </section>
+  <section class="card">
+    <div class="label">Feineinstellungen</div>
+    <div class="row"><div><div class="t">Fortschritt melden bei</div><div class="d">Prozent, mit Komma getrennt</div></div>
+      <input type="text" data-k="progress_steps" style="width:120px"></div>
+    <div class="row"><div><div class="t">„Bett abgekühlt“ unter</div></div>
+      <div class="unit-in"><input type="number" min="15" max="80" data-k="bed_cool_c" style="width:80px"> °C</div></div>
+    <div class="row"><div><div class="t">„Spule fast leer“ unter</div></div>
+      <div class="unit-in"><input type="number" min="0" step="10" data-k="low_spool_g" style="width:80px"> g</div></div>
+    <div class="row"><div><div class="t">Dienst nicht erreichbar seit</div><div class="d">Spoolman, Bambuddy, OctoEverywhere</div></div>
+      <div class="unit-in"><input type="number" min="1" max="240" data-k="service_alarm_min" style="width:80px"> min</div></div>
+    <details class="prio-box">
+      <summary><span class="t">Dringlichkeit je Meldung</span>
+        <span class="d">Ab „hoch“ stellt ntfy.sh mit hoher Priorität zu – kommt auch bei gesperrtem Handy und ohne „Sofortnachrichten“ an</span></summary>
+      <div id="prio-list"></div>
+      <div class="row" style="border:0"><div class="d">Meldungen mit Antwort-Knöpfen (Platte belegt) sind immer dringend.</div>
+        <button class="small-btn" onclick="prioReset()">↺ Standard</button></div>
+    </details>
+  </section>
+  </div>
+  <section class="card" style="margin-top:16px">
+    <div class="section-h"><div><span class="label">Was willst du bekommen?</span>
+      <div class="d muted small" style="margin-top:4px">Kästchen = an ntfy · ✈️ = an Telegram · 📷 = mit Kamerafoto · Doppelte Meldungen von PrintHub und Druckwächter werden zusammengefasst</div></div>
+      <div class="unit-in small"><button class="small-btn" onclick="evAll(true)">Alle an</button><button class="small-btn" onclick="evAll(false)">Alle aus</button></div></div>
+    <div id="evgroups" class="evgroups"></div>
+  </section>
+</div>
+
+<!-- ============ Zugriff ============ -->
+<div class="set-grid" data-tab="zugriff">
+  <section class="card">
+    <div class="label">Zugriffsschutz</div>
+    <div class="row">
+      <div><div class="t">PIN abfragen</div><div class="d">„Nur von außen“ = bei Zugriff über Tailscale bzw. Internet, im WLAN zuhause nicht</div></div>
+      <div class="seg" id="pin_mode">
+        <button data-v="off">Aus</button><button data-v="external">Nur von außen</button><button data-v="always">Immer</button>
+      </div>
+    </div>
+    <div class="row">
+      <div><div class="t">PIN</div><div class="d" id="pin-state">4–8 Ziffern</div></div>
+      <div class="unit-in"><input type="password" id="pin" inputmode="numeric" maxlength="8" autocomplete="new-password" style="width:120px" placeholder="neue PIN"><button class="small-btn" onclick="setPin()">Speichern</button></div>
+    </div>
+    <div class="row"><div class="d">Angemeldete Geräte bleiben 1 Jahr angemeldet. Eine neue PIN meldet alle Geräte ab.</div><button class="small-btn" onclick="logout()">Abmelden</button></div>
+  </section>
+</div>
+
+<!-- ============ Import / Export ============ -->
+<div class="set-grid" data-tab="daten">
+  <section class="card">
+    <div class="label">Sicherung</div>
+    <div class="d muted small" style="margin:6px 0 4px">Enthält Verlauf, Einstellungen, Wartung, Spulen-Zuordnungen, Druckwächter und die config.yaml (mit Zugangsdaten – gut aufbewahren).</div>
+    <div class="row"><div><div class="t">Sicherung herunterladen</div><div class="d">Mit Bildern ist die Datei deutlich größer</div></div>
+      <div class="unit-in"><a class="small-btn btnlink" href="/api/backup">⇩ Ohne Bilder</a><a class="small-btn btnlink" href="/api/backup?media=1">⇩ Mit Bildern</a></div></div>
+    <div class="row"><div><div class="t">Sicherung zurückspielen</div><div class="d">Überschreibt die gewählten Bereiche; PrintHub startet danach neu</div></div>
+      <label class="small-btn btnlink" style="cursor:pointer">⇧ Datei wählen …<input type="file" accept=".zip" hidden onchange="restore(this.files[0])"></label></div>
+    <div class="row"><div><div class="t">Zurückspielen</div><div class="d">Gilt für Datei und automatische Sicherungen</div></div>
+      <div class="checks" id="bk-parts"></div></div>
+  </section>
+  <section class="card">
+    <div class="label">Automatische Sicherung</div>
+    <div class="row"><div><div class="t">Zeitplan</div></div>
+      <select data-k="backup_auto" style="width:150px"><option value="off">Aus</option><option value="daily">Täglich</option><option value="weekly">Wöchentlich</option></select></div>
+    <div class="row"><div><div class="t">Uhrzeit</div><div class="d">Volle Stunde, z. B. 3 = 3:00 Uhr nachts</div></div>
+      <div class="unit-in"><input type="number" min="0" max="23" step="1" data-k="backup_hour" style="width:70px"> Uhr</div></div>
+    <div class="row"><div><div class="t">Aufbewahren</div><div class="d">Ältere werden automatisch gelöscht</div></div>
+      <div class="unit-in"><input type="number" min="1" max="365" step="1" data-k="backup_keep" style="width:70px"> Sicherungen</div></div>
+    <div class="row"><div><div class="t">Mit Bildern</div><div class="d">Fotos und Vorschaubilder – deutlich größer</div></div>
+      <label class="switch"><input type="checkbox" data-k="backup_media"><span></span></label></div>
+    <div class="row"><div><div class="t">Ordner</div><div class="d">Leer = /data/backups. Für eine Unraid-Freigabe dort einen Pfad einbinden, z. B. /backups → /mnt/user/backup/printhub</div></div>
+      <input type="text" data-k="backup_dir" placeholder="/data/backups" style="width:190px"></div>
+    <div class="row"><div><div class="t">Jetzt sichern</div><div class="d" id="bk-status"></div></div>
+      <button class="small-btn" onclick="bkRun()">💾 Sicherung jetzt</button></div>
+    <div id="bk-list" class="muted small" style="margin-top:8px"></div>
+  </section>
+  <section class="card">
+    <div class="label">Exportieren</div>
+    <div class="row"><div><div class="t">Druckverlauf</div><div class="d">Alle Drucke mit Spulen und Kosten (CSV für Excel)</div></div>
+      <a class="small-btn btnlink" href="/api/history/export.csv">⇩ CSV</a></div>
+    <div class="row"><div><div class="t">Statistik</div><div class="d">Kennzahlen, Monate, Material, Hersteller (gesamter Zeitraum)</div></div>
+      <a class="small-btn btnlink" href="/api/statistics/export.csv?range=all">⇩ CSV</a></div>
+  </section>
+  <section class="card">
+    <div class="label">Aus Bambuddy übernehmen</div>
+    <div class="row"><div><div class="t">Import-Knöpfe freischalten</div><div class="d">Zeigt die Knöpfe auch in der Statistik und unter Wartung. Aus = nichts kann versehentlich importiert werden</div></div>
+      <label class="switch"><input type="checkbox" data-k="bambuddy_import"><span></span></label></div>
+    <div id="bb-imp-box">
+      <div class="row"><div><div class="t">Druckverlauf</div><div class="d">Bisherige Drucke mit Vorschaubildern. Schon vorhandene werden übersprungen, Spoolman bleibt unverändert</div></div>
+        <button class="small-btn" onclick="importHistory()">⇩ Verlauf übernehmen</button></div>
+      <div class="row"><div><div class="t">Wartung</div><div class="d">Druckstunden, Intervalle und letzte Wartung. Überschreibt den Wartungsstand in PrintHub</div></div>
+        <button class="small-btn" onclick="importMaint()">⇩ Wartungsstand übernehmen</button></div>
+    </div>
+  </section>
+</div>
+
+<!-- ============ Diagnose ============ -->
+<div data-tab="diagnose">
+  <section class="card">
+    <div class="section-h"><div><span class="label">Alles prüfen</span>
+      <div class="d muted small" style="margin-top:4px">Prüft Drucker, Kamera, Dienste, Benachrichtigungen, Speicher und Sicherung. Dauert ein paar Sekunden.</div></div>
+      <div class="unit-in"><button class="small-btn primary" id="dg-run" onclick="dgRun()">🩺 Jetzt prüfen</button>
+        <button class="small-btn" onclick="dgCopy('dg')" title="Ergebnis kopieren">📋 Kopieren</button></div></div>
+    <div id="dg-sum" class="muted small" style="margin-top:8px"></div>
+    <div id="dg-list" class="dg-list"></div>
+  </section>
+  <section class="card" style="margin-top:16px">
+    <div class="section-h"><div><span class="label">Protokoll</span>
+      <div class="d muted small" style="margin-top:4px">Das, was sonst nur im Docker-Log steht. Zugangsdaten sind geschwärzt (•••) – du kannst es gefahrlos weitergeben.</div></div>
+      <div class="unit-in" style="flex-wrap:wrap">
+        <div class="seg" id="lg-src"><button data-v="" class="on">PrintHub</button><button data-v="waechter">Druckwächter</button></div>
+        <div class="seg" id="lg-lvl"><button data-v="" class="on">Alles</button><button data-v="warn">Warnungen</button><button data-v="error">Fehler</button></div>
+        <button class="small-btn" onclick="lgLoad()">⟳</button>
+        <button class="small-btn" onclick="dgCopy('lg')">📋 Kopieren</button>
+        <button class="small-btn" onclick="lgDownload()">⇩ Datei</button></div></div>
+    <pre id="lg-box" class="lg-box">Lade …</pre>
+  </section>
+</div>
+
+<!-- ============ System ============ -->
+<div class="set-grid" data-tab="system">
+  <section class="card">
+    <div class="label">System</div>
+    <div id="sys" class="muted small">Lade …</div>
+  </section>
+</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const {esc} = PH;
+let S = {};
+
+// ---------- Tabs ----------
+function showTab(t) {
+  if (t === "nachtruhe") t = "waechter";
+  if (!document.querySelector(`[data-tab="${t}"]`)) t = "allgemein";
+  document.querySelectorAll("[data-tab]").forEach(el => el.hidden = el.dataset.tab !== t);
+  document.querySelectorAll("#tabs a").forEach(a => a.classList.toggle("on", a.dataset.t === t));
+  if (t === "wartung") loadMaint();
+  if (t === "dienste") loadServices();
+  if (t === "drucker") { pcLoad(); pwHint(); }
+  if (t === "waechter") { loadNR(true); plInit(); }
+  if (t === "spulen") loadProfiles();
+  if (t === "meldungen") tgLoad();
+  if (t === "daten") bkLoad();
+  if (t === "diagnose") { if (!DG) dgRun(); lgLoad(); }
+}
+document.querySelectorAll("#tabs a").forEach(a => { a.href = "#" + a.dataset.t; });
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+
+async function save(patch) {
+  const r = await fetch("/api/settings", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(patch)});
+  const d = await r.json();
+  if (d.error) { PH.toast(d.error, true); fill(); return; }
+  S = d.settings; fill(); PH.toast("Gespeichert ✓");
+  if (Object.keys(patch).some(k => /spoolman|bambuddy|oe_/.test(k))) loadServices();
+}
+
+function fill() {
+  document.querySelectorAll("[data-k]").forEach(el => {
+    if (el.hasAttribute("data-secret")) {
+      el.value = ""; el.placeholder = S[el.dataset.k + "_set"] ? "•••••• gespeichert (leer lassen = behalten)" : "nicht gesetzt";
+      return;
+    }
+    const v = S[el.dataset.k];
+    if (el.type === "checkbox") el.checked = !!v; else el.value = v ?? "";
+  });
+  document.querySelectorAll("#theme button").forEach(b => b.classList.toggle("on", b.dataset.v === S.theme));
+  if ($("evgroups")) drawEvents();
+  document.querySelectorAll("#photo_events input").forEach(c => c.checked = (S.photo_events || []).includes(c.value));
+  document.querySelectorAll("#pin_mode button").forEach(b => b.classList.toggle("on", b.dataset.v === S.pin_mode));
+  document.body.classList.toggle("bb-import", !!S.bambuddy_import);
+  $("pin-state").textContent = S.pin_set ? "PIN ist festgelegt – zum Ändern neue eingeben" : "Noch keine PIN festgelegt (4–8 Ziffern)";
+}
+
+async function load() {
+  const d = await (await fetch("/api/settings")).json();
+  S = d.settings; fill(); lblInit();
+  $("saver").value = PH.saverMode();
+  const i = d.info;
+  $("sys").innerHTML = `
+    <div class="row"><div class="t">PrintHub-Version</div><b>${esc(i.version || "dev")}</b></div>
+    <div class="row"><div class="t">Spoolman</div><a href="${esc(i.spoolman_url)}" target="_blank">${esc(i.spoolman_url)}</a></div>
+    ${i.printers.map(p => `<div class="row"><div><div class="t">${esc(p.name)}</div><div class="d">${p.type === "bambu" ? "Bambu Lab (MQTT)" : "Klipper/Moonraker"}</div></div>
+      <div class="d">${p.shelly ? "⚡ Shelly " + esc(p.shelly) : "kein Shelly"}</div></div>`).join("")}
+    <div class="row"><div class="t">Drucke im Verlauf</div><b>${i.history_count.toLocaleString("de-DE")}</b></div>
+    <div class="row"><div class="t">Docker-Zugriff</div><span>${i.docker ? "✓ vorhanden" : "✕ fehlt (docker.sock nicht eingebunden)"}</span></div>
+    <div class="d" style="margin-top:8px">Drucker, Zugangsdaten und Shelly-Adressen stehen in <code>config/config.yaml</code>.</div>`;
+  showTab(location.hash.slice(1) || "allgemein");
+  loadMaint(true);
+}
+
+// ---------- Dienste ----------
+async function loadServices() {
+  try {
+    const d = await (await fetch("/api/services")).json();
+    for (const s of d.services) {
+      const el = $("st-" + s.id); if (!el) continue;
+      const c = (s.containers || [])[0];
+      const parts = [];
+      if (s.online === true) parts.push(`<b style="color:var(--ok)">● erreichbar</b>${s.version ? " · v" + esc(s.version) : ""}`);
+      else if (s.online === false) parts.push(`<b style="color:var(--err)">● ${esc(s.error || "nicht erreichbar")}</b>`);
+      if (c) parts.push(c.error ? `Container: ${esc(c.error)}` : `Container ${esc(c.name)}: ${c.running ? "läuft" : esc(c.state)}`);
+      if (s.lines && s.lines.length && s.online !== false) parts.push(esc(s.lines[0]));
+      el.innerHTML = parts.join(" · ") || "–";
+    }
+  } catch {}
+}
+
+// ---------- Wartung ----------
+let M = null;
+const unitL = u => u === "d" ? "Tage" : "h";
+const fmtN = v => Number(v || 0).toLocaleString("de-DE", {maximumFractionDigits: 1});
+async function loadMaint(quiet) {
+  try { M = await (await fetch("/api/maintenance")).json(); } catch { return; }
+  const due = M.printers.reduce((a, p) => a + p.due, 0);
+  $("t-due").textContent = due ? due : ""; $("t-due").className = due ? "cnt" : "";
+  if (quiet && document.querySelector('[data-tab="wartung"]').hidden) return;
+  $("mprinters").innerHTML = M.printers.map(p => {
+    const on = p.all.filter(i => i.enabled).sort((a, b) => (b.due - a.due) || (b.warn - a.warn) || (b.pct - a.pct));
+    const off = p.all.filter(i => !i.enabled);
+    const row = i => `<div class="mrow ${i.enabled ? "" : "off"} ${i.due ? "due" : i.warn ? "warn" : ""}">
+        <span class="mic">${esc(i.icon)}</span>
+        <div class="mname"><b>${esc(i.name)}</b><div class="d">${esc(i.desc)}</div></div>
+        <div class="mprog">${i.enabled ? `<div class="mini"><div style="width:${i.pct}%"></div></div>
+          <div class="d">${i.due ? `<b class="w">fällig</b> · ${fmtN(i.since)} ${unitL(i.unit)} seit Wartung` : `noch ${fmtN(i.remaining)} ${unitL(i.unit)}`}${i.last_time ? ` · zuletzt ${new Date(i.last_time * 1000).toLocaleDateString("de-DE")}` : " · noch nie"}</div>` : `<span class="d">aus</span>`}</div>
+        <div class="unit-in mint" title="Intervall für diesen Drucker (leer = Standard ${fmtN(i.default_interval)})">alle <input type="number" min="0" step="1" value="${i.custom ? i.interval : ""}" placeholder="${fmtN(i.default_interval)}"
+          onchange="setItem('${p.id}','${i.id}',{interval:this.value})"> ${unitL(i.unit)}</div>
+        <label class="switch" title="für diesen Drucker an/aus"><input type="checkbox" ${i.enabled ? "checked" : ""} onchange="setItem('${p.id}','${i.id}',{enabled:this.checked})"><span></span></label>
+        <button class="small-btn ${i.due ? "primary" : ""}" ${i.enabled ? "" : "disabled"} onclick="doneItem('${p.id}','${i.id}','${esc(i.name)}')">✓ erledigt</button>
+      </div>`;
+    return `<section class="card mcard">
+      <div class="section-h">
+        <div><h2 style="margin:0;font-size:17px">${esc(p.name)}</h2>
+          <div class="d muted small">${p.due ? `<b style="color:var(--warn)">${p.due} fällig</b> · ` : ""}${p.warn ? `${p.warn} bald fällig · ` : ""}${on.length} aktive Aufgaben</div></div>
+        <div class="unit-in small" title="Gesamte Druckstunden des Druckers – z. B. vom Druckerdisplay übernehmen">Druckstunden gesamt
+          <input type="number" min="0" step="0.1" value="${p.hours}" style="width:90px" onchange="setHours('${p.id}',this.value)"> h</div>
+      </div>
+      ${on.map(row).join("") || `<div class="muted small">Keine Aufgabe aktiv.</div>`}
+      ${off.length ? `<details class="moff"><summary>${off.length} ausgeschaltete Aufgaben</summary>${off.map(row).join("")}</details>` : ""}
+    </section>`;
+  }).join("");
+  $("mtypes").innerHTML = M.types.map(t => `<div class="mtype">
+      <span class="mic">${esc(t.icon || "🔧")}</span>
+      <div style="flex:1;min-width:0"><b>${esc(t.name)}</b><div class="d">⏱ ${fmtN(t.interval)} ${unitL(t.unit)}${t.system ? "" : " · eigene"}</div></div>
+      <button class="icon-btn" title="Bearbeiten" onclick="editType('${t.id}')">✎</button>
+      <button class="icon-btn" title="Löschen" onclick="delType('${t.id}','${esc(t.name)}')">🗑</button>
+    </div>`).join("");
+  $("mlog").innerHTML = M.log.length ? `<table class="list small"><tr><th>Datum</th><th>Drucker</th><th>Aufgabe</th><th class="num">bei</th><th>Notiz</th></tr>
+    ${M.log.map(l => `<tr><td>${new Date(l.time * 1000).toLocaleDateString("de-DE")}</td><td>${esc(l.printer)}</td><td>${esc(l.name)}</td>
+      <td class="num">${fmtN(l.hours)} h</td><td>${esc(l.note)}</td></tr>`).join("")}</table>` : "Noch nichts eingetragen.";
+}
+async function api(url, method, body) {
+  const r = await (await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined})).json();
+  if (r.error) PH.toast(r.error, true);
+  return r;
+}
+async function setItem(pid, tid, data) { const r = await api(`/api/maintenance/${pid}/${tid}`, "PUT", data); if (!r.error) PH.toast("Gespeichert ✓"); loadMaint(); }
+async function doneItem(pid, tid, name) {
+  const note = prompt(`„${name}“ als erledigt eintragen?\nOptional eine Notiz (z. B. „Riemen nachgespannt“):`, "");
+  if (note === null) return;
+  const r = await api(`/api/maintenance/${pid}/${tid}/done`, "POST", {note});
+  if (!r.error) PH.toast("Eingetragen ✓"); loadMaint();
+}
+async function setHours(pid, v) { const r = await api(`/api/maintenance/${pid}/hours`, "PUT", {hours: v}); if (!r.error) PH.toast("Druckstunden gespeichert ✓"); loadMaint(); }
+function editType(tid) {
+  const t = tid ? M.types.find(x => x.id === tid) : {name: "", desc: "", icon: "🔧", interval: 100, unit: "h"};
+  $("tform").innerHTML = `<div class="tform">
+    <input id="tf-icon" value="${esc(t.icon)}" maxlength="4" style="width:52px;text-align:center" title="Symbol (Emoji)">
+    <input id="tf-name" value="${esc(t.name)}" placeholder="Name, z. B. Lüfter reinigen" style="flex:2;min-width:160px">
+    <input id="tf-desc" value="${esc(t.desc || "")}" placeholder="Beschreibung (optional)" style="flex:3;min-width:160px">
+    <span class="unit-in">alle <input id="tf-int" type="number" min="0" step="1" value="${t.interval}" style="width:80px">
+      <select id="tf-unit"><option value="h" ${t.unit !== "d" ? "selected" : ""}>Druckstunden</option><option value="d" ${t.unit === "d" ? "selected" : ""}>Tage</option></select></span>
+    <button class="small-btn primary" onclick="saveType('${tid || ""}')">Speichern</button>
+    <button class="small-btn" onclick="$('tform').innerHTML=''">Abbrechen</button></div>`;
+  $("tf-name").focus();
+}
+async function saveType(tid) {
+  const body = {icon: $("tf-icon").value, name: $("tf-name").value, desc: $("tf-desc").value, interval: $("tf-int").value, unit: $("tf-unit").value};
+  const r = await api(tid ? `/api/maintenance/types/${tid}` : "/api/maintenance/types", tid ? "PUT" : "POST", body);
+  if (!r.error) { $("tform").innerHTML = ""; PH.toast("Gespeichert ✓"); loadMaint(); }
+}
+async function delType(tid, name) {
+  if (!confirm(`Aufgabe „${name}“ löschen? Sie verschwindet bei allen Druckern.`)) return;
+  await api(`/api/maintenance/types/${tid}`, "DELETE"); loadMaint();
+}
+async function restoreTypes() {
+  if (!confirm("Fehlende Standardaufgaben wieder anlegen und Standard-Namen/-Intervalle zurücksetzen? Eigene Aufgaben bleiben.")) return;
+  await api("/api/maintenance/types/restore", "POST"); PH.toast("Wiederhergestellt ✓"); loadMaint();
+}
+
+// ---------- Nachtruhe ----------
+const NR_DAYS = [["MO", "Montag"], ["DI", "Dienstag"], ["MI", "Mittwoch"], ["DO", "Donnerstag"], ["FR", "Freitag"], ["SA", "Samstag"], ["SO", "Sonntag"]];
+let NR = null, nrDirty = false, nrTimer = null;
+const nrf = () => $("nr-form");
+async function loadNR(fillForm) {
+  try { NR = await (await fetch("/api/nachtruhe")).json(); } catch { return; }
+  const c = NR.config, since = NR.since ? new Date(NR.since * 1000).toLocaleString("de-DE", {day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"}) : "";
+  const dry = c.DRY_RUN === "1";
+  $("nr-status").innerHTML = `<div class="nr-h">
+      <span class="nr-dot ${NR.running ? "on" : NR.enabled ? "bad" : ""}"></span>
+      <div style="flex:1;min-width:200px"><div class="t" style="font-weight:700;font-size:16px">Druckwächter ${NR.running ? "läuft" : NR.enabled ? "startet nicht" : "ist aus"}${dry ? ` <span class="qtag" style="background:#f59e0b22;color:var(--warn)">Testmodus</span>` : ""}</div>
+        <div class="d muted small">${NR.running ? `seit ${since} · läuft jetzt innerhalb von PrintHub` : NR.enabled ? "Wird automatisch neu versucht – siehe Meldung unten." : "Eingeschaltet startet er automatisch mit PrintHub."}</div></div>
+      <div class="unit-in">${NR.enabled ? `<button class="small-btn" onclick="nrAct('restart')">⟳ Neu starten</button><button class="small-btn" onclick="nrAct('off')">⏻ Ausschalten</button>`
+        : `<button class="small-btn primary" onclick="nrAct('on')" ${NR.legacy_running ? "disabled" : ""}>⏻ Einschalten</button>`}</div></div>
+    ${NR.legacy_running ? `<div class="nr-warn">⚠ Der alte Container <b>bambuddy-nachtruhe</b> läuft noch. Zwei Wächter gleichzeitig würden Aufträge doppelt starten.
+       <button class="small-btn" onclick="nrAct('stop-legacy')">Alten Container stoppen</button>
+       <div class="small muted" style="margin-top:4px">Danach in Unraid unter Docker beim Container „bambuddy-nachtruhe“ <b>Autostart ausschalten</b> oder ihn entfernen.</div></div>` : ""}
+    ${!NR.config_exists ? `<div class="nr-warn">Noch keine Einstellungen – unten ausfüllen und speichern.</div>` : ""}
+    ${NR.enabled && !NR.running && NR.last_exit ? `<div class="nr-warn">Letzter Abbruch (Code ${NR.last_exit.code}):<pre>${esc(NR.last_exit.lines.join("\n"))}</pre></div>` : ""}`;
+  const hms = $("nr-hms").checked;
+  const lines = (NR.log || []).filter(l => hms || !l.includes("HMS-Meldung")).slice(-150);
+  const el = $("nr-log"); const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+  el.innerHTML = lines.length ? lines.map(l => `<span class="${/Fehler|fehlgeschlagen|nicht erreichbar|⚠|abgebrochen/i.test(l) ? "le" : /HMS/.test(l) ? "lh" : /Starte|Freigabe|eingeschaltet|übernommen/i.test(l) ? "lo" : ""}">${esc(l)}</span>`).join("\n") : "Noch keine Einträge.";
+  if (atEnd || fillForm) el.scrollTop = el.scrollHeight;
+  if (fillForm || !nrDirty) fillNR();
+  clearTimeout(nrTimer);
+  if (!document.querySelector('[data-tab="waechter"]').hidden) nrTimer = setTimeout(() => loadNR(), 5000);
+}
+function fillNR() {
+  const c = NR.config;
+  for (const el of nrf().elements) {
+    if (!el.name) continue;
+    if (el.hasAttribute("data-secret")) { el.value = ""; el.placeholder = c[el.name + "_set"] ? "•••••• gespeichert (leer = behalten)" : "nicht gesetzt"; continue; }
+    if (el.type === "checkbox") el.checked = c[el.name] === "1"; else el.value = c[el.name] ?? "";
+  }
+  $("nr-days").innerHTML = NR_DAYS.map(([k, n]) => {
+    const ab = c["DRUCK_AB_" + k] || "", bis = c["DRUCK_BIS_" + k] || "", off = ab === "aus" || bis === "aus";
+    return `<tr><td>${n}</td>
+      <td><input type="time" name="DRUCK_AB_${k}" value="${off ? "" : ab}" ${off ? "disabled" : ""}></td>
+      <td><input type="time" name="DRUCK_BIS_${k}" value="${off ? "" : bis}" ${off ? "disabled" : ""}></td>
+      <td style="text-align:center"><input type="checkbox" data-off="${k}" ${off ? "checked" : ""}></td>
+      <td class="muted" id="eff-${k}"></td></tr>`;
+  }).join("");
+  $("nr-days").querySelectorAll("[data-off]").forEach(cb => cb.onchange = () => {
+    const k = cb.dataset.off;
+    nrf()["DRUCK_AB_" + k].disabled = nrf()["DRUCK_BIS_" + k].disabled = cb.checked; nrDirty = true; effNR();
+  });
+  nrDirty = false; effNR();
+}
+function effNR() {   // was gilt tatsächlich an jedem Tag?
+  const v = n => nrf()[n] ? nrf()[n].value : "";
+  for (const [k] of NR_DAYS) {
+    const we = k === "SA" || k === "SO";
+    const off = nrf().querySelector(`[data-off="${k}"]`).checked;
+    const ab = v("DRUCK_AB_" + k) || (we && v("DRUCK_AB_WE")) || v("DRUCK_AB"), bis = v("DRUCK_BIS_" + k) || (we && v("DRUCK_BIS_WE")) || v("DRUCK_BIS");
+    $("eff-" + k).textContent = off ? "kein Druck" : `${ab}–${bis}`;
+  }
+}
+document.addEventListener("input", e => { if (e.target.form && e.target.form.id === "nr-form") { nrDirty = true; effNR(); } });
+$("nr-hms") && ($("nr-hms").onchange = () => loadNR());
+async function saveNR() {
+  const body = {};
+  for (const el of nrf().elements) {
+    if (!el.name) continue;
+    if (el.type === "checkbox") body[el.name] = el.checked ? "1" : "0";
+    else if (el.hasAttribute("data-secret")) { if (el.value) body[el.name] = el.value; }
+    else body[el.name] = el.disabled ? "" : el.value;
+  }
+  for (const [k] of NR_DAYS) if (nrf().querySelector(`[data-off="${k}"]`).checked) { body["DRUCK_AB_" + k] = "aus"; body["DRUCK_BIS_" + k] = ""; }
+  const r = await (await fetch("/api/nachtruhe", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();
+  if (r.error) return PH.toast(r.error, true);
+  NR = r; nrDirty = false; fillNR(); PH.toast("Gespeichert – der Wächter übernimmt es sofort ✓");
+}
+async function nrAct(a) {
+  const q = {off: "Druckwächter ausschalten? Dann startet niemand mehr wartende Aufträge automatisch.", "stop-legacy": "Alten Container bambuddy-nachtruhe jetzt stoppen?"}[a];
+  if (q && !confirm(q)) return;
+  const r = await (await fetch("/api/nachtruhe/" + a, {method: "POST"})).json();
+  if (r.error) return PH.toast(r.error, true);
+  PH.toast({on: "Druckwächter eingeschaltet ✓", off: "Druckwächter ausgeschaltet", restart: "Wird neu gestartet …", "stop-legacy": "Alter Container gestoppt ✓"}[a]);
+  setTimeout(() => loadNR(), 1500);
+}
+
+// ---------- Diagnose ----------
+let DG = null, LG = [];
+const DG_IC = {ok: "🟢", warn: "🟠", bad: "🔴", info: "⚪"};
+async function dgRun() {
+  $("dg-run").disabled = true; $("dg-sum").textContent = "Prüfe …";
+  try { DG = await (await fetch("/api/diagnose")).json(); } catch (e) { $("dg-sum").textContent = "Fehler: " + e; $("dg-run").disabled = false; return; }
+  $("dg-run").disabled = false;
+  const c = DG.checks, n = k => c.filter(x => x.status === k).length;
+  $("dg-sum").innerHTML = `${n("bad") ? `<b class="err">${n("bad")} Problem${n("bad") > 1 ? "e" : ""}</b> · ` : ""}${n("warn") ? `<b style="color:var(--warn)">${n("warn")} Hinweis${n("warn") > 1 ? "e" : ""}</b> · ` : ""}${n("ok")} in Ordnung · geprüft ${new Date(DG.time * 1000).toLocaleTimeString("de-DE")}`;
+  const groups = [...new Set(c.map(x => x.group))];
+  $("dg-list").innerHTML = groups.map(g => `<div class="dg-g"><div class="evh">${esc(g)}</div>` + c.filter(x => x.group === g).map(x =>
+    `<div class="dg-r ${x.status}"><span class="dg-i">${DG_IC[x.status] || "⚪"}</span><span class="dg-n">${esc(x.name)}</span><span class="dg-t">${esc(x.text)}</span></div>`).join("") + `</div>`).join("");
+}
+const segVal = id => (document.querySelector(`#${id} button.on`) || {}).dataset?.v || "";
+document.querySelectorAll("#lg-src button, #lg-lvl button").forEach(b => b.onclick = () => {
+  b.parentNode.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); lgLoad();
+});
+async function lgLoad() {
+  const q = new URLSearchParams({source: segVal("lg-src"), level: segVal("lg-lvl")});
+  try { LG = (await (await fetch("/api/logs?" + q)).json()).entries || []; } catch { return; }
+  const box = $("lg-box");
+  box.textContent = LG.length ? LG.map(lgLine).join("\n") : "Keine Einträge.";
+  box.scrollTop = box.scrollHeight;
+}
+function lgLine(e) {
+  const t = e.time ? new Date(e.time * 1000).toLocaleString("de-DE", {day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit"}) + " " : "";
+  return `${t}${e.level !== "INFO" ? e.level + " " : ""}${e.source && e.source !== "druckwaechter" ? "[" + e.source + "] " : ""}${e.msg}`;
+}
+function dgText(which) {
+  if (which === "dg") return DG ? DG.checks.map(x => `${(DG_IC[x.status] || "")} ${x.group} / ${x.name}: ${x.text}`).join("\n") : "";
+  return LG.map(lgLine).join("\n");
+}
+async function dgCopy(which) {
+  const txt = dgText(which);
+  try { await navigator.clipboard.writeText(txt); PH.toast("Kopiert ✓"); return; } catch {}
+  const ta = document.createElement("textarea"); ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select(); let ok = false;
+  try { ok = document.execCommand("copy"); } catch {}
+  ta.remove(); PH.toast(ok ? "Kopiert ✓" : "Kopieren nicht möglich – nimm „⇩ Datei“", !ok);
+}
+function lgDownload() {
+  const txt = (DG ? "=== Diagnose ===\n" + dgText("dg") + "\n\n" : "") + "=== Protokoll ===\n" + dgText("lg");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], {type: "text/plain"}));
+  a.download = "printhub-diagnose-" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".txt"; a.click();
+}
+
+// ---------- Strom-Verwaltung ----------
+async function pwHint() {
+  let st; try { st = await (await fetch("/api/state")).json(); } catch { return; }
+  const ps = (st.printers || []).filter(p => p.power && p.power.available);
+  const bbOn = ps.filter(p => p.power.bb_auto_off);
+  $("pw-hint").textContent = ps.length ? `Steckdose gefunden: ${ps.map(p => p.name + (p.power.plug ? " (" + p.power.plug + ")" : "")).join(", ")}`
+    : "Keine Steckdose gefunden – in Bambuddy einem Drucker zuordnen oder die Shelly-Adresse oben beim Drucker eintragen";
+  $("pw-bb-row").hidden = !ps.some(p => p.power.bb_auto_off != null);
+  $("pw-bb").innerHTML = bbOn.length ? (S.power_auto ? `<span style="color:var(--warn)">⚠️ ist noch an – dann schalten PrintHub und Bambuddy beide aus. Bitte abschalten.</span>`
+    : "ist an – Bambuddy schaltet nach dem Druck aus") : "ist aus – nur PrintHub entscheidet ✓";
+  $("pw-bb-btn").hidden = !bbOn.length;
+}
+async function pwBambuddy() {
+  if (!confirm("In Bambuddy „Auto Aus“ der Drucker-Steckdose abschalten?\n(„Auto Ein“ bleibt, wie es ist.)")) return;
+  const r = await (await fetch("/api/power/bambuddy", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({auto_off: false})})).json();
+  PH.toast(r.error || "In Bambuddy abgeschaltet ✓", !!r.error); setTimeout(pwHint, 1500);
+}
+
+let BK = null;
+const bkParts = () => [...document.querySelectorAll("#bk-parts input:checked")].map(x => x.value);
+function bkPartsText() {
+  const p = bkParts(), all = Object.keys(BK ? BK.parts : {});
+  return !p.length ? null : p.length === all.length ? "alles" : p.map(k => BK.parts[k]).join(", ");
+}
+async function restore(file) {
+  if (!file) return;
+  const what = bkPartsText(); if (!what) return PH.toast("Bitte mindestens einen Bereich wählen", true);
+  if (!confirm(`„${file.name}“ zurückspielen (${what})?\nDiese Daten werden überschrieben, danach startet PrintHub neu.`)) return;
+  PH.toast("Spiele Sicherung zurück …");
+  const r = await (await fetch("/api/backup/restore?parts=" + bkParts().join(","), {method: "POST", headers: {"Content-Type": "application/zip"}, body: file})).json();
+  if (r.error) return PH.toast(r.error, true);
+  PH.toast(`${(r.files || []).length} Dateien zurückgespielt – PrintHub startet neu …`);
+  setTimeout(() => location.reload(), 9000);
+}
+const kb = n => n >= 1048576 ? (n / 1048576).toLocaleString("de-DE", {maximumFractionDigits: 1}) + " MB" : Math.round(n / 1024) + " KB";
+const dt = t => new Date(t * 1000).toLocaleString("de-DE", {day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"});
+async function bkLoad() {
+  try { BK = await (await fetch("/api/backups")).json(); } catch { return; }
+  if (!$("bk-parts").children.length)
+    $("bk-parts").innerHTML = Object.entries(BK.parts).map(([k, t]) => `<label><input type="checkbox" value="${k}" checked> ${esc(t)}</label>`).join("");
+  const st = BK.status || {};
+  $("bk-status").innerHTML = st.time ? (st.ok ? `Zuletzt ${dt(st.time)} (${esc(st.reason || "")}) ✓` : `<span class="err">Fehlgeschlagen ${dt(st.time)}: ${esc(st.error || "")}</span>`) : "Noch keine automatische Sicherung";
+  $("bk-list").innerHTML = BK.backups.length ? `<div style="margin-bottom:4px">In ${esc(BK.folder)}:</div>` + BK.backups.map(b => `<div class="row" style="padding:6px 0">
+      <div><div class="t" style="font-size:13px">${dt(b.time)}${b.name.includes("-bilder") ? " · mit Bildern" : ""}</div><div class="d">${kb(b.size)}</div></div>
+      <div class="unit-in"><a class="small-btn btnlink" href="/api/backups/${b.name}">⇩</a>
+        <button class="small-btn" onclick="bkRestore('${b.name}')">⟲ Zurückspielen</button>
+        <button class="small-btn" title="löschen" onclick="bkDel('${b.name}')">🗑</button></div></div>`).join("")
+    : `Noch keine Sicherungen in ${esc(BK.folder)}.`;
+}
+async function bkRun() {
+  PH.toast("Sichere …");
+  const r = await (await fetch("/api/backups/run", {method: "POST"})).json();
+  PH.toast(r.error || `Gesichert ✓ (${kb(r.size)})`, !!r.error); bkLoad();
+}
+async function bkDel(n) { if (!confirm("Diese Sicherung löschen?")) return; await fetch("/api/backups/" + n, {method: "DELETE"}); bkLoad(); }
+async function bkRestore(n) {
+  const what = bkPartsText(); if (!what) return PH.toast("Bitte mindestens einen Bereich wählen", true);
+  if (!confirm(`Sicherung vom ${dt(BK.backups.find(b => b.name === n).time)} zurückspielen (${what})?\nDiese Daten werden überschrieben, danach startet PrintHub neu.`)) return;
+  const r = await (await fetch(`/api/backups/${n}/restore?parts=${bkParts().join(",")}`, {method: "POST"})).json();
+  if (r.error) return PH.toast(r.error, true);
+  PH.toast(`${r.files.length} Dateien zurückgespielt – PrintHub startet neu …`); setTimeout(() => location.reload(), 9000);
+}
+
+// ---------- Bambuddy-Import ----------
+async function importHistory() {
+  if (!confirm("Bisherige Drucke aus dem Bambuddy-Druckprotokoll übernehmen?\nSchon vorhandene werden übersprungen. Spoolman wird dabei NICHT verändert.")) return;
+  PH.toast("Übernehme Verlauf aus Bambuddy …");
+  const r = await (await fetch("/api/history/import/bambuddy", {method: "POST"})).json();
+  if (r.error) return PH.toast(r.error, true);
+  PH.toast(`${r.added} Drucke übernommen${r.skipped ? `, ${r.skipped} schon vorhanden` : ""} ✓`);
+}
+async function importMaint() {
+  if (!confirm("Druckstunden, Intervalle und letzte Wartungen aus Bambuddy übernehmen?\nDer bisherige Wartungsstand in PrintHub wird dabei überschrieben.")) return;
+  const r = await (await fetch("/api/maintenance/import", {method: "POST"})).json();
+  if (r.error) return PH.toast(r.error, true);
+  PH.toast(r.done.map(d => `${d.printer}: ${d.items} Aufgaben, ${fmtN(d.hours)} h`).join(" · ") + " ✓");
+  loadMaint();
+}
+
+// ---------- Plattenerkennung ----------
+let PL = null, plPid = null, plInited = false, plEditRef = null, PL_W = 1600;
+async function plInit() {
+  if (!plInited) {
+    plInited = true;
+    const d = await (await fetch("/api/settings")).json();
+    const cams = d.info.printers;
+    $("pl-printer").innerHTML = cams.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+    plPid = (cams.find(p => p.type === "bambu") || cams[0] || {}).id;
+    if (plPid) $("pl-printer").value = plPid;
+    $("pl-printer").onchange = e => { plPid = e.target.value; plLoad(); plSnap(); };
+    plRoiDrag();
+  }
+  await plLoad(); plSnap();
+}
+async function plLoad() {
+  if (!plPid) return;
+  PL = await (await fetch(`/api/plate/${plPid}`)).json();
+  if (!PL.camera) { $("pl-msg").textContent = "Dieser Drucker hat keine Kamera."; $("pl-msg").hidden = false; }
+  const er = plEditRef && PL.refs.find(r => r.file === plEditRef);
+  if (plEditRef && !er) plEditRef = null;
+  if (!plDirty) plPts = ((er && er.poly) || PL.poly || []).map(p => [...p]);
+  plMode(er ? plModeV : PL.poly && PL.poly.length >= 3 ? "poly" : (plPts.length ? "poly" : plModeV));
+  plEditBanner();
+  $("pl-thr").value = PL.threshold;
+  $("pl-obj").value = PL.min_obj;
+  $("pl-refs").innerHTML = PL.refs.length ? PL.refs.map(r => `<div class="pl-ref">
+      <img src="/api/plate/${plPid}/ref/${r.file}?t=${r.time}" alt="" onclick="window.open(this.src)">
+      <div><input type="text" value="${esc(r.label || "")}" placeholder="Beschriftung" onchange="plLabel('${r.file}', this.value)">
+        <div class="muted small">${new Date(r.time * 1000).toLocaleString("de-DE", {day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit"})}
+          · ${r.poly ? `<b style="color:var(--acc)">eigener Bereich (${r.poly.length} Punkte)</b>` : "allgemeiner Bereich"}</div>
+        <button class="small-btn ${plEditRef === r.file ? "primary" : ""}" style="margin-top:4px" onclick="plEditRefStart('${r.file}')">⬠ Bereich für dieses Bild</button></div>
+      <button class="icon-btn" title="Löschen" onclick="plDel('${r.file}')">🗑</button></div>`).join("")
+    : "Noch keine – Platte leer räumen, Licht an und „＋ Als Referenz“ drücken.";
+}
+$("pl-img").addEventListener("load", e => {
+  const im = e.target;
+  if (im.naturalWidth && im.naturalHeight) {
+    const ar = im.naturalWidth / im.naturalHeight;
+    $("pl-live").style.aspectRatio = `${im.naturalWidth} / ${im.naturalHeight}`;
+    $("pl-svg").setAttribute("viewBox", `0 0 ${Math.round(900 * ar)} 900`);
+    PL_W = Math.round(900 * ar); plRoiDraw();
+  }
+});
+function plEditBanner() {
+  const er = plEditRef && PL && PL.refs.find(r => r.file === plEditRef);
+  $("pl-edit").innerHTML = er ? `<div class="pl-editbar">⬠ Du zeichnest den Bereich für das Referenzbild <b>${esc(er.label || er.file)}</b>
+      <span style="flex:1"></span><button class="small-btn" onclick="plRefUseGlobal()">Allgemeinen Bereich verwenden</button>
+      <button class="small-btn" onclick="plEditRef=null;plDirty=false;plLoad();plSnap()">← Zurück zum Live-Bild</button></div>` : "";
+}
+function plEditRefStart(file) {
+  plEditRef = file; plDirty = false;
+  const r = PL.refs.find(x => x.file === file);
+  $("pl-img").src = `/api/plate/${plPid}/ref/${file}?t=${r.time}`; $("pl-msg").hidden = true;
+  plPts = ((r && r.poly) || PL.poly || []).map(p => [...p]);
+  plEditBanner(); plLoad();
+  $("pl-live").scrollIntoView({behavior: "smooth", block: "center"});
+}
+async function plRefUseGlobal() {
+  const res = await (await fetch(`/api/plate/${plPid}/ref/${plEditRef}`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({poly: []})})).json();
+  if (res.error) return PH.toast(res.error, true);
+  PH.toast("Dieses Bild nutzt wieder den allgemeinen Bereich"); plDirty = false; plLoad();
+}
+async function plSnap() {
+  if (!plPid) return;
+  if (plEditRef) { plEditRef = null; plDirty = false; plLoad(); }
+  $("pl-msg").textContent = "Lade Kamerabild …"; $("pl-msg").hidden = false;
+  const r = await fetch(`/api/plate/${plPid}/snapshot.jpg?t=${Date.now()}`);
+  if (!r.ok) { $("pl-msg").textContent = (await r.json()).error || "Kein Kamerabild"; return; }
+  $("pl-img").src = URL.createObjectURL(await r.blob()); $("pl-msg").hidden = true;
+}
+// Prüfbereich: Vieleck (Punkte setzen, ziehen, Doppelklick/Rechtsklick löscht) oder Rechteck (aufziehen)
+let plPts = [], plModeV = "poly", plDirty = false;
+function plMode(m) {
+  plModeV = m;
+  $("pm-poly").classList.toggle("on", m === "poly"); $("pm-rect").classList.toggle("on", m === "rect");
+  $("pl-clear").hidden = m !== "poly"; $("pl-save").hidden = m !== "poly" && !plEditRef;
+  $("pl-hint").textContent = m === "poly" ? "Klick = Punkt setzen (auf einer Kante = einfügen) · Punkt ziehen = verschieben · Doppelklick/Rechtsklick = löschen"
+    : plEditRef ? "Im Bild einen Rahmen aufziehen, dann „Bereich speichern“" : "Im Bild einen Rahmen aufziehen – wird sofort gespeichert";
+  plRoiDraw();
+}
+function plRoiDraw() {
+  if (!PL) return;
+  const svg = $("pl-svg"), X = v => (v * PL_W).toFixed(1), Y = v => (v * 900).toFixed(1);
+  const outer = `M0 0H${PL_W}V900H0Z`;
+  if (plModeV === "rect" && !plEditRef) {
+    const [x, y, w, h] = PL.roi;
+    svg.innerHTML = `<path class="dim" fill-rule="evenodd" d="${outer} M${X(x)} ${Y(y)}H${X(x + w)}V${Y(y + h)}H${X(x)}Z"/><rect class="area" x="${X(x)}" y="${Y(y)}" width="${X(w)}" height="${Y(h)}"/>`;
+    return;
+  }
+  const pts = plPts.map(([x, y]) => `${X(x)},${Y(y)}`).join(" ");
+  svg.innerHTML = (plPts.length >= 3 ? `<path class="dim" fill-rule="evenodd" d="${outer} M${plPts.map(([x, y]) => `${X(x)} ${Y(y)}`).join(" L")}Z"/><polygon class="area" points="${pts}"/>`
+      : plPts.length ? `<polyline class="area open" points="${pts}"/>` : "")
+    + plPts.map(([x, y], i) => `<circle class="pt" data-i="${i}" cx="${X(x)}" cy="${Y(y)}" r="11"/><text x="${X(x)}" y="${Y(y) - 18}" class="pn">${i + 1}</text>`).join("");
+}
+function plSegDist(p, a, b) {   // Abstand Punkt–Strecke (für „auf Kante einfügen“), in Pixeln des Bildes
+  const box = $("pl-live").getBoundingClientRect(), W = box.width, H = box.height;
+  const [px, py, ax, ay, bx, by] = [p[0] * W, p[1] * H, a[0] * W, a[1] * H, b[0] * W, b[1] * H];
+  const dx = bx - ax, dy = by - ay, t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+}
+function plRoiDrag() {
+  const box = $("pl-live");
+  const pos = ev => { const r = box.getBoundingClientRect(); return [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))]; };
+  box.addEventListener("contextmenu", e => { const c = e.target.closest(".pt"); if (c) { e.preventDefault(); plPts.splice(+c.dataset.i, 1); plDirty = true; plRoiDraw(); } });
+  box.addEventListener("dblclick", e => { const c = e.target.closest(".pt"); if (c) { plPts.splice(+c.dataset.i, 1); plDirty = true; plRoiDraw(); } });
+  box.addEventListener("pointerdown", e => {
+    if (!PL || e.button === 2) return;
+    e.preventDefault();
+    if (plModeV === "poly") {
+      const c = e.target.closest(".pt");
+      let idx;
+      if (c) idx = +c.dataset.i;
+      else {   // neuer Punkt: auf einer Kante einfügen, sonst hinten anhängen
+        const p = pos(e);
+        idx = plPts.length;
+        if (plPts.length >= 3) {
+          let best = 1e9;
+          plPts.forEach((a, i) => { const d = plSegDist(p, a, plPts[(i + 1) % plPts.length]); if (d < best) { best = d; idx = i + 1; } });
+          if (best > 18) idx = plPts.length;
+        }
+        plPts.splice(idx, 0, p); plDirty = true; plRoiDraw();
+      }
+      const mv = ev => { plPts[idx] = pos(ev); plDirty = true; plRoiDraw(); };
+      const up = () => { removeEventListener("pointermove", mv); removeEventListener("pointerup", up); };
+      addEventListener("pointermove", mv); addEventListener("pointerup", up);
+      return;
+    }
+    const [sx, sy] = pos(e);
+    if (plEditRef) {   // Rechteck für ein einzelnes Referenzbild = Vieleck mit 4 Ecken
+      const mv = ev => { const [cx, cy] = pos(ev); const [x0, y0, x1, y1] = [Math.min(sx, cx), Math.min(sy, cy), Math.max(sx, cx), Math.max(sy, cy)];
+        plPts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]; plDirty = true; plRoiDraw(); };
+      const up = () => { removeEventListener("pointermove", mv); removeEventListener("pointerup", up); };
+      addEventListener("pointermove", mv); addEventListener("pointerup", up);
+      return;
+    }
+    const mv = ev => { const [cx, cy] = pos(ev); PL.roi = [Math.min(sx, cx), Math.min(sy, cy), Math.abs(cx - sx), Math.abs(cy - sy)]; plRoiDraw(); };
+    const up = async () => {
+      removeEventListener("pointermove", mv); removeEventListener("pointerup", up);
+      if (PL.roi[2] < 0.05 || PL.roi[3] < 0.05) { await plLoad(); return PH.toast("Prüfbereich zu klein – größer aufziehen", true); }
+      const res = await (await fetch(`/api/plate/${plPid}`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({roi: PL.roi, poly: []})})).json();
+      if (res.error) PH.toast(res.error, true); else { PL = {...PL, ...res}; plPts = []; PH.toast("Rechteck gespeichert ✓"); }
+    };
+    addEventListener("pointermove", mv); addEventListener("pointerup", up);
+  });
+}
+function plClear() { plPts = []; plDirty = true; plRoiDraw(); }
+async function plSavePoly() {
+  if (plPts.length < 3) return PH.toast("Mindestens 3 Punkte setzen", true);
+  const url = plEditRef ? `/api/plate/${plPid}/ref/${plEditRef}` : `/api/plate/${plPid}`;
+  const res = await (await fetch(url, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({poly: plPts})})).json();
+  if (res.error) return PH.toast(res.error, true);
+  PL = {...PL, ...res}; plDirty = false;
+  PH.toast(plEditRef ? `Bereich für dieses Referenzbild gespeichert (${plPts.length} Punkte) ✓` : `Allgemeiner Prüfbereich gespeichert (${plPts.length} Punkte) ✓`);
+  plLoad();
+}
+async function plAdd() {
+  if (!confirm("Ist die Platte jetzt wirklich leer? Das Bild wird als Referenz gespeichert.")) return;
+  PH.toast("Nehme Referenzbild auf …");
+  const r = await (await fetch(`/api/plate/${plPid}/ref`, {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({label: $("pl-label").value, light: $("pl-light").checked})})).json();
+  if (r.error) return PH.toast(r.error, true);
+  $("pl-label").value = ""; PH.toast("Referenzbild gespeichert ✓"); plLoad(); plSnap();
+}
+async function plSet(k, v) {
+  const r = await (await fetch(`/api/plate/${plPid}`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({[k]: v})})).json();
+  if (r.error) PH.toast(r.error, true); else { PL = {...PL, ...r}; PH.toast("Gespeichert ✓"); }
+}
+async function plLabel(f, v) { await fetch(`/api/plate/${plPid}/ref/${f}`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({label: v})}); PH.toast("Gespeichert ✓"); }
+async function plDel(f) { if (!confirm("Referenzbild löschen?")) return; await fetch(`/api/plate/${plPid}/ref/${f}`, {method: "DELETE"}); plLoad(); }
+const de = v => String(v ?? "–").replace(".", ",");
+// ---------- Etikettendrucker ----------
+async function lblInit() {
+  try {
+    const d = await (await fetch("/api/labels/media")).json();
+    $("lbl-model").innerHTML = d.models.map(m => `<option>${m}</option>`).join("");
+    $("lbl-media").innerHTML = Object.entries(d.media).map(([k, t]) => `<option value="${k}">${t}</option>`).join("");
+    if (S) { $("lbl-model").value = S.label_model; $("lbl-media").value = S.label_media; }
+    lblPrev();
+  } catch {}
+}
+function lblPrev() { $("lbl-prev").src = `/api/labels/preview.png?media=${encodeURIComponent($("lbl-media").value)}&t=${Date.now()}`; }
+async function lblTest() {
+  PH.toast("Sende Testetikett …");
+  const r = await (await fetch("/api/labels/print", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({test: true})})).json();
+  PH.toast(r.error || "Testetikett gesendet ✓", !!r.error);
+}
+async function plCheck() {
+  $("pl-result").innerHTML = `<div class="muted small" style="margin-top:10px">Prüfe …</div>`;
+  const r = await (await fetch(`/api/plate/${plPid}/check?light=${$("pl-light").checked ? 1 : 0}`)).json();
+  if (r.needs_calibration) return $("pl-result").innerHTML = `<div class="nr-warn">${esc(r.message)}</div>`;
+  if (r.is_empty == null) return $("pl-result").innerHTML = `<div class="nr-warn">${esc(r.message || r.error || "Fehler")}</div>`;
+  $("pl-result").innerHTML = `<div class="pl-res ${r.is_empty ? "ok" : "bad"}"><b>${r.is_empty ? "✓ Platte leer" : "✕ Etwas liegt auf der Platte"}</b>
+      · größtes Teil <b>${de(r.object_percent)} %</b> (ab ${de(r.min_obj)} %) · Fläche <b>${de(r.difference_percent)} %</b> (ab ${de(r.threshold)} %)</div>
+    <img class="pl-dbg" src="${r.debug_image}" alt="Analyse">
+    <div class="muted small">Rot = verändert · Rahmen = größtes Teil · gelb = Lichtreflex (ausgeblendet, dort zählt nur ein dunkler Fleck)</div>
+    <div class="muted small">${r.refs.map(x => `${esc(x.label || x.file)}: ${x.diff != null ? `Teil ${de(x.obj)} % · Fläche ${de(x.diff)} %` : "Fehler"}`).join(" · ")}</div>`;
+}
+
+// ---------- Drucker (config.yaml) ----------
+let PC = [];
+async function pcLoad() {
+  const d = await (await fetch("/api/printer-config")).json();
+  if (d.error) return PH.toast(d.error, true);
+  PC = d.printers.map(p => ({...p, _old_id: p.id}));
+  pcDraw();
+}
+const pcf = (i, k, label, desc, attrs = "", type = "text") => `<div class="row"><div><div class="t">${label}</div>${desc ? `<div class="d">${desc}</div>` : ""}</div>
+  ${type === "check" ? `<label class="switch"><input type="checkbox" ${PC[i][k] !== false ? "checked" : ""} onchange="PC[${i}].${k}=this.checked"><span></span></label>`
+    : `<input type="${type}" value="${esc(PC[i][k] ?? "")}" ${attrs} oninput="PC[${i}].${k}=this.value" style="width:230px">`}</div>`;
+function pcDraw() {
+  $("pc-list").innerHTML = PC.map((p, i) => {
+    const bambu = p.type !== "moonraker";
+    return `<section class="card pc-card"><div class="section-h"><h2 style="margin:0;font-size:17px">${esc(p.name || p.id || "Neuer Drucker")}</h2>
+        <div class="unit-in"><button class="small-btn" onclick="pcTest(${i})">🔌 Verbindung testen</button><button class="small-btn" onclick="pcDel(${i})">🗑 Entfernen</button></div></div>
+      <div class="set-grid" style="gap:0 24px">
+        <div>
+          <div class="row"><div><div class="t">Typ</div></div><div class="seg"><button class="${bambu ? "on" : ""}" onclick="PC[${i}].type='bambu';pcDraw()">Bambu Lab</button><button class="${bambu ? "" : "on"}" onclick="PC[${i}].type='moonraker';pcDraw()">Klipper / Moonraker</button></div></div>
+          ${pcf(i, "name", "Name", "So heißt er in PrintHub")}
+          ${pcf(i, "id", "Kürzel", "Kurz, ohne Leerzeichen (z. B. a1, u1). Ändern trennt Verlauf/Wartung vom alten Kürzel!", 'maxlength="20"')}
+          ${pcf(i, "host", "IP-Adresse", bambu ? "Drucker-Display: Einstellungen → Netzwerk" : "")}
+          ${bambu ? pcf(i, "serial", "Seriennummer", "Display: Einstellungen → Gerät") : pcf(i, "port", "Moonraker-Port", "Standard 7125", 'inputmode="numeric"')}
+          ${bambu ? pcf(i, "access_code", "LAN-Zugangscode", p.access_code_set ? "•••• gespeichert – leer lassen = behalten" : "Display: Einstellungen → LAN-Modus", 'autocomplete="new-password"', "password")
+                  : pcf(i, "channels", "Werkzeugköpfe", "Snapmaker U1: 4", 'inputmode="numeric"')}
+        </div>
+        <div>
+          ${pcf(i, "shelly", "Shelly-Steckdose", "IP der Steckdose für Strommessung (optional)")}
+          ${pcf(i, "camera_url", "Eigene Kamera", "z. B. go2rtc-Schnappschuss-URL (optional, sonst Druckerkamera)")}
+          ${bambu ? "" : pcf(i, "light_pin", "Licht-Ausgang", "Klipper: z. B. caselight oder „led cavity_led“")}
+          ${bambu ? "" : pcf(i, "api_key", "Moonraker-API-Schlüssel", p.api_key_set ? "gespeichert – leer = behalten" : "nur falls nötig", 'autocomplete="new-password"', "password")}
+          ${pcf(i, "track_usage", "Verbrauch an Spoolman buchen", "Aus, wenn der Drucker selbst bucht (z. B. SpoolLink)", "", "check")}
+          <div class="pc-test" id="pc-test-${i}"></div>
+        </div>
+      </div></section>`;
+  }).join("") || `<div class="muted">Noch kein Drucker – „＋ Drucker hinzufügen“.</div>`;
+}
+function pcAdd() { PC.push({type: "bambu", id: "", name: "", host: "", track_usage: true}); pcDraw(); }
+function pcDel(i) { if (confirm(`„${PC[i].name || PC[i].id}“ entfernen? Verlauf und Statistik bleiben erhalten.`)) { PC.splice(i, 1); pcDraw(); } }
+async function pcTest(i) {
+  $("pc-test-" + i).innerHTML = `<div class="muted small">Teste …</div>`;
+  const r = await (await fetch("/api/printer-config/test", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(PC[i])})).json();
+  $("pc-test-" + i).innerHTML = (r.results || []).map(([ok, t]) => `<div class="small" style="color:${ok ? "var(--ok)" : "var(--err)"}">${ok ? "✓" : "✕"} ${esc(t)}</div>`).join("");
+}
+async function pcSave() {
+  if (!confirm("Drucker speichern und PrintHub neu starten?")) return;
+  const r = await (await fetch("/api/printer-config", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({printers: PC})})).json();
+  if (r.error) return PH.toast(r.error, true);
+  await fetch("/api/restart", {method: "POST"});
+  $("pc-state").textContent = "Gespeichert – PrintHub startet neu …";
+  setTimeout(() => location.reload(), 9000);
+}
+
+// ---------- Rest ----------
+async function loadProfiles() {
+  const list = await (await fetch("/api/profiles")).json();
+  $("profiles").innerHTML = list.length ? list.map(p => `<div class="row">
+      <div style="display:flex;gap:8px;align-items:center"><span class="dot" style="background:${p.color || "transparent"}"></span>
+        <div><div class="t" style="color:var(--fg)">${esc(p.name)}</div><div class="d">Profil-ID ${esc(p.idx)} · ${p.tmin ?? "–"}–${p.tmax ?? "–"} °C</div></div></div>
+      <button class="small-btn" onclick="forget('${esc(p.filament_id)}')">Vergessen</button></div>`).join("")
+    : "Noch keine. Wähl in Bambu Studio für einen Slot dein eigenes Profil – PrintHub übernimmt es dann.";
+}
+async function forget(fid) {
+  await fetch("/api/profiles/" + encodeURIComponent(fid), {method: "DELETE"});
+  PH.toast("Profil vergessen – es wird wieder Generic verwendet"); loadProfiles();
+}
+function resetLayout() { try { localStorage.removeItem("ph-layout"); } catch {} PH.toast("Übersicht zurückgesetzt (auf diesem Gerät)"); }
+
+async function testNotify(channel) {
+  const r = await (await fetch("/api/notify/test", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({prio: +$("test-prio").value, channel: channel || "ntfy"})})).json();
+  PH.toast(r.error || "Testnachricht verschickt – schau aufs Handy", !!r.error);
+}
+async function dockerTest(key) {
+  const r = await (await fetch("/api/docker/test", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({container: S[key]})})).json();
+  PH.toast(r.error ? r.error : "Gefunden: " + r.found.join(", "), !!r.error);
+}
+
+document.querySelectorAll("[data-k]").forEach(el => {
+  el.addEventListener("change", () => {
+    if (el.hasAttribute("data-secret") && !el.value) return;   // leer = behalten
+    save({[el.dataset.k]: el.type === "checkbox" ? el.checked : el.value});
+  });
+});
+document.querySelectorAll("#theme button").forEach(b => b.onclick = () => {
+  PH.setTheme(b.dataset.v); save({theme: b.dataset.v});
+});
+document.querySelectorAll("#photo_events input").forEach(c => c.onchange = () =>
+  save({photo_events: [...document.querySelectorAll("#photo_events input:checked")].map(x => x.value)}));
+document.querySelectorAll("#pin_mode button").forEach(b => b.onclick = () => save({pin_mode: b.dataset.v}));
+async function setPin() {
+  const r = await (await fetch("/api/pin", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({pin: $("pin").value})})).json();
+  if (r.error) return PH.toast(r.error, true);
+  $("pin").value = ""; S = r.settings; fill(); PH.toast("PIN gespeichert ✓");
+}
+async function logout() { await fetch("/api/logout", {method: "POST"}); location.href = "/login"; }
+// ---------- Benachrichtigungen ----------
+const EVG = [
+  ["Druck", "🖨️", [["start", "Druck gestartet", 1], ["first_layer", "Erste Schicht fertig", 1], ["progress", "Fortschritt (siehe Feineinstellungen)", 1],
+    ["finish", "Druck fertig – mit Dauer und Kosten", 1], ["fail", "Druck abgebrochen / fehlgeschlagen", 1], ["pause", "Druck pausiert (Gadget, Filament …)", 1],
+    ["error", "Druckerfehler (HMS)", 1], ["bed_cooled", "Bett abgekühlt – Teil entnehmen", 0], ["offline", "Drucker während eines Drucks offline", 0]]],
+  ["Druckwächter", "🛡️", [["waiting", "Auftrag wartet aufs Druckfenster", 0], ["plate", "Platte belegt – mit Antwort-Knöpfen", 1], ["power", "Drucker ausgeschaltet", 0], ["cfg", "Einstellungen übernommen", 0]]],
+  ["Spulen & Lager", "🧵", [["low_spool", "Spule fast leer", 0], ["short", "Filament reicht nicht für den Druck", 0], ["stock_low", "Lagerbestand unter Minimum", 0]]],
+  ["Wartung", "🔧", [["maintenance", "Wartung fällig", 0]]],
+  ["Dienste", "🔗", [["service", "Spoolman / Bambuddy / OctoEverywhere nicht erreichbar", 0]]],
+  ["Warteschlange", "📥", [["queue_add", "Neuer Auftrag in der Bambuddy-Warteschlange", 0], ["queue_done", "Warteschlange abgearbeitet", 0], ["queue_check", "Neuer Auftrag mit Filament-Problem", 0]]],
+];
+const PRIO_DEF = {fail: 5, error: 5, pause: 5, offline: 5, waiting: 5, plate: 5, power: 5, finish: 4, low_spool: 4, short: 4, bed_cooled: 4};
+const PRIO_L = [[5, "🔴 dringend"], [4, "🟠 hoch"], [3, "⚪ normal"], [2, "niedrig"]];
+function drawPrio() {
+  const cur = S.notify_prio || {};
+  $("prio-list").innerHTML = EVG.map(([g, ic, evs]) => `<div class="evh" style="margin-top:10px">${ic} ${g}</div>` + evs.map(([k, l]) => {
+    const v = cur[k] || PRIO_DEF[k] || 3;
+    return `<div class="row prio-row"><div class="t" style="font-weight:600">${l}</div>
+      <select onchange="prioSet('${k}', this.value)" ${k === "plate" ? "disabled title='mit Antwort-Knöpfen immer dringend'" : ""}>${PRIO_L.map(([n, t]) => `<option value="${n}" ${n === v ? "selected" : ""}>${t}</option>`).join("")}</select></div>`;
+  }).join("")).join("");
+}
+function prioSet(k, v) { const p = {...(S.notify_prio || {})}; p[k] = +v; save({notify_prio: p}); }
+function prioReset() { if (confirm("Dringlichkeit aller Meldungen auf den Standard zurücksetzen?")) save({notify_prio: {}}); }
+function drawEvents() {
+  if ($("prio-list")) drawPrio();
+  const on = new Set(S.notify_events || []), ph = new Set(S.notify_photo || []), tg = new Set(S.tg_events || []);
+  $("evgroups").innerHTML = EVG.map(([g, ic, evs]) => `<div class="evg"><div class="evh">${ic} ${g}
+      <button class="lnkbtn" onclick="evGroup('${g}')">${evs.every(e => on.has(e[0])) ? "alle aus" : "alle an"}</button></div>
+    ${evs.map(([k, l, foto]) => `<label class="evr ${on.has(k) ? "on" : ""}"><input type="checkbox" ${on.has(k) ? "checked" : ""} onchange="evSet('${k}', this.checked)"><span>${l}</span>
+      <button type="button" class="ph tgb ${tg.has(k) ? "on" : ""}" title="auch an Telegram" onclick="event.preventDefault();tgSet('${k}')">✈️</button>
+      ${foto ? `<button type="button" class="ph ${ph.has(k) ? "on" : ""}" title="Kamerafoto anhängen" onclick="event.preventDefault();phSet('${k}')">📷</button>` : `<span class="ph-sp"></span>`}</label>`).join("")}</div>`).join("");
+}
+function evSet(k, v) { const s = new Set(S.notify_events || []); v ? s.add(k) : s.delete(k); save({notify_events: [...s]}); }
+function tgSet(k) { const s = new Set(S.tg_events || []); s.has(k) ? s.delete(k) : s.add(k); save({tg_events: [...s]}); }
+let tgTimer = null;
+async function tgLoad() {
+  let d; try { d = await (await fetch("/api/telegram")).json(); } catch { return; }
+  const st = !d.token_set ? "Noch kein Token eingetragen"
+    : d.chat ? `✅ Verbunden${d.bot ? " mit @" + esc(d.bot) : ""} (Chat ${esc(d.chat)})`
+    : d.pairing ? `⏳ Schreib jetzt deinem Bot${d.bot ? " <a href='https://t.me/" + esc(d.bot) + "' target='_blank'>@" + esc(d.bot) + "</a>" : ""} eine Nachricht …`
+    : "Token gesetzt – noch nicht verbunden";
+  $("tg-state").innerHTML = st + (d.error && !d.chat ? `<br><span class="err">${esc(d.error)}</span>` : "");
+  $("tg-unpair").hidden = !d.chat; $("tg-pair").textContent = d.chat ? "🔗 Neu verbinden" : "🔗 Verbinden";
+  document.body.classList.toggle("tg-on", !!d.chat);
+  clearTimeout(tgTimer);
+  if (d.pairing && !d.chat) tgTimer = setTimeout(tgLoad, 2500);
+}
+async function tgPair() {
+  if (S.tg_chat) await fetch("/api/telegram/unpair", {method: "POST"});
+  const r = await (await fetch("/api/telegram/pair", {method: "POST"})).json();
+  if (r.error) return PH.toast(r.error, true);
+  const d = await (await fetch("/api/telegram")).json();
+  PH.toast(d.chat ? "Telegram verbunden ✓ – schau in den Chat" : `Schreib jetzt @${r.bot} eine Nachricht`); tgLoad();
+}
+async function tgUnpair() { if (!confirm("Telegram trennen?")) return; await fetch("/api/telegram/unpair", {method: "POST"}); tgLoad(); }
+function phSet(k) { const s = new Set(S.notify_photo || []); s.has(k) ? s.delete(k) : s.add(k); save({notify_photo: [...s]}); }
+function evGroup(g) {
+  const keys = EVG.find(x => x[0] === g)[2].map(e => e[0]), s = new Set(S.notify_events || []);
+  const all = keys.every(k => s.has(k)); keys.forEach(k => all ? s.delete(k) : s.add(k)); save({notify_events: [...s]});
+}
+function evAll(v) { save({notify_events: v ? EVG.flatMap(g => g[2].map(e => e[0])) : []}); }
+load();
+</script>
+</body>
+</html>
