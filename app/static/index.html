@@ -281,6 +281,11 @@ function statusBadge(p) {
   return `<span class="badge ${cls}">${esc((p.stage && p.stage.short) || p.state)}</span>`;
 }
 const fmtSec = s => s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")} h` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+async function swapSlot(pid, key, label) {
+  if (!confirm(`Filament aus ${label} laden und weiterdrucken?\nAb dieser Schicht hat das Teil dann diese Farbe.`)) return;
+  const r = await (await fetch(`/api/printers/${pid}/swap`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({slot: key})})).json();
+  PH.toast(r.error || r.message, !!r.error);
+}
 function stageHtml(p) {
   const st = p.stage;
   let line = "";
@@ -291,6 +296,8 @@ function stageHtml(p) {
       if (t && t.target) extra = ` · ${Math.round(t.actual)} / ${Math.round(t.target)} °C`;
     }
     line = `<div class="stage ${st.pause ? "p" : ""}">${st.icon} ${esc(st.text)}${extra}</div>`;
+    if ((p.swap || []).length) line += `<div class="swapbox"><div class="muted small">Gleiches Material aus einem anderen Slot laden und weiterdrucken:</div>${
+      p.swap.map(o => `<button class="small-btn" onclick="swapSlot('${p.id}','${o.key}','${esc(o.label)}')"><span class="dot" style="background:${o.color || "#999"}"></span>${esc(o.label)} · ${esc(o.material)}</button>`).join("")}</div>`;
   }
   const steps = (p.stage_steps || []).filter(x => x.text !== "Druckt" || x.now);
   const done = steps.filter(x => !x.now || x.text !== "Druckt");

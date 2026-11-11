@@ -670,6 +670,18 @@ def _release_spool(sid):
                 log.info("Lager: Spule #%s aus %s ausgetragen", sid, p.location_name(sl["key"]))
 
 
+async def api_printer_swap(request):
+    p = printers.get(request.path_params["pid"])
+    if not p or not hasattr(p, "swap_slot"):
+        return JSONResponse({"error": "Drucker unbekannt"}, status_code=404)
+    try:
+        b = await request.json()
+        msg = await run_in_threadpool(p.swap_slot, b.get("slot"))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"ok": True, "message": msg})
+
+
 async def api_lager(request):
     try:
         inv = await run_in_threadpool(spoolman.inventory, request.query_params.get("archived") == "1")
@@ -2532,6 +2544,14 @@ def _tg_button(data):
         except ValueError as e:
             return str(e)[:190], []
         return f"{p.name} {'eingeschaltet' if parts[3] == '1' else 'ausgeschaltet'} ✓", []
+    if parts[1] == "swap" and len(parts) == 4:
+        p = printers.get(parts[2])
+        if not p or not hasattr(p, "swap_slot"):
+            return "Drucker unbekannt", []
+        try:
+            return p.swap_slot(parts[3])[:190], []
+        except ValueError as e:
+            return str(e)[:190], []
     if parts[1] == "sp" and len(parts) == 4 and parts[2] == "zero":
         sid = int(parts[3])
         try:
@@ -2739,6 +2759,7 @@ app = Starlette(
         Route("/api/notify/test", api_notify_test, methods=["POST"]),
         Route("/api/notify/relay", api_notify_relay, methods=["POST"]),
         Route("/api/telegram", api_telegram),
+        Route("/api/printers/{pid}/swap", api_printer_swap, methods=["POST"]),
         Route("/api/printers/{pid}/power", api_power, methods=["POST"]),
         Route("/api/power/bambuddy", api_power_bambuddy, methods=["POST"]),
         Route("/api/diagnose", api_diagnose),

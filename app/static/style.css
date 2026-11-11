@@ -870,3 +870,10 @@ details.steps div.now { color:var(--acc); font-weight:600; }
 /* Lager: Wiegen */
 .wres { margin:6px 0; font-size:.95em; min-height:1.2em; }
 .srow .sg small { display:block; font-size:.72em; color:var(--muted, #888); font-weight:400; }
+
+.swapbox { margin:6px 0; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.swapbox .muted { flex-basis:100%; }
+.swapbox .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:-1px; border:1px solid rgba(0,0,0,.2); }
+details.prep { text-align:left; font-size:.8em; margin-top:2px; }
+details.prep summary { cursor:pointer; list-style:none; white-space:nowrap; }
+details.prep div { white-space:nowrap; display:flex; justify-content:space-between; gap:8px; }

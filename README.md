@@ -352,7 +352,11 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
 - **Arbeitsschritt:** Was der Drucker gerade macht – z. B. „🔥 Düse heizt · 111 / 220 °C“, „📐 Bett wird vermessen“,
   „🧽 Düse wird gereinigt“, „⏸ Pausiert: Filament leer“. Darunter aufklappbar der **Ablauf** mit Dauer je Schritt.
   Das Schild oben rechts und der Browser-Tab zeigen den Schritt ebenfalls (z. B. „🔥 Heizt“), `/status` in Telegram auch.
+  Der Ablauf übersteht Neustarts und Updates und steht nach dem Druck im **Verlauf** („⚙ Vorb. 5:20“ zum Aufklappen).
   (Bambu-Drucker; bei Klipper nur „heizt“ und die Display-Meldung.)
+- **Filament leer, keine gleiche Rolle im AMS:** Der Drucker pausiert. PrintHub zeigt (und schickt per Telegram) Knöpfe
+  mit den Slots, die dasselbe Material haben – antippen lädt diesen Slot und setzt den Druck automatisch fort.
+  Ab dieser Schicht hat das Teil dann die andere Farbe. Bei mehrfarbigen Drucken nur eingeschränkt sinnvoll.
 - **Dienste-Chips:** Grün/Rot für Spoolman, Bambuddy, OctoEverywhere, Druckwächter – antippen für Details und Neustart.
 - **Warteschlange** und **Letzte Drucke** (siehe unten).
 - **✎ Anordnen:** Kacheln verschieben und in der Größe ändern; wird pro Gerät gespeichert.

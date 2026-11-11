@@ -65,6 +65,10 @@ class BasePrinter:
             self.notifier.send(event, f"{self.name}: {title}", message, tags, priority, photo=photo,
                                buttons=buttons, click=click)
 
+    def history_stages(self, job):
+        """Vorbereitungsschritte für den Verlauf (nur Bambu kennt sie)."""
+        return []
+
     def note_runout(self, slot_key):
         """Drucker meldet: Spule in diesem Slot ist leer gelaufen (wird am Druckende ausgewertet)."""
         job = self.store.get_job(self.id)
@@ -457,6 +461,7 @@ class BasePrinter:
             "reason": reason,
             "estimate": job.get("estimate"),
             "source": "printhub",
+            "stages": self.history_stages(job),
         }
         pid = None
         if self.history:

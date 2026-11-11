@@ -33,7 +33,7 @@ class History:
             db.executescript(SCHEMA)
             cols = {r[1] for r in db.execute("PRAGMA table_info(prints)")}
             for c, typ in (("thumb", "TEXT"), ("photo", "TEXT"), ("outcome", "TEXT"), ("reason", "TEXT"),
-                           ("estimate", "INTEGER"), ("source", "TEXT"), ("ext_id", "TEXT")):
+                           ("estimate", "INTEGER"), ("source", "TEXT"), ("ext_id", "TEXT"), ("stages", "TEXT")):
                 if c not in cols:
                     db.execute(f"ALTER TABLE prints ADD COLUMN {c} {typ}")
             # Ergebnis-Klasse: ok | fail (Druckerfehler) | cancel (abgebrochen)
@@ -60,12 +60,13 @@ class History:
             outcome = e.get("outcome") or ("ok" if ok else "cancel")
             cur = db.execute(
                 "INSERT INTO prints(time,printer,job,result,success,duration,grams,kwh,energy_cost,filament_cost,wear_cost,total_cost,"
-                "thumb,photo,outcome,reason,estimate,source,ext_id)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "thumb,photo,outcome,reason,estimate,source,ext_id,stages)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (int(e.get("time") or time.time()), e.get("printer"), e.get("job"), e.get("result"),
                  1 if ok else 0, e.get("duration"), grams, e.get("kwh"),
                  e.get("energy_cost"), e.get("filament_cost"), e.get("wear_cost"), e.get("total_cost"),
-                 e.get("thumb"), e.get("photo"), outcome, e.get("reason"), e.get("estimate"), e.get("source"), e.get("ext_id")))
+                 e.get("thumb"), e.get("photo"), outcome, e.get("reason"), e.get("estimate"), e.get("source"), e.get("ext_id"),
+                 json.dumps(e["stages"], ensure_ascii=False) if e.get("stages") else None))
             pid = cur.lastrowid
             for u in usage:
                 db.execute(
@@ -145,6 +146,10 @@ class History:
             out = []
             for r in rows:
                 e = dict(r)
+                try:
+                    e["stages"] = json.loads(e["stages"]) if e.get("stages") else []
+                except (TypeError, ValueError):
+                    e["stages"] = []
                 e["usage"] = [dict(u) for u in db.execute("SELECT * FROM usage WHERE print_id=? ORDER BY id", (r["id"],))]
                 for u in e["usage"]:
                     u["booked"] = bool(u["booked"])

@@ -206,6 +206,12 @@ function drawChart() {
   }).join("");
 }
 
+function prep(e) {
+  const st = e.stages || [];
+  if (!st.length) return "";
+  const tot = st.reduce((a, x) => a + x.sec, 0), mm = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return `<details class="prep"><summary class="muted small">⚙ Vorb. ${mm(tot)}</summary>${st.map(x => `<div>${x.icon} ${esc(x.text)} <span>${mm(x.sec)}</span></div>`).join("")}</details>`;
+}
 function row(e) {
   const d = new Date(e.time * 1000);
   const ok = e.result === "fertig";
@@ -217,7 +223,7 @@ function row(e) {
   return `<tr>
     <td style="width:64px">${pic}</td>
     <td style="white-space:nowrap">${d.toLocaleDateString("de-DE")}<div class="muted small">${d.toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"})}</div></td>
-    <td><b>${esc(e.job)}</b> <span class="res ${ok ? "ok" : "bad"}" style="font-size:10.5px;padding:1px 7px;border-radius:99px">${esc(e.result)}</span><div class="uses">${uses}</div></td>
+    <td><b>${esc(e.job)}</b> <span class="res ${ok ? "ok" : "bad"}" style="font-size:10.5px;padding:1px 7px;border-radius:99px">${esc(e.result)}</span><div class="uses">${uses}</div>${prep(e)}</td>
     <td class="hide-s">${esc(e.printer)}</td>
     <td class="num hide-s">${dur(e.duration)}</td>
     <td class="num">${g(e.grams)}<div class="muted small">${e.filament_cost != null ? eur(e.filament_cost) : ""}</div></td>

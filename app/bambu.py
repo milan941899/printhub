@@ -2,6 +2,7 @@
 import ftplib
 import io
 import json
+import re
 import logging
 import ssl
 import threading
@@ -304,9 +305,10 @@ class BambuPrinter(BasePrinter):
             perr = self.state.get("print_error") or 0
             self._track_stage(gs)
         if gs == "PAUSE" and prev is not None and prev != "PAUSE":
+            self.notify("pause", "Druck pausiert ⏸", self._pause_text(), "pause_button", "high")
             if str(self.state.get("stg_cur")) == "6":
                 self.note_runout(tray_now)
-            self.notify("pause", "Druck pausiert ⏸", self._pause_text(), "pause_button", "high")
+                self._offer_swap()
         if perr and perr != self.last_print_error:
             code = f"{perr:08X}" if isinstance(perr, int) else str(perr)
             self.notify("error", "Druckerfehler ⚠", f"Fehlercode {code[:4]}_{code[4:]} – Details am Drucker/in Bambu Studio", "rotating_light", "urgent")
@@ -354,6 +356,12 @@ class BambuPrinter(BasePrinter):
                     if isinstance(self.state.get(k), list) and self.state[k] and job.get("mapping") != self.state[k]:
                         job["mapping"] = self.state[k]
                         changed = True
+                with self.lock:
+                    stages = [list(x) for x in self.stage_log]
+                    skey = self.stage_job
+                if stages and (job.get("stages") != stages or job.get("stage_key") != skey):
+                    job["stages"], job["stage_key"] = stages, skey      # übersteht Neustarts/Updates
+                    changed = True
                 if changed:
                     self.store.set_job(self.id, job)
                 if isinstance(prog, (int, float)):
@@ -372,7 +380,10 @@ class BambuPrinter(BasePrinter):
             return
         key = self.state.get("subtask_name") or self.state.get("gcode_file") or ""
         if key != self.stage_job:
-            self.stage_job, self.stage_log = key, []
+            # nach einem Neustart mitten im Druck: gespeicherten Ablauf übernehmen
+            job = self.store.get_job(self.id) or {}
+            saved = job.get("stages") if job.get("stage_key") == key else None
+            self.stage_job, self.stage_log = key, [list(x) for x in saved] if saved else []
         code = self.state.get("stg_cur")
         try:
             code = int(code)
@@ -394,6 +405,89 @@ class BambuPrinter(BasePrinter):
                 continue        # kurzes „Druckt“ zwischen zwei Vorbereitungsschritten
             out.append({"icon": info["icon"], "text": info["text"], "sec": int(t1 - t0), "now": i == len(log_) - 1})
         return out
+
+    def history_stages(self, job):
+        """Vorbereitung bis zum eigentlichen Druck: [{icon, text, sec}] (ohne „Druckt“)."""
+        log_ = job.get("stages") or []
+        out = []
+        for i, (code, t0) in enumerate(log_):
+            if code == 0:
+                continue
+            t1 = log_[i + 1][1] if i + 1 < len(log_) else time.time()
+            info = stage_info(code)
+            if info and t1 - t0 >= 3:
+                out.append({"icon": info["icon"], "text": info["text"], "sec": int(t1 - t0)})
+        return out
+
+    def _offer_swap(self):
+        leer, opts = self.swap_offer()
+        if not opts:
+            return
+        def name(k, mat):
+            sid = self.store.get_slot(self.id, k)
+            try:
+                sp = self.spoolman.spool(sid) if sid else None
+            except Exception:
+                sp = None
+            return (sp or {}).get("name") or mat
+        rows = [[(f"🔄 {lab} · {name(k, mat)}", f"ph:swap:{self.id}:{k}")] for k, lab, col, mat in opts[:4]]
+        rows.append([("Nur pausiert lassen", "noop")])
+        self.notify("runout", "Filament leer – anderen Slot nehmen? 🔄",
+                    f"{self.slot_label(leer) if leer else 'Der aktive Slot'} ist leer, keine gleiche Rolle im AMS.\n"
+                    "Gleiches Material in einer anderen Farbe laden und weiterdrucken?\n"
+                    "(Ab dieser Schicht hat das Teil dann die andere Farbe.)", "arrows_counterclockwise",
+                    buttons=rows)
+
+    def swap_offer(self):
+        """Slots mit gleichem Material wie der leer gelaufene: [(key, label, color, material)]."""
+        s = self.state
+        now = tray_key(s.get("ams", {}).get("tray_now"))
+        slots = {sl["key"]: sl for sl in self.slots()}
+        job = self.store.get_job(self.id) or {}
+        mat = ((job.get("slot_info") or {}).get(now) or [""])[0] or (slots.get(now) or {}).get("material") or ""
+        return now, [(k, sl.get("label", k), sl.get("color") or "", sl.get("material") or "")
+                     for k, sl in slots.items() if k != now and sl.get("material")
+                     and k.startswith("ams") and (not mat or sl["material"].upper() == mat.upper())]
+
+    def swap_slot(self, key):
+        """Bei Pause wegen Filamentende: Filament aus einem anderen AMS-Slot laden und weiterdrucken."""
+        m = re.fullmatch(r"ams(\d+)-(\d)", key or "")
+        if not m:
+            raise ValueError("Unbekannter Slot")
+        tray = int(m.group(1)) * 4 + int(m.group(2))
+        with self.lock:
+            gs = self.state.get("gcode_state")
+        if gs != "PAUSE":
+            raise ValueError("Drucker ist nicht pausiert")
+        self._publish({"print": {"command": "ams_change_filament", "sequence_id": "0", "ams_id": tray // 4,
+                                 "slot_id": tray % 4, "target": tray, "curr_temp": -1, "tar_temp": -1}})
+        log.info("[%s] Filamentende: lade %s und drucke weiter", self.id, self.slot_label(key))
+        threading.Thread(target=self._swap_wait, args=(key, tray), daemon=True).start()
+        return f"Lade {self.slot_label(key)} – danach geht der Druck automatisch weiter"
+
+    def _swap_wait(self, key, tray):
+        """Warten, bis das neue Filament geladen ist, dann fortsetzen (max. 5 min)."""
+        t0, geladen = time.time(), None
+        while time.time() - t0 < 300:
+            time.sleep(3)
+            with self.lock:
+                now = tray_key(self.state.get("ams", {}).get("tray_now"))
+                stg = str(self.state.get("stg_cur"))
+                gs = self.state.get("gcode_state")
+            if gs != "PAUSE":
+                return                          # schon weiter (z. B. am Drucker fortgesetzt)
+            if now == key and stg not in ("4", "22", "24"):
+                geladen = geladen or time.time()
+                if time.time() - geladen >= 6:  # kurz Ruhe nach dem Spülen
+                    self.control("resume")
+                    log.info("[%s] Filament aus %s geladen – Druck fortgesetzt", self.id, self.slot_label(key))
+                    self.notify("pause", "Druck geht weiter ▶", f"Filament aus {self.slot_label(key)} geladen.", "arrow_forward")
+                    return
+            else:
+                geladen = None
+        self.notify("pause", "Slot-Wechsel hat nicht geklappt ⚠",
+                    f"{self.slot_label(key)} wurde nach 5 min nicht als geladen gemeldet – bitte am Drucker prüfen "
+                    "und dort fortsetzen.", "warning", "high")
 
     def _pause_text(self):
         s = self.state
@@ -532,6 +626,8 @@ class BambuPrinter(BasePrinter):
                 "wifi": s.get("wifi_signal"),
                 "stage": stage_info(s.get("stg_cur")) if active else None,
                 "stage_steps": self.stage_steps() if active else [],
+                "swap": [{"key": k, "label": lab, "color": col, "material": mat} for k, lab, col, mat in self.swap_offer()[1]]
+                if gs == "PAUSE" and str(s.get("stg_cur")) == "6" else [],
             }
 
     # --- Slot am Drucker einstellen (wie in Bambu Studio) ---------------------
