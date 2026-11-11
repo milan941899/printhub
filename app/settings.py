@@ -30,6 +30,7 @@ SPEC = {
     "service_alarm_min": (int, 5),          # Dienst so lange nicht erreichbar -> melden
     "notify_v": (int, 1),
     "low_spool_g": (float, 100.0),
+    "runout_tol_g": (float, 15.0),
     "oe_restart": (bool, False),
     "oe_container": (str, "octoeverywhere"),
     "oe_delay": (int, 20),
@@ -126,6 +127,12 @@ class Settings:
                 if "queue_check" not in ev:
                     self.values[k] = ev + ["queue_check"]
             self.values["notify_v"] = 3
+        if int(self.values.get("notify_v") or 1) < 4:   # v4: Spule leer gelaufen
+            for k in ("notify_events", "tg_events"):
+                ev = list(self.values.get(k) or [])
+                if "runout" not in ev:
+                    self.values[k] = ev + ["runout"]
+            self.values["notify_v"] = 4
             try:
                 self._write()
             except OSError:

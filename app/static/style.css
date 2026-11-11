@@ -855,3 +855,18 @@ html { overflow-x:clip; }
 /* Filterknöpfe dürfen nie über die Karte hinaus */
 .seg { max-width:100%; flex-wrap:wrap; }
 @media (max-width:640px) { #qh-src { flex-wrap:nowrap; overflow-x:auto; } #qh-src button { padding:5px 8px; white-space:nowrap; } }
+
+/* Arbeitsschritt des Druckers */
+.stage { margin:4px 0 2px; font-size:.9em; font-weight:600; color:var(--acc); }
+.stage.p { color:var(--warn, #d97706); }
+details.steps { font-size:.8em; margin:2px 0 4px; color:var(--muted, #888); }
+details.steps summary { cursor:pointer; list-style:none; }
+details.steps summary::before { content:"▸ "; }
+details.steps[open] summary::before { content:"▾ "; }
+details.steps div { display:flex; justify-content:space-between; gap:10px; padding:1px 0; }
+details.steps div span { font-variant-numeric:tabular-nums; }
+details.steps div.now { color:var(--acc); font-weight:600; }
+
+/* Lager: Wiegen */
+.wres { margin:6px 0; font-size:.95em; min-height:1.2em; }
+.srow .sg small { display:block; font-size:.72em; color:var(--muted, #888); font-weight:400; }

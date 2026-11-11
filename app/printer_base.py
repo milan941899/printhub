@@ -59,10 +59,59 @@ class BasePrinter:
                 log.warning("[%s] Foto nach Druckende fehlgeschlagen: %s", self.id, e)
         threading.Thread(target=run, daemon=True).start()
 
-    def notify(self, event, title, message, tags="", priority="default"):
+    def notify(self, event, title, message, tags="", priority="default", buttons=None, click=None):
         if self.notifier:
             photo = self.camera.snapshot if self.camera else None
-            self.notifier.send(event, f"{self.name}: {title}", message, tags, priority, photo=photo)
+            self.notifier.send(event, f"{self.name}: {title}", message, tags, priority, photo=photo,
+                               buttons=buttons, click=click)
+
+    def note_runout(self, slot_key):
+        """Drucker meldet: Spule in diesem Slot ist leer gelaufen (wird am Druckende ausgewertet)."""
+        job = self.store.get_job(self.id)
+        if not job or not slot_key:
+            return
+        ro = job.setdefault("runout", [])
+        if slot_key not in ro:
+            ro.append(slot_key)
+            self.store.set_job(self.id, job)
+            log.info("[%s] Spule in %s leer gelaufen", self.id, self.slot_label(slot_key))
+
+    def runout_check(self, job, booked):
+        """Nach dem Buchen: Lager mit „wirklich leer“ vergleichen und Korrektur vorschlagen."""
+        tol = float((self.settings or {}).get("runout_tol_g") or 15) if self.settings else 15.0
+        base = ((self.settings or {}).get("click_url") or "").rstrip("/") if self.settings else ""
+        for slot_key in job.get("runout") or []:
+            label = self.slot_label(slot_key)
+            e = next((x for x in booked if x.get("slot") == label and x.get("spool")), None)
+            sid = (e or {}).get("spool")
+            if not sid:
+                continue
+            rest = e.get("remaining")
+            if rest is None:
+                try:
+                    rest = (self.spoolman.spool(sid) or {}).get("remaining")
+                except Exception:
+                    rest = None
+            if rest is None:
+                continue
+            name = e.get("spool_name") or f"Spule #{sid}"
+            link = f"{base}/lager?wiegen={sid}" if base else None
+            knoepfe = [[("📦 Auf 0 & archivieren", f"ph:sp:zero:{sid}"), ("Lassen", "noop")]]
+            if abs(rest) <= tol:
+                self.notify("runout", "Spule leer 🧵", f"{name} (#{sid}) in {label} ist leer gelaufen – Lager passt "
+                            f"({round(rest)} g Rest).\nIns Archiv verschieben?", "thread", buttons=knoepfe, click=link)
+            elif rest > tol:
+                self.notify("runout", "Spule leer – Lager stimmt nicht ⚖",
+                            f"{name} (#{sid}) in {label} ist leer gelaufen, laut Lager waren aber noch {round(rest)} g drauf.\n"
+                            "Häufigste Ursache: Leergewicht der Spule falsch oder weniger Filament drauf als angegeben.\n"
+                            "👉 Leere Spule (mit Karton-Kern) wiegen und im Lager unter ⚖ eintragen – dann stimmt es bei der nächsten Rolle."
+                            + (f"\n{link}" if link else ""), "thread", buttons=knoepfe, click=link)
+            else:
+                self.notify("runout", "Spule leer – mehr Filament als gedacht ⚖",
+                            f"{name} (#{sid}) in {label} ist leer gelaufen – laut Lager schon {round(-rest)} g unter 0.\n"
+                            "Es war mehr Filament drauf als eingetragen (oder das Leergewicht ist zu hoch). "
+                            "Beim nächsten Wiegen das Leergewicht prüfen." + (f"\n{link}" if link else ""),
+                            "thread", buttons=knoepfe, click=link)
 
     def track_layer(self, layer):
         """Erste Schicht fertig melden (einmal pro Druck)."""
@@ -434,7 +483,15 @@ class BasePrinter:
         else:
             self.notify("fail", f"Druck {result}", "\n".join(parts), "warning", "high")
         if low:
-            self.notify("low_spool", "Spule fast leer", "\n".join(low), "warning")
+            ro_labels = {self.slot_label(k) for k in job.get("runout") or []}
+            low = [x for x in low if not any(f"({l})" in x for l in ro_labels)]   # leer gelaufene meldet runout_check
+            if low:
+                self.notify("low_spool", "Spule fast leer", "\n".join(low), "warning")
+        if job.get("runout") and self.track_usage:
+            try:
+                self.runout_check(job, booked)
+            except Exception as e:
+                log.warning("[%s] Leer-Prüfung fehlgeschlagen: %s", self.id, e)
 
     # --- Status für die Oberfläche ------------------------------------------
     def status(self):

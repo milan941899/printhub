@@ -163,6 +163,18 @@ class Spoolman:
             raise RuntimeError(f"Spoolman {r.status_code}: {r.text[:200]}")
         self.invalidate()
 
+    def update_spool(self, spool_id, data):
+        return self._send("PATCH", f"/spool/{int(spool_id)}", data)
+
+    def spool_raw(self, spool_id):
+        return self._get(f"/spool/{int(spool_id)}")
+
+    @staticmethod
+    def empty_weight(sp_raw):
+        """Leergewicht: Rolle → Sorte → Hersteller (wie Spoolman selbst)."""
+        fil = sp_raw.get("filament") or {}
+        return sp_raw.get("spool_weight") or fil.get("spool_weight") or (fil.get("vendor") or {}).get("empty_spool_weight")
+
     def archive_spool(self, spool_id, archived=True):
         return self._send("PATCH", f"/spool/{int(spool_id)}", {"archived": bool(archived)})
 

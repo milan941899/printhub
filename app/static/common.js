@@ -54,11 +54,13 @@
     let d;
     try { d = await (await fetch("/api/progress")).json(); } catch { return; }
     const list = d && d.enabled ? (d.printing || []) : [];
-    const sig = JSON.stringify(list.map(p => [Math.round(p.progress), p.paused]));
+    const sig = JSON.stringify(list.map(p => [Math.round(p.progress), p.paused, p.stage]));
     if (sig === lastSig) return;
     lastSig = sig;
     if (!list.length) { document.title = baseTitle; iconLink().href = "/static/icon.svg"; return; }
-    document.title = list.map(p => (p.paused ? "⏸ " : "") + Math.round(p.progress) + " %").join(" · ") + " · " + baseTitle;
+    // vor dem eigentlichen Druck (0 %) den Arbeitsschritt zeigen, z. B. „🔥 Heizt“
+    document.title = list.map(p => p.stage && (p.progress < 1 || p.paused) ? p.stage.trim()
+      : (p.paused ? "⏸ " : "") + Math.round(p.progress) + " %").join(" · ") + " · " + baseTitle;
     const lead = list.reduce((a, b) => (b.remaining_min ?? 1e9) < (a.remaining_min ?? 1e9) ? b : a);
     iconLink().href = ringIcon(lead.progress, lead.paused);
   }

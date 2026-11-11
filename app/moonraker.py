@@ -70,7 +70,8 @@ class MoonrakerPrinter(BasePrinter):
         threading.Thread(target=self._loop, daemon=True).start()
 
     def _loop(self):
-        objs = ["print_stats", "virtual_sdcard", "heater_bed", "toolhead", "fan", "gcode_move", "motion_report"] + self._extruders()
+        objs = ["print_stats", "virtual_sdcard", "heater_bed", "toolhead", "fan", "gcode_move", "motion_report",
+                "display_status"] + self._extruders()
         if self.light_pin:
             objs.append(self._light_obj())
         url = self.base + "/printer/objects/query?" + "&".join(objs)
@@ -236,7 +237,24 @@ class MoonrakerPrinter(BasePrinter):
             "flow": flow if active else None,
             "fans": [{"label": "Bauteil", "pct": round(fan.get("speed", 0) * 100)}] if fan else [],
             "light": self.light_state(),
+            "stage": self._stage(active, state, progress, temps, st) if active else None,
+            "stage_steps": [],
         }
+
+    @staticmethod
+    def _stage(active, state, progress, temps, st):
+        """Klipper kennt keine Arbeitsschritte – „heizt“ aus den Temperaturen, sonst die Display-Meldung."""
+        if state == "paused":
+            return {"code": -2, "icon": "⏸", "text": "Pausiert", "short": "Pausiert", "pause": True}
+        if (progress or 0) < 0.01:
+            for t in temps:
+                if t["target"] and t["actual"] < t["target"] - 5:
+                    was = "Bett heizt" if t["label"] == "Bett" else "Düse heizt"
+                    return {"code": -1, "icon": "🔥", "text": was, "short": "Heizt", "pause": False}
+        msg = ((st.get("display_status") or {}).get("message") or "").strip()
+        if msg:
+            return {"code": -3, "icon": "ℹ️", "text": msg[:60], "short": "", "pause": False}
+        return None
 
     def _light_obj(self):
         lp = self.light_pin.strip()

@@ -161,8 +161,10 @@ def _tg_status():
         elif st.get("printing"):
             rem = st.get("remaining_min")
             job = st.get("job") or ""
+            sg = st.get("stage")
             lines.append(f"🟢 {p.name} – {st.get('state')} {st.get('progress') or 0} %"
                          + (f"\n{job}" if job else "")
+                         + (f"\n{sg['icon']} {sg['text']}" if sg else "")
                          + ((f"\nnoch {int(rem) // 60} h {int(rem) % 60:02d} min" if int(rem) >= 60 else f"\nnoch {int(rem)} min") if rem else ""))
         else:
             lines.append(f"⚪ {p.name} – {st.get('state', 'bereit')}")
@@ -685,6 +687,8 @@ async def api_lager(request):
             "used": used, "opened": used > 0.5 or bool(sp.get("first_used")),
             "location": in_slot.get(sp["id"]) or sp.get("location") or "", "in_printer": sp["id"] in in_slot,
             "last_used": sp.get("last_used"), "price": sp.get("price"),
+            "spool_weight": sp.get("spool_weight"), "empty": spoolman.empty_weight(sp),
+            "comment": sp.get("comment") or "", "lot": sp.get("lot_nr") or "",
         })
     fils = []
     for f in inv["filaments"]:
@@ -695,6 +699,7 @@ async def api_lager(request):
             "vendor": (f.get("vendor") or {}).get("name", ""), "vendor_id": (f.get("vendor") or {}).get("id"),
             "color": ("#" + color.lstrip("#")) if color else "", "weight": f.get("weight"),
             "spool_weight": f.get("spool_weight"), "price": f.get("price"), "density": f.get("density"),
+            "empty": f.get("spool_weight") or (f.get("vendor") or {}).get("empty_spool_weight"),
             "diameter": f.get("diameter"), "extruder_temp": f.get("settings_extruder_temp"),
             "bed_temp": f.get("settings_bed_temp"), "spools": sp, "min": int(mins.get(str(f["id"]), 0)),
             "full": sum(1 for x in sp if not x["opened"]), "remaining": round(sum(x["remaining"] or 0 for x in sp)),
@@ -747,9 +752,22 @@ async def api_lager_spools(request):
         count = int(b.get("count") or 1)
         if not 1 <= count <= 50:
             raise ValueError("Anzahl 1–50")
+        initial = _num(b.get("initial_weight"))
+        gross, empty = _num(b.get("gross")), _num(b.get("empty"))
+        if gross:
+            if not empty:
+                raise ValueError("Für „brutto gewogen“ wird das Leergewicht der Spule gebraucht")
+            initial = round(gross - empty, 1)
+            if initial <= 0:
+                raise ValueError("Brutto ist kleiner als das Leergewicht")
+        if empty and b.get("empty_for_filament"):
+            await run_in_threadpool(spoolman.update_filament, int(b["filament_id"]), {"spool_weight": empty})
         ids = await run_in_threadpool(spoolman.create_spools, b["filament_id"], count,
                                       b.get("location") or settings["storage_location"],
-                                      _num(b.get("initial_weight")), _num(b.get("price")))
+                                      initial, _num(b.get("price")))
+        if empty and not b.get("empty_for_filament"):
+            for i in ids:
+                await run_in_threadpool(spoolman.update_spool, i, {"spool_weight": empty})
     except (ValueError, KeyError, RuntimeError) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     log.info("Lager: %d neue Spule(n) angelegt: %s", len(ids), ids)
@@ -784,6 +802,60 @@ async def api_lager_filament(request):
     except (ValueError, KeyError, RuntimeError, TypeError) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     return JSONResponse({"ok": True, "id": f["id"]})
+
+
+def _weigh(sid, b):
+    raw = spoolman.spool_raw(sid)
+    gross, empty = _num(b.get("gross")), _num(b.get("empty")) or spoolman.empty_weight(raw)
+    if not gross:
+        raise ValueError("Bruttogewicht (Waage) fehlt")
+    if not empty:
+        raise ValueError("Leergewicht der Spule fehlt – leere Spule einmal wiegen")
+    rest = round(max(0.0, gross - empty), 1)
+    initial = raw.get("initial_weight") or (raw.get("filament") or {}).get("weight") or 1000
+    if rest > initial:
+        # mehr drauf als das Nenngewicht (z. B. neue Rolle mit 1012 g) → Nenngewicht anpassen
+        initial = rest
+        spoolman.update_spool(sid, {"initial_weight": initial})
+    if b.get("for_filament") and (raw.get("filament") or {}).get("id"):
+        spoolman.update_filament(raw["filament"]["id"], {"spool_weight": empty})
+    spoolman.update_spool(sid, {"remaining_weight": rest, "spool_weight": empty})
+    log.info("Lager: Spule #%s gewogen – brutto %s g, leer %s g → %s g Filament", sid, gross, empty, rest)
+    return {"ok": True, "remaining": rest, "initial": initial}
+
+
+async def api_lager_weigh(request):
+    sid = int(request.path_params["sid"])
+    try:
+        res = await run_in_threadpool(_weigh, sid, await request.json())
+    except (ValueError, RuntimeError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse(res)
+
+
+async def api_lager_spool_edit(request):
+    sid = int(request.path_params["sid"])
+    b = await request.json()
+    data = {}
+    for k, key in (("initial", "initial_weight"), ("empty", "spool_weight"), ("price", "price")):
+        if k in b:
+            data[key] = _num(b.get(k))
+    for k, key in (("comment", "comment"), ("lot", "lot_nr")):
+        if k in b:
+            data[key] = (b.get(k) or "").strip() or None
+    if "location" in b and (b.get("location") or "").strip() and sid not in _slot_names():
+        data["location"] = b["location"].strip()
+    try:
+        if data:
+            await run_in_threadpool(spoolman.update_spool, sid, data)
+        if b.get("remaining") not in (None, ""):
+            await run_in_threadpool(spoolman.update_spool, sid, {"remaining_weight": max(0.0, _num(b["remaining"]) or 0.0)})
+        if b.get("for_filament") and _num(b.get("empty")):
+            raw = await run_in_threadpool(spoolman.spool_raw, sid)
+            await run_in_threadpool(spoolman.update_filament, raw["filament"]["id"], {"spool_weight": _num(b["empty"])})
+    except (ValueError, RuntimeError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"ok": True})
 
 
 async def api_lager_unarchive(request):
@@ -897,7 +969,9 @@ async def api_progress(request):
             continue
         if st.get("printing"):
             out.append({"name": p.name, "progress": st.get("progress") or 0, "remaining_min": st.get("remaining_min"),
-                        "paused": "pause" in str(st.get("state", "")).lower()})
+                        "paused": "pause" in str(st.get("state", "")).lower(),
+                        "stage": (st.get("stage") or {}).get("icon", "") + " " + (st.get("stage") or {}).get("short", "")
+                        if st.get("stage") else ""})
     return JSONResponse({"enabled": settings["tab_progress"], "printing": out})
 
 
@@ -2458,6 +2532,16 @@ def _tg_button(data):
         except ValueError as e:
             return str(e)[:190], []
         return f"{p.name} {'eingeschaltet' if parts[3] == '1' else 'ausgeschaltet'} ✓", []
+    if parts[1] == "sp" and len(parts) == 4 and parts[2] == "zero":
+        sid = int(parts[3])
+        try:
+            spoolman.update_spool(sid, {"remaining_weight": 0})
+            _release_spool(sid)
+            spoolman.archive_spool(sid)
+        except Exception as e:
+            return f"Nicht geklappt: {e}"[:190], []
+        log.info("Lager: Spule #%s leer – auf 0 gesetzt und archiviert (Telegram)", sid)
+        return f"Spule #{sid} auf 0 g gesetzt und archiviert ✓", []
     if parts[1] == "light" and len(parts) == 4:
         p = printers.get(parts[2])
         if not p:
@@ -2631,6 +2715,8 @@ app = Starlette(
         Route("/api/lager/external/manufacturers", api_lager_manufacturers),
         Route("/api/lager/filament", api_lager_filament, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/archive", api_lager_archive, methods=["POST"]),
+        Route("/api/lager/spools/{sid:int}/weigh", api_lager_weigh, methods=["POST"]),
+        Route("/api/lager/spools/{sid:int}/edit", api_lager_spool_edit, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/unarchive", api_lager_unarchive, methods=["POST"]),
         Route("/api/lager/min", api_lager_min, methods=["PUT"]),
         Route("/api/lager/delete", api_lager_delete, methods=["POST"]),

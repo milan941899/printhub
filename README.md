@@ -349,6 +349,10 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
 - **💡 Licht** und **⚡ Strom**-Knopf direkt an der Karte.
 - **AMS-Leiste:** Jeder Slot mit Farbe, Material und zugeordneter Spule aus dem Lager inkl. Restgewicht.
   Slot antippen → Spule wählen oder aus dem Drucker nehmen.
+- **Arbeitsschritt:** Was der Drucker gerade macht – z. B. „🔥 Düse heizt · 111 / 220 °C“, „📐 Bett wird vermessen“,
+  „🧽 Düse wird gereinigt“, „⏸ Pausiert: Filament leer“. Darunter aufklappbar der **Ablauf** mit Dauer je Schritt.
+  Das Schild oben rechts und der Browser-Tab zeigen den Schritt ebenfalls (z. B. „🔥 Heizt“), `/status` in Telegram auch.
+  (Bambu-Drucker; bei Klipper nur „heizt“ und die Display-Meldung.)
 - **Dienste-Chips:** Grün/Rot für Spoolman, Bambuddy, OctoEverywhere, Druckwächter – antippen für Details und Neustart.
 - **Warteschlange** und **Letzte Drucke** (siehe unten).
 - **✎ Anordnen:** Kacheln verschieben und in der Größe ändern; wird pro Gerät gespeichert.
@@ -361,6 +365,9 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
 - **„Filament reicht nicht“**: Beim Druckstart vergleicht PrintHub den geplanten Bedarf mit dem Rest der Spule
   (plus einstellbarer Sicherheitsreserve) und warnt.
 - **„Spule fast leer“** unter einer einstellbaren Grenze.
+- **Spule leer gelaufen:** Wechselt das AMS mitten im Druck auf eine gleiche Rolle (oder pausiert wegen Filamentende),
+  weiß PrintHub, dass die alte Spule wirklich leer ist. Nach dem Druck vergleicht es mit dem Lager und schlägt bei
+  größerer Abweichung (einstellbar, Standard 15 g) vor, das Leergewicht der Spule zu wiegen.
 - **Slot am Drucker einstellen:** Beim Zuweisen schickt PrintHub Material, Farbe und Profil an den Drucker – Bambu Studio sieht es dann auch.
 - **Gelernte Bambu-Profile:** PrintHub merkt sich, welches Bambu-Filamentprofil zu welcher Sorte gehört.
 
@@ -369,7 +376,12 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
 - Bestand pro **Sorte** (Hersteller + Material + Farbe) mit Anzahl Rollen, Gesamtgewicht, Wert.
 - **Mindestbestand** pro Sorte → Meldung „Lagerbestand unter Minimum“.
 - Neue Sorten aus der **SpoolmanDB** (Tausende Filamente mit korrekten Daten) übernehmen.
-- Leere Spulen ins **Archiv**.
+- **⚖ Wiegen:** Bruttogewicht von der Waage eingeben – PrintHub zieht das Leergewicht der Spule ab und speichert den
+  Rest. Das Leergewicht merkt sich PrintHub auf Wunsch für die ganze Sorte. In der Liste steht bei jeder Rolle, was die
+  Waage zeigen sollte („⚖ 1165 g“) – so sieht man Abweichungen sofort.
+- **Neue Rollen brutto gewogen anlegen:** zeigt gleich, ob wirklich 1000 g drauf sind („994 g – −6 g zum Nenngewicht“).
+- **✎ Rolle bearbeiten:** Filament neu, übrig, Leergewicht, Preis, Ort, Charge, Notiz – ohne Spoolman öffnen zu müssen.
+- Leere Spulen ins **Archiv** (📦 an jeder Rolle, auch wenn sie noch einem Slot zugeordnet ist).
 - **Etiketten** einzeln oder für mehrere Spulen auf einmal.
 
 ### 6.4 Spule per QR-Code zuweisen
@@ -469,6 +481,7 @@ Wenn PrintHub das übernimmt, in Bambuddy bei der Steckdose **„Auto Aus“ aus
 | Platte belegt | mit Foto und Antwort-Knöpfen |
 | Drucker ausgeschaltet | von der Strom-Verwaltung |
 | Spule fast leer / Filament reicht nicht / Lager unter Minimum | |
+| Spule leer gelaufen | Vergleicht mit dem Lager: passt es, Knopf „Auf 0 & archivieren“; weicht es ab, Hinweis „Leergewicht prüfen“ mit Link zum Wiegen |
 | Wartung fällig | |
 | Dienst nicht erreichbar | Spoolman, Bambuddy oder OctoEverywhere antwortet nicht |
 | Neuer Auftrag / Warteschlange abgearbeitet / Auftrag mit Filament-Problem | |

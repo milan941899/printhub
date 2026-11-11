@@ -289,6 +289,10 @@
       <div class="unit-in"><input type="number" min="0" step="10" data-k="low_spool_g" style="width:90px"> g</div>
     </div>
     <div class="row">
+      <div><div class="t">Leer gelaufen: Abweichung erlaubt</div><div class="d">Läuft eine Spule leer, vergleicht PrintHub mit dem Lager. Erst ab dieser Abweichung kommt der Hinweis „Leergewicht prüfen“ (ein Rest steckt immer im Schlauch)</div></div>
+      <div class="unit-in"><input type="number" min="0" max="200" step="1" data-k="runout_tol_g" style="width:90px"> g</div>
+    </div>
+    <div class="row">
       <div><div class="t">Adresse für QR-Codes &amp; NFC</div><div class="d">Leer = so wie gerade im Browser. Am besten die feste Adresse im WLAN</div></div>
       <input type="url" data-k="public_url" placeholder="http://192.168.1.10:8095" style="width:230px">
     </div>

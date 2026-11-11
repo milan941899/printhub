@@ -15,6 +15,49 @@ from .printer_base import BasePrinter
 log = logging.getLogger("bambu")
 
 ACTIVE = {"RUNNING", "PREPARE", "PAUSE", "SLICING"}
+
+# Arbeitsschritt des Druckers (MQTT „stg_cur“) → (Symbol, Text, Kurzwort fürs Schild)
+STAGE_DE = {
+    1: ("📐", "Bett wird vermessen", "Kalibriert"), 2: ("🔥", "Bett heizt vor", "Heizt"),
+    3: ("〰️", "Vibrationsausgleich", "Kalibriert"), 4: ("🔄", "Filament wird gewechselt", "Wechselt"),
+    5: ("⏸", "Pause (M400)", "Pausiert"), 6: ("⏸", "Pausiert: Filament leer", "Filament leer"),
+    7: ("🔥", "Düse heizt", "Heizt"), 8: ("📏", "Extrusion wird kalibriert", "Kalibriert"),
+    9: ("🔍", "Bettoberfläche wird gescannt", "Kalibriert"), 10: ("🔍", "Erste Schicht wird geprüft", "Prüft"),
+    11: ("🔍", "Druckplatte wird erkannt", "Prüft"), 12: ("📐", "Lidar wird kalibriert", "Kalibriert"),
+    13: ("🏠", "Druckkopf fährt auf Startposition", "Referenzfahrt"), 14: ("🧽", "Düse wird gereinigt", "Reinigt"),
+    15: ("🌡", "Düsentemperatur wird geprüft", "Prüft"), 16: ("⏸", "Pausiert vom Benutzer", "Pausiert"),
+    17: ("⏸", "Pausiert: Frontabdeckung abgefallen", "Pausiert"), 18: ("📐", "Lidar wird kalibriert", "Kalibriert"),
+    19: ("📏", "Fluss wird kalibriert", "Kalibriert"), 20: ("⏸", "Pausiert: Düsentemperatur gestört", "Störung"),
+    21: ("⏸", "Pausiert: Betttemperatur gestört", "Störung"), 22: ("🔄", "Filament wird entladen", "Entlädt"),
+    23: ("⏸", "Pausiert: Schrittverlust", "Störung"), 24: ("🔄", "Filament wird geladen", "Lädt"),
+    25: ("🔇", "Motorgeräusch-Kalibrierung", "Kalibriert"), 26: ("⏸", "Pausiert: AMS nicht erreichbar", "Störung"),
+    27: ("⏸", "Pausiert: Hotend-Lüfter zu langsam", "Störung"), 28: ("⏸", "Pausiert: Bauraum-Temperatur", "Störung"),
+    29: ("❄️", "Bauraum kühlt", "Kühlt"), 30: ("⏸", "Pausiert durch G-Code", "Pausiert"),
+    31: ("🔇", "Motorgeräusch-Test", "Kalibriert"), 32: ("⏸", "Pausiert: Filament klebt an der Düse", "Störung"),
+    33: ("⏸", "Pausiert: Filamentschneider", "Störung"), 34: ("⏸", "Pausiert: Fehler in der ersten Schicht", "Störung"),
+    35: ("⏸", "Pausiert: Düse verstopft", "Störung"), 36: ("📏", "Bewegungsgenauigkeit wird gemessen", "Kalibriert"),
+    37: ("📏", "Bewegungsgenauigkeit wird verbessert", "Kalibriert"), 38: ("📏", "Bewegungsgenauigkeit wird gemessen", "Kalibriert"),
+    39: ("📏", "Düsenversatz wird kalibriert", "Kalibriert"), 40: ("📐", "Bett wird vermessen (heiß)", "Kalibriert"),
+    47: ("📐", "Bett wird vermessen (1/2)", "Kalibriert"), 48: ("📐", "Bett wird vermessen (2/2)", "Kalibriert"),
+    49: ("🔥", "Bauraum heizt", "Heizt"), 50: ("❄️", "Bett kühlt ab", "Kühlt"),
+    51: ("✏️", "Kalibrierlinien werden gedruckt", "Kalibriert"), 54: ("🔥", "Wartet auf Betttemperatur", "Heizt"),
+    63: ("🔥", "Wartet auf Bauraumtemperatur", "Heizt"), 64: ("🔥", "Hotend wird vorbereitet", "Vorbereitung"),
+    74: ("⚙️", "Vorbereitung", "Vorbereitung"), 77: ("⚙️", "AMS wird vorbereitet", "Vorbereitung"),
+}
+PAUSE_STAGES = {5, 6, 16, 17, 20, 21, 23, 26, 27, 28, 30, 32, 33, 34, 35}
+
+
+def stage_info(code):
+    if code is None:
+        return None
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return None
+    if code in (-1, 0, 255):
+        return None
+    ic, txt, kurz = STAGE_DE.get(code, ("⚙️", f"Arbeitsschritt {code}", "Vorbereitung"))
+    return {"code": code, "icon": ic, "text": txt, "short": kurz, "pause": code in PAUSE_STAGES}
 STATE_DE = {
     "IDLE": "Bereit", "RUNNING": "Druckt", "PREPARE": "Vorbereitung", "PAUSE": "Pausiert",
     "FINISH": "Fertig", "FAILED": "Abgebrochen", "SLICING": "Slicing",
@@ -182,6 +225,8 @@ class BambuPrinter(BasePrinter):
         self.last_msg = 0
         self.last_print_error = 0
         self._last_learn = 0
+        self.stage_log = []          # [[code, seit]] – Ablauf des aktuellen Drucks
+        self.stage_job = None
         # camera_url gesetzt -> eigene Webcam (z. B. dieselbe wie in Bambuddy), sonst eingebaute A1-Kamera
         if cfg.get("camera_url"):
             self.camera = UrlCamera(cfg["camera_url"])
@@ -257,8 +302,11 @@ class BambuPrinter(BasePrinter):
             prog = self.state.get("mc_percent")
             tray_now = tray_key(self.state.get("ams", {}).get("tray_now"))
             perr = self.state.get("print_error") or 0
+            self._track_stage(gs)
         if gs == "PAUSE" and prev is not None and prev != "PAUSE":
-            self.notify("pause", "Druck pausiert ⏸", self.state.get("subtask_name", ""), "pause_button", "high")
+            if str(self.state.get("stg_cur")) == "6":
+                self.note_runout(tray_now)
+            self.notify("pause", "Druck pausiert ⏸", self._pause_text(), "pause_button", "high")
         if perr and perr != self.last_print_error:
             code = f"{perr:08X}" if isinstance(perr, int) else str(perr)
             self.notify("error", "Druckerfehler ⚠", f"Fehlercode {code[:4]}_{code[4:]} – Details am Drucker/in Bambu Studio", "rotating_light", "urgent")
@@ -286,6 +334,19 @@ class BambuPrinter(BasePrinter):
                     job.setdefault("trays_used", []).append(tray_now)
                     changed = True
                 segs = job.setdefault("segments", [])
+                info = job.setdefault("slot_info", {})
+                if tray_now and tray_now not in info:
+                    sl = next((x for x in self.slots() if x["key"] == tray_now), {})
+                    info[tray_now] = [(sl.get("material") or "").upper(), (sl.get("color") or "").upper()[:6]]
+                    changed = True
+                if tray_now and segs and segs[-1][0] != tray_now and info.get(segs[-1][0]) and \
+                        info[segs[-1][0]][0] and info.get(segs[-1][0]) == info.get(tray_now):
+                    # AMS wechselt mitten im Druck auf gleiches Material + Farbe = Nachfüllen, alte Spule ist leer
+                    job.setdefault("runout", [])
+                    if segs[-1][0] not in job["runout"]:
+                        job["runout"].append(segs[-1][0])
+                        log.info("[%s] Spule in %s leer gelaufen (AMS hat nachgefüllt)", self.id, self.slot_label(segs[-1][0]))
+                    changed = True
                 if tray_now and (not segs or segs[-1][0] != tray_now):
                     segs.append([tray_now, round((prog or 0) / 100, 4)])
                     changed = True
@@ -303,6 +364,56 @@ class BambuPrinter(BasePrinter):
             self.job_ended(gs == "FINISH", (prog or 0) / 100)
         elif gs == "IDLE" and job is not None and prev in ACTIVE:
             self.job_ended(False, (prog or 0) / 100)
+
+    # --- Arbeitsschritte ------------------------------------------------------
+    def _track_stage(self, gs):
+        """Ablauf mitschreiben (unter self.lock aufgerufen)."""
+        if gs not in ACTIVE:
+            return
+        key = self.state.get("subtask_name") or self.state.get("gcode_file") or ""
+        if key != self.stage_job:
+            self.stage_job, self.stage_log = key, []
+        code = self.state.get("stg_cur")
+        try:
+            code = int(code)
+        except (TypeError, ValueError):
+            return
+        if code in (-1, 255):
+            code = 0
+        if not self.stage_log or self.stage_log[-1][0] != code:
+            self.stage_log.append([code, time.time()])
+            del self.stage_log[:-40]
+
+    def stage_steps(self):
+        """Ablauf mit Dauer: [{icon, text, sec, now}] – „Druckt“ (0) nur als letzter Schritt."""
+        out, log_ = [], list(self.stage_log)
+        for i, (code, t0) in enumerate(log_):
+            t1 = log_[i + 1][1] if i + 1 < len(log_) else time.time()
+            info = stage_info(code) or {"icon": "🖨", "text": "Druckt"}
+            if code == 0 and i + 1 < len(log_) and t1 - t0 < 20:
+                continue        # kurzes „Druckt“ zwischen zwei Vorbereitungsschritten
+            out.append({"icon": info["icon"], "text": info["text"], "sec": int(t1 - t0), "now": i == len(log_) - 1})
+        return out
+
+    def _pause_text(self):
+        s = self.state
+        name = s.get("subtask_name", "")
+        info = stage_info(s.get("stg_cur"))
+        reason = info["text"].replace("Pausiert: ", "").replace("Pausiert ", "") if info and info["pause"] else ""
+        lines = [name] + ([f"Grund: {reason}"] if reason else [])
+        if info and info["code"] == 6:
+            # leerer Slot + Slots mit demselben Material zeigen
+            now = tray_key(s.get("ams", {}).get("tray_now"))
+            slots = {sl["key"]: sl for sl in self.slots()}
+            leer = slots.get(now) or {}
+            mat = (leer.get("material") or "").upper()
+            if leer:
+                lines.append(f"Leer: {leer.get('label', now)}" + (f" ({leer.get('material')})" if leer.get("material") else ""))
+            gleich = [sl for k, sl in slots.items() if k != now and mat and (sl.get("material") or "").upper() == mat]
+            if gleich:
+                lines.append("Gleiches Material in: " + ", ".join(sl.get("label", sl["key"]) for sl in gleich))
+            lines.append("Neues Filament einlegen und am Drucker oder in Bambu Studio fortsetzen.")
+        return "\n".join(x for x in lines if x)
 
     def _download_3mf(self, job):
         sub = job.get("subtask") or job.get("name") or ""
@@ -419,6 +530,8 @@ class BambuPrinter(BasePrinter):
                 "nozzle_diameter": s.get("nozzle_diameter"),
                 "light": next((l.get("mode") == "on" for l in (s.get("lights_report") or []) if l.get("node") == "chamber_light"), None),
                 "wifi": s.get("wifi_signal"),
+                "stage": stage_info(s.get("stg_cur")) if active else None,
+                "stage_steps": self.stage_steps() if active else [],
             }
 
     # --- Slot am Drucker einstellen (wie in Bambu Studio) ---------------------

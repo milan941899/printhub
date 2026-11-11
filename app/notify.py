@@ -28,6 +28,7 @@ CATALOG = {
     "low_spool": ("Spulen & Lager", "Spule fast leer", True, False),
     "short": ("Spulen & Lager", "Filament reicht nicht für den Druck", True, False),
     "stock_low": ("Spulen & Lager", "Lagerbestand unter Minimum", False, False),
+    "runout": ("Spulen & Lager", "Spule leer gelaufen – Lager prüfen / Leergewicht korrigieren", True, False),
     "maintenance": ("Wartung", "Wartung fällig", True, False),
     "service": ("Dienste", "Spoolman / Bambuddy / OctoEverywhere nicht erreichbar", True, False),
     "queue_add": ("Warteschlange", "Neuer Auftrag in der Bambuddy-Warteschlange", False, False),
@@ -39,7 +40,7 @@ EVENTS = list(CATALOG)
 # die Meldung durchbricht dann den Android-Ruhemodus, auch ohne „Sofortnachrichten“ in der App.
 PRIO_DEFAULT = {
     "fail": 5, "error": 5, "pause": 5, "offline": 5, "waiting": 5, "plate": 5, "power": 5,
-    "finish": 4, "low_spool": 4, "short": 4, "bed_cooled": 4, "queue_check": 4,
+    "finish": 4, "low_spool": 4, "runout": 4, "short": 4, "bed_cooled": 4, "queue_check": 4,
     "start": 3, "first_layer": 3, "progress": 3, "cfg": 3, "stock_low": 3, "maintenance": 3, "service": 3,
     "queue_add": 3, "queue_done": 3,
 }
@@ -131,7 +132,8 @@ class Notifier:
         tg = self.tg_on and (force or event in set(self.settings.get("tg_events") or []))
         return nt, tg
 
-    def send(self, event, title, message, tags="", priority="default", force=False, photo=None, only=None):
+    def send(self, event, title, message, tags="", priority="default", force=False, photo=None, only=None,
+             buttons=None, click=None):
         """photo: Funktion, die ein JPEG liefert (nur aufgerufen, wenn für das Ereignis Fotos an sind).
         only: "ntfy" / "telegram" = nur über diesen Weg (Testnachricht)."""
         nt, tg = self.channels(event, force)
@@ -141,10 +143,11 @@ class Notifier:
             nt = False
         if not (nt or tg):
             return False
-        threading.Thread(target=self._run, args=(event, title, message, tags, priority, force, photo, nt, tg), daemon=True).start()
+        threading.Thread(target=self._run, args=(event, title, message, tags, priority, force, photo, nt, tg, buttons, click),
+                         daemon=True).start()
         return True
 
-    def _run(self, event, title, message, tags, priority, force, photo, nt=True, tg=False):
+    def _run(self, event, title, message, tags, priority, force, photo, nt=True, tg=False, buttons=None, click=None):
         if not force and self.sent_path and event in DEFER:
             if self.waechter_running():
                 time.sleep(25)
@@ -161,11 +164,11 @@ class Notifier:
         fb = priority if isinstance(priority, int) else PRIO_NAMES.get(priority, 3)
         prio = prio_for(self.settings, event, fb) if event in CATALOG else fb
         if nt:
-            self._post(title, message, tags, prio, img)
+            self._post(title, message, tags, prio, img, click)
         if tg:
-            self.telegram.send(title, message, prio, img, tags=tags)
+            self.telegram.send(title, message, prio, img, buttons=buttons, tags=tags)
 
-    def _post(self, title, message, tags, priority, img=None):
+    def _post(self, title, message, tags, priority, img=None, click=None):
         server, topic = self.url.rstrip("/").rsplit("/", 1)
         prio = priority if isinstance(priority, int) else PRIO_NAMES.get(priority, 3)
         auth = {"Authorization": f"Bearer {self.token}"} if self.token else {}
@@ -176,16 +179,16 @@ class Notifier:
                      "Filename": "drucker.jpg", "Content-Type": "image/jpeg", **auth}
                 if tags:
                     h["Tags"] = tags
-                if self.click:
-                    h["Click"] = self.click
+                if click or self.click:
+                    h["Click"] = click or self.click
                 r = requests.put(f"{server}/{topic}", data=img, headers=h, timeout=30)
                 if r.ok:
                     return
             body = {"topic": topic, "title": title, "message": message, "priority": prio}
             if tags:
                 body["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-            if self.click:
-                body["click"] = self.click
+            if click or self.click:
+                body["click"] = click or self.click
             r = requests.post(server, json=body, headers={**auth, "Priority": str(prio)}, timeout=10)
             r.raise_for_status()
         except Exception as e:

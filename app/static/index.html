@@ -277,8 +277,26 @@ function pickInfo(p) {
 
 function statusBadge(p) {
   if (!p.online) return `<span class="badge off">offline</span>`;
-  const cls = p.paused ? "pause" : p.printing ? "busy" : "ok";
-  return `<span class="badge ${cls}">${esc(p.state)}</span>`;
+  const cls = p.paused || (p.stage && p.stage.pause) ? "pause" : p.printing ? "busy" : "ok";
+  return `<span class="badge ${cls}">${esc((p.stage && p.stage.short) || p.state)}</span>`;
+}
+const fmtSec = s => s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")} h` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+function stageHtml(p) {
+  const st = p.stage;
+  let line = "";
+  if (st) {
+    let extra = "";
+    if (/heizt|Betttemperatur/i.test(st.text)) {
+      const t = p.temps.find(x => /Bett/.test(st.text) ? x.label === "Bett" : x.label !== "Bett" && x.target > 0);
+      if (t && t.target) extra = ` · ${Math.round(t.actual)} / ${Math.round(t.target)} °C`;
+    }
+    line = `<div class="stage ${st.pause ? "p" : ""}">${st.icon} ${esc(st.text)}${extra}</div>`;
+  }
+  const steps = (p.stage_steps || []).filter(x => x.text !== "Druckt" || x.now);
+  const done = steps.filter(x => !x.now || x.text !== "Druckt");
+  const list = done.length > 1 || (done.length && !st) ? `<details class="steps" ${window._stepsOpen ? "open" : ""} ontoggle="window._stepsOpen=this.open"><summary>Ablauf (${done.length} Schritte)</summary>${steps.map(x =>
+    `<div class="${x.now ? "now" : ""}">${x.icon} ${esc(x.text)}<span>${x.now ? "läuft · " : ""}${fmtSec(x.sec)}</span></div>`).join("")}</details>` : "";
+  return line + list;
 }
 
 function ringHtml(p, lastJob) {
@@ -286,11 +304,12 @@ function ringHtml(p, lastJob) {
   const C = 2 * Math.PI * 52;
   const off = C * (1 - pct / 100);
   const center = p.printing
-    ? `<div><div class="pct">${pct}<small>%</small></div><div class="st">${esc(p.state)}</div></div>`
+    ? `<div><div class="pct">${pct}<small>%</small></div><div class="st">${esc((p.stage && p.stage.short) || p.state)}</div></div>`
     : `<div><div class="pct" style="font-size:20px">${p.online ? "✓" : "–"}</div><div class="st">${esc(p.online ? p.state : "offline")}</div></div>`;
   const short = (p.short || []).map(n => `<div class="${n.ok ? "muted" : "err"} small">⚠ ${esc(n.slot)}: ${n.rest} g übrig, braucht ~${n.need} g${n.ok ? ` – Ersatz: ${esc(n.backup.join(", "))}` : ""}</div>`).join("");
   const info = p.printing ? `
       <div class="job" style="display:flex;gap:10px;align-items:center">${p.thumb ? `<img class="jobthumb" src="${p.thumb}" alt="" onclick="showImg('${p.thumb}', '${esc(p.job).replace(/'/g, "")}')">` : ""}<span>${esc(p.job || "Druck")}</span></div>
+      ${stageHtml(p)}
       ${short}
       <div class="kv">
         <span>Noch</span><b>${fmtMin(p.remaining_min)}</b>

@@ -67,10 +67,50 @@
       <div class="field"><span class="lab">Netto je Rolle (g)</span><input id="a-weight" type="number" min="1" step="1" placeholder="aus Sorte"></div>
       <div class="field"><span class="lab">Preis je Rolle (€)</span><input id="a-price" type="number" min="0" step="0.01" placeholder="aus Sorte"></div>
       <div class="field"><span class="lab">Ort</span><input id="a-loc" type="text"></div>
+      <div class="field"><span class="lab">Brutto gewogen (g, optional)</span><input id="a-gross" type="number" min="1" step="1" placeholder="Waage"></div>
+      <div class="field"><span class="lab">Leere Spule (g)</span><input id="a-empty" type="number" min="1" step="1" placeholder="aus Sorte"></div>
     </div>
+    <label class="chk"><input type="checkbox" id="a-forfil" checked> Leergewicht für die Sorte merken</label>
+    <div id="a-res" class="wres"></div>
     <label class="chk"><input type="checkbox" id="a-labels" checked> Danach gleich Etiketten drucken</label>
     <div class="muted small">Sorte fehlt in der Liste? <a href="#" onclick="event.preventDefault();closeM();openFil()">＋ Neue Sorte anlegen</a> – auch direkt aus der Filament-Datenbank.</div>
     <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Anlegen</button></div>
+  </form>
+</div>
+
+<!-- Dialog: Rolle wiegen -->
+<div class="modal" id="m-weigh" onclick="if(event.target===this)closeM()">
+  <form class="mbox card" onsubmit="event.preventDefault();saveWeigh()">
+    <h2>⚖ Rolle wiegen</h2>
+    <div id="w-name" class="muted"></div>
+    <div class="fgrid">
+      <div class="field"><span class="lab">Waage – brutto (g)</span><input id="w-gross" type="number" min="1" step="1" required inputmode="numeric"></div>
+      <div class="field"><span class="lab">Leere Spule (g)</span><input id="w-empty" type="number" min="1" step="1" required inputmode="numeric"></div>
+    </div>
+    <div id="w-leerhint" class="wres" style="display:none">Die Rolle ist leer gelaufen: Leere Spule <b>mit Karton-Kern</b> wiegen und hier eintragen.</div>
+    <label class="chk"><input type="checkbox" id="w-forfil"> Leergewicht für alle Rollen dieser Sorte merken</label>
+    <div id="w-res" class="wres"></div>
+    <div class="muted small">Brutto = Rolle mit allem, was beim Wiegen drauf ist (auch der Karton-Kern). Leergewicht = dieselbe Spule ohne Filament.</div>
+    <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Speichern</button></div>
+  </form>
+</div>
+
+<!-- Dialog: Rolle bearbeiten -->
+<div class="modal" id="m-spool" onclick="if(event.target===this)closeM()">
+  <form class="mbox card" onsubmit="event.preventDefault();saveSpool()">
+    <h2 id="e-title">Rolle bearbeiten</h2>
+    <div class="fgrid">
+      <div class="field"><span class="lab">Filament neu (g)</span><input id="e-initial" type="number" min="1" step="1"></div>
+      <div class="field"><span class="lab">Filament übrig (g)</span><input id="e-rest" type="number" min="0" step="1"></div>
+      <div class="field"><span class="lab">Leere Spule (g)</span><input id="e-empty" type="number" min="0" step="1"></div>
+      <div class="field"><span class="lab">Preis (€)</span><input id="e-price" type="number" min="0" step="0.01"></div>
+      <div class="field"><span class="lab">Ort</span><input id="e-loc" type="text"></div>
+      <div class="field"><span class="lab">Charge</span><input id="e-lot" type="text"></div>
+    </div>
+    <div class="field"><span class="lab">Notiz</span><input id="e-comment" type="text"></div>
+    <label class="chk"><input type="checkbox" id="e-forfil"> Leergewicht für alle Rollen dieser Sorte merken</label>
+    <div id="e-hint" class="muted small"></div>
+    <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Speichern</button></div>
   </form>
 </div>
 
@@ -129,6 +169,14 @@ async function load() {
   const cur = $("mat").value;
   $("mat").innerHTML = `<option value="">Alle</option>` + mats.map(m => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join("");
   render();
+  // Link aus der Meldung „Spule leer“: /lager?wiegen=12 öffnet gleich den Wiegen-Dialog
+  const w = +new URLSearchParams(location.search).get("wiegen");
+  if (w && !window._wiegenDone) {
+    window._wiegenDone = true;
+    const f = _fil(w);
+    if (f) { open.add(f.id); render(); openWeigh(w, true); $("w-forfil").checked = true; }
+    else PH.toast(`Rolle #${w} ist nicht (mehr) im Lager – evtl. schon archiviert`, true);
+  }
 }
 
 function barColor(hex) {
@@ -255,9 +303,11 @@ function spoolRow(f, s) {
     <input type="checkbox" ${sel.has(s.id) ? "checked" : ""} onchange="selOne(${s.id}, this.checked)" title="für Etiketten auswählen">
     <b class="sid">#${s.id}</b>
     <div class="sbar"><div style="width:${pct}%;background:${barColor(f.color)}"></div></div>
-    <span class="sg">${s.remaining != null ? Math.round(s.remaining) + " g" : "–"}</span>
+    <span class="sg">${s.remaining != null ? Math.round(s.remaining) + " g" : "–"}${s.remaining != null && s.empty ? `<small title="So viel sollte die Waage jetzt zeigen (Filament + leere Spule ${Math.round(s.empty)} g)">⚖ ${Math.round(s.remaining + s.empty)} g</small>` : ""}</span>
     <span class="sloc ${s.in_printer ? "inp" : ""}">${s.in_printer ? "🖨 " : ""}${esc(s.location || "–")}${s.opened ? "" : " · neu"}${last ? ` · zuletzt ${last}` : ""}</span>
     <span class="sact">
+      <button class="small-btn" title="Wiegen: Bruttogewicht eingeben" onclick="openWeigh(${s.id})">⚖</button>
+      <button class="small-btn" title="Rolle bearbeiten" onclick="openSpool(${s.id})">✎</button>
       <button class="small-btn" title="NFC-/QR-Link kopieren" onclick="copyLink(${s.id})">🔗</button>
       <a class="small-btn" title="In Spoolman öffnen" target="_blank" href="${D.spoolman_url}/spool/show/${s.id}">↗</a>
       <button class="small-btn" title="Leer – archivieren (bleibt in Spoolman für die Statistik)" onclick="archive(${s.id})">📦</button>
@@ -272,7 +322,7 @@ function archRow(f, s) {
     <input type="checkbox" ${sel.has(s.id) ? "checked" : ""} onchange="selOne(${s.id}, this.checked)">
     <b class="sid">#${s.id}</b>
     <div class="sbar"><div style="width:${s.remaining && (s.initial || f.weight) ? Math.max(0, Math.min(100, s.remaining / (s.initial || f.weight) * 100)) : 0}%;background:var(--muted)"></div></div>
-    <span class="sg">${s.remaining != null ? Math.round(s.remaining) + " g" : "–"}</span>
+    <span class="sg">${s.remaining != null ? Math.round(s.remaining) + " g" : "–"}${s.remaining != null && s.empty ? `<small title="So viel sollte die Waage jetzt zeigen (Filament + leere Spule ${Math.round(s.empty)} g)">⚖ ${Math.round(s.remaining + s.empty)} g</small>` : ""}</span>
     <span class="sloc">archiviert${last ? ` · zuletzt ${last}` : ""}</span>
     <span class="sact">
       <button class="small-btn" title="Zurück ins Lager holen" onclick="unarchive(${s.id})">↩ Zurückholen</button>
@@ -323,16 +373,88 @@ async function copyLink(id) {
 }
 
 // --- Dialoge ---
+function _fil(sid) { return D.filaments.find(f => f.spools.some(x => x.id === sid)); }
+function openWeigh(id, leer = false) {
+  const s = _spool(id), f = _fil(id);
+  $("m-weigh").dataset.id = id; $("m-weigh").dataset.leer = leer ? "1" : "";
+  $("w-gross").closest(".field").style.display = leer ? "none" : ""; $("w-gross").required = !leer;
+  $("w-leerhint").style.display = leer ? "" : "none";
+  $("w-name").textContent = `${f.vendor} ${f.name} ${f.material} · Rolle #${id}` + (s.remaining != null ? ` · laut Lager ${Math.round(s.remaining)} g` : "");
+  $("w-gross").value = ""; $("w-empty").value = s.empty ? Math.round(s.empty) : "";
+  $("w-forfil").checked = !f.empty;
+  if (leer) $("w-empty").value = "";
+  weighCalc(); $("m-weigh").classList.add("open"); (leer ? $("w-empty") : $("w-gross")).focus();
+}
+function weighCalc() {
+  const id = +$("m-weigh").dataset.id, s = _spool(id) || {}, gr = +$("w-gross").value, em = +$("w-empty").value;
+  if ($("m-weigh").dataset.leer) { $("w-res").textContent = ""; return; }
+  if (!gr || !em) { $("w-res").textContent = ""; return; }
+  const net = Math.max(0, gr - em), d = s.remaining != null ? net - s.remaining : null;
+  $("w-res").innerHTML = `= <b>${Math.round(net)} g</b> Filament drauf` + (d != null ? ` <span class="${Math.abs(d) > 15 ? "err" : "muted"}">(Lager sagt ${Math.round(s.remaining)} g → ${d > 0 ? "+" : ""}${Math.round(d)} g)</span>` : "");
+}
+async function saveWeigh() {
+  const id = +$("m-weigh").dataset.id, leer = !!$("m-weigh").dataset.leer;
+  const d = await api(`/api/lager/spools/${id}/weigh`, "POST", {gross: leer ? $("w-empty").value : $("w-gross").value,
+    empty: $("w-empty").value, for_filament: $("w-forfil").checked});
+  closeM();
+  if (leer) {
+    PH.toast(`Leergewicht ${Math.round(+$("w-empty").value)} g gespeichert`);
+    if (confirm(`Rolle #${id} ist leer – jetzt ins Archiv verschieben?`)) return archiveNow(id);
+  } else PH.toast(`Rolle #${id}: ${Math.round(d.remaining)} g Filament gespeichert`);
+  load();
+}
+async function archiveNow(id) {
+  await api(`/api/lager/spools/${id}/archive?force=1`, "POST"); sel.delete(id); PH.toast(`Spule #${id} archiviert`); load();
+}
+function openSpool(id) {
+  const s = _spool(id), f = _fil(id);
+  $("m-spool").dataset.id = id;
+  $("e-title").textContent = `Rolle #${id} – ${f.vendor} ${f.name}`;
+  $("e-initial").value = s.initial ? Math.round(s.initial) : (f.weight || "");
+  $("e-rest").value = s.remaining != null ? Math.round(s.remaining) : "";
+  $("e-empty").value = s.empty ? Math.round(s.empty) : "";
+  $("e-price").value = s.price ?? "";
+  $("e-loc").value = s.in_printer ? s.location : (s.location || ""); $("e-loc").disabled = !!s.in_printer;
+  $("e-lot").value = s.lot || ""; $("e-comment").value = s.comment || ""; $("e-forfil").checked = false;
+  $("e-hint").textContent = s.in_printer ? "Der Ort wird von PrintHub gesetzt, solange die Rolle im Drucker steckt." : "";
+  $("m-spool").classList.add("open");
+}
+async function saveSpool() {
+  const id = +$("m-spool").dataset.id, s = _spool(id) || {};
+  const body = {initial: $("e-initial").value, empty: $("e-empty").value, price: $("e-price").value,
+                lot: $("e-lot").value, comment: $("e-comment").value, for_filament: $("e-forfil").checked};
+  if (!s.in_printer) body.location = $("e-loc").value;
+  if ($("e-rest").value !== "" && (s.remaining == null || Math.round(s.remaining) !== +$("e-rest").value)) body.remaining = $("e-rest").value;
+  await api(`/api/lager/spools/${id}/edit`, "POST", body);
+  closeM(); PH.toast(`Rolle #${id} gespeichert`); load();
+}
+document.addEventListener("input", e => {
+  if (["w-gross", "w-empty"].includes(e.target.id)) weighCalc();
+  if (["a-gross", "a-empty"].includes(e.target.id)) addCalc();
+});
 function closeM() { document.querySelectorAll(".modal").forEach(m => m.classList.remove("open")); }
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeM(); });
 function openAdd(fid) {
   $("a-fil").innerHTML = D.filaments.map(f => `<option value="${f.id}" ${f.id === fid ? "selected" : ""}>${esc(f.vendor)} · ${esc(f.name)} ${esc(f.material)}</option>`).join("");
   $("a-count").value = 1; $("a-weight").value = ""; $("a-price").value = ""; $("a-loc").value = D.storage;
+  $("a-gross").value = ""; addFill(); $("a-fil").onchange = addFill;
   $("m-add").classList.add("open"); $("a-count").focus();
+}
+function addFill() {
+  const f = D.filaments.find(x => x.id === +$("a-fil").value) || {};
+  $("a-empty").value = f.empty ? Math.round(f.empty) : ""; addCalc();
+}
+function addCalc() {
+  const gr = +$("a-gross").value, em = +$("a-empty").value, f = D.filaments.find(x => x.id === +$("a-fil").value) || {};
+  if (!gr) { $("a-res").textContent = ""; return; }
+  if (!em) { $("a-res").innerHTML = `<span class="err">Leergewicht der Spule fehlt</span>`; return; }
+  const net = gr - em, nom = f.weight || 1000, d = net - nom;
+  $("a-res").innerHTML = `= <b>${Math.round(net)} g</b> Filament drauf` + (Math.abs(d) >= 5 ? ` <span class="${d < 0 ? "err" : "muted"}">(${d > 0 ? "+" : ""}${Math.round(d)} g zu ${nom} g Nenngewicht)</span>` : ` <span class="muted">✓ passt zu ${nom} g</span>`);
 }
 async function saveAdd() {
   const d = await api("/api/lager/spools", "POST", {filament_id: +$("a-fil").value, count: +$("a-count").value,
-    initial_weight: $("a-weight").value, price: $("a-price").value, location: $("a-loc").value});
+    initial_weight: $("a-weight").value, price: $("a-price").value, location: $("a-loc").value,
+    gross: $("a-gross").value, empty: $("a-empty").value, empty_for_filament: $("a-forfil").checked});
   closeM(); PH.toast(`${d.ids.length} Rolle(n) angelegt: #${d.ids.join(", #")}`);
   if ($("a-labels").checked) return printLabels(d.ids);
   open.add(+$("a-fil").value); load();
