@@ -659,6 +659,15 @@ def _slot_names():
     return out
 
 
+def _release_spool(sid):
+    """Spule aus allen PrintHub-Slots austragen (z. B. leer gelaufen und schon gewechselt)."""
+    for p in printers.values():
+        for sl in p.slots():
+            if store.get_slot(p.id, sl["key"]) == sid:
+                store.set_slot(p.id, sl["key"], None)
+                log.info("Lager: Spule #%s aus %s ausgetragen", sid, p.location_name(sl["key"]))
+
+
 async def api_lager(request):
     try:
         inv = await run_in_threadpool(spoolman.inventory, request.query_params.get("archived") == "1")
@@ -789,7 +798,9 @@ async def api_lager_unarchive(request):
 async def api_lager_archive(request):
     sid = int(request.path_params["sid"])
     if sid in _slot_names():
-        return JSONResponse({"error": "Spule steckt noch in einem Drucker – erst in PrintHub austragen"}, status_code=400)
+        if request.query_params.get("force") != "1":
+            return JSONResponse({"error": "Spule steckt noch in einem Drucker – erst in PrintHub austragen"}, status_code=400)
+        _release_spool(sid)
     try:
         await run_in_threadpool(spoolman.archive_spool, sid)
     except RuntimeError as e:
@@ -804,8 +815,10 @@ async def api_lager_delete(request):
     done, skipped = [], []
     for sid in [int(x) for x in (b.get("ids") or [])]:
         if sid in in_printer:
-            skipped.append(sid)
-            continue
+            if not b.get("force"):
+                skipped.append(sid)
+                continue
+            _release_spool(sid)
         try:
             await run_in_threadpool(spoolman.delete_spool, sid)
             done.append(sid)

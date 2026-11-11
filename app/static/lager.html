@@ -204,10 +204,10 @@ function archFil(f) {
 function selArch(fid, on) { for (const s of D.filaments.find(f => f.id === fid).archived) on ? sel.add(s.id) : sel.delete(s.id); render(); }
 async function archiveSel() {
   const ids = [...sel];
-  if (!confirm(`${ids.length === 1 ? "Rolle" : ids.length + " Rollen"} #${ids.join(", #")} ins Archiv verschieben?\n(Rollen, die im Drucker stecken, werden übersprungen.)`)) return;
+  if (!confirm(`${ids.length === 1 ? "Rolle" : ids.length + " Rollen"} #${ids.join(", #")} ins Archiv verschieben?` + _inPrinterNote(ids))) return;
   const ok = [], skip = [];
   for (const id of ids) {
-    const r = await (await fetch(`/api/lager/spools/${id}/archive`, {method: "POST"})).json();
+    const r = await (await fetch(`/api/lager/spools/${id}/archive?force=1`, {method: "POST"})).json();
     (r.ok ? ok : skip).push(id);
   }
   ok.forEach(i => sel.delete(i));
@@ -260,8 +260,8 @@ function spoolRow(f, s) {
     <span class="sact">
       <button class="small-btn" title="NFC-/QR-Link kopieren" onclick="copyLink(${s.id})">🔗</button>
       <a class="small-btn" title="In Spoolman öffnen" target="_blank" href="${D.spoolman_url}/spool/show/${s.id}">↗</a>
-      ${s.in_printer ? "" : `<button class="small-btn" title="Leer – archivieren (bleibt in Spoolman für die Statistik)" onclick="archive(${s.id})">📦</button>
-        <button class="small-btn danger" title="Endgültig löschen (z. B. Fehleingabe)" onclick="delSpools([${s.id}])">✕</button>`}
+      <button class="small-btn" title="Leer – archivieren (bleibt in Spoolman für die Statistik)" onclick="archive(${s.id})">📦</button>
+      <button class="small-btn danger" title="Endgültig löschen (z. B. Fehleingabe)" onclick="delSpools([${s.id}])">✕</button>
     </span>
   </div>`;
 }
@@ -297,15 +297,20 @@ async function api(url, method, body) {
   return d;
 }
 async function setMin(fid, v) { await api("/api/lager/min", "PUT", {filament_id: fid, min: Math.max(0, v)}); load(); }
+function _spool(id) { for (const f of D.filaments) { const s = f.spools.find(x => x.id === id); if (s) return s; } return null; }
+function _inPrinterNote(ids) {
+  const inp = ids.map(_spool).filter(s => s && s.in_printer);
+  return inp.length ? `\n\n⚠ ${inp.map(s => `#${s.id} ist noch „${s.location}“ zugeordnet`).join(", ")} – wird dort ausgetragen (z. B. weil sie leer gelaufen ist).` : "";
+}
 async function archive(id) {
-  if (!confirm(`Spule #${id} als leer archivieren?\n(In Spoolman bleibt sie unter „archiviert“ erhalten.)`)) return;
-  await api(`/api/lager/spools/${id}/archive`, "POST"); sel.delete(id); PH.toast(`Spule #${id} archiviert`); load();
+  if (!confirm(`Spule #${id} als leer archivieren?\n(In Spoolman bleibt sie unter „archiviert“ erhalten.)` + _inPrinterNote([id]))) return;
+  await api(`/api/lager/spools/${id}/archive?force=1`, "POST"); sel.delete(id); PH.toast(`Spule #${id} archiviert`); load();
 }
 async function delSpools(ids) {
   if (!ids.length) return;
   const list = ids.map(i => "#" + i).join(", ");
-  if (!confirm(`${ids.length === 1 ? "Rolle" : ids.length + " Rollen"} ${list} ENDGÜLTIG löschen?\n\nDas kann nicht rückgängig gemacht werden. Für leere Rollen lieber 📦 archivieren.`)) return;
-  const d = await api("/api/lager/delete", "POST", {ids});
+  if (!confirm(`${ids.length === 1 ? "Rolle" : ids.length + " Rollen"} ${list} ENDGÜLTIG löschen?\n\nDas kann nicht rückgängig gemacht werden. Für leere Rollen lieber 📦 archivieren.` + _inPrinterNote(ids))) return;
+  const d = await api("/api/lager/delete", "POST", {ids, force: true});
   d.deleted.forEach(i => sel.delete(i));
   PH.toast(`${d.deleted.length} gelöscht` + (d.skipped.length ? ` – übersprungen (steckt im Drucker): #${d.skipped.join(", #")}` : ""), !!d.skipped.length);
   load();
