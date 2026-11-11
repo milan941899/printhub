@@ -10,6 +10,7 @@ import html
 import json
 import logging
 import os
+import re
 import threading
 import time
 
@@ -33,6 +34,19 @@ TASTEN = [[("🖨️ Status", "status"), ("📷 Bild", "bild"), ("🧵 Filament"
           [("📥 Aufträge", "warteschlange"), ("🏁 Verlauf", "verlauf"), ("📊 Statistik", "statistik")],
           [("🔧 Wartung", "wartung"), ("💡 Licht", "licht"), ("⚡ Strom", "strom"), ("🛑 Platte", "platte")]]
 TASTE_ZU_BEFEHL = {l: c for row in TASTEN for l, c in row}
+_ALTE_TASTEN = {"warteschlange": "warteschlange", "aufträge": "warteschlange", "auftraege": "warteschlange",
+                "queue": "warteschlange", "status": "status", "bild": "bild", "kamera": "bild", "foto": "bild",
+                "filament": "filament", "spulen": "filament", "lager": "filament", "verlauf": "verlauf",
+                "statistik": "statistik", "wartung": "wartung", "licht": "licht", "strom": "strom",
+                "platte": "platte", "hilfe": "hilfe"}
+
+
+def _taste_alt(text):
+    """Knopf-Text ohne Emoji („📥 Warteschlange“) → Befehl; None, wenn es kein bekannter Knopf ist."""
+    if not text or text.startswith("/") or len(text) > 30:
+        return None
+    wort = re.sub(r"[^\wäöüß ]", "", text.lower()).strip()
+    return _ALTE_TASTEN.get(wort)
 
 
 class Telegram:
@@ -245,8 +259,12 @@ class Telegram:
             else:
                 self.candidate = (chat, name, float(m.get("date") or time.time()))
             return
+        alt = _taste_alt(text)
         if text in TASTE_ZU_BEFEHL:
             cmd, args = TASTE_ZU_BEFEHL[text], ""
+        elif alt:                      # Knopf einer älteren Tastenleiste → ausführen und neue Leiste schicken
+            cmd, args = alt, ""
+            self._neue_leiste = True
         else:
             cmd, _, args = text.partition(" ")
             cmd = cmd.lstrip("/").split("@")[0].lower()
@@ -270,6 +288,10 @@ class Telegram:
         elif text.startswith("/"):
             self.send_help(pin=False)
         # normaler Text ohne Befehl: nicht antworten
+        if getattr(self, "_neue_leiste", False):
+            self._neue_leiste = False
+            self._help_at = 0
+            self.send_help(pin=True)
 
     def send_help(self, chat=None, pin=True):
         now = time.time()

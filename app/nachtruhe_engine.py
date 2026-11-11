@@ -488,15 +488,18 @@ class AntwortEmpfaenger(threading.Thread):
         self.fehler_in_folge = 0
         self.zuletzt = {}           # gleiche Antwort (z. B. ntfy UND Telegram gedrückt) nur einmal
 
-    def neu(self, mid, msg):
+    def neu(self, mid, msg, quelle="ntfy"):
+        """Dieselbe Antwort über ntfy UND Telegram zählt einmal; ein erneuter Tastendruck
+        im selben Kanal ist dagegen eine neue Antwort."""
         msg = str(msg or "").strip()
         if not msg or msg == "noop":
             return
         with self.lock:
             jetzt = time.time()
-            if jetzt - self.zuletzt.get(msg, 0) < 90:
+            t, q, m = self.zuletzt.get(msg, (0, "", None))
+            if jetzt - t < 90 and (q != quelle or (mid and mid == m)):
                 return
-            self.zuletzt[msg] = jetzt
+            self.zuletzt[msg] = (jetzt, quelle, mid)
             self.eingang.append((mid, msg))
 
     def telegram_eingang(self):
@@ -515,7 +518,7 @@ class AntwortEmpfaenger(threading.Thread):
                                 continue
                             if time.time() - d.get("time", time.time()) < 3600:
                                 log(f"Antwort aus Telegram: {d.get('msg')}")
-                                self.neu(d.get("id"), d.get("msg"))
+                                self.neu(d.get("id") or d.get("time"), d.get("msg"), "telegram")
                     os.remove(arbeit)
             except Exception as e:
                 log(f"Telegram-Antworten: {e}", einmalig=True)
@@ -545,7 +548,7 @@ class AntwortEmpfaenger(threading.Thread):
                         if ev.get("id"):
                             self.seit = ev["id"]
                         if ev.get("event") == "message":
-                            self.neu(ev.get("id"), ev.get("message", ""))
+                            self.neu(ev.get("id"), ev.get("message", ""), "ntfy")
                         if NTFY_ANTWORT != topic:      # Topic in config.env geändert -> neu verbinden
                             break
             except Exception as e:
@@ -750,6 +753,7 @@ class Waechter:
         self.naechste_queue = 0.0
         self.naechste_abfang = 0.0
         self.abgefangen = set()
+        self.gestartet = {}             # Auftrag-ID → Zeit, wann der Wächter ihn gestartet hat
         self.dry_gemeldet = set()
         self.wartet_gemeldet = set()
         self.offline_seit = None        # Bambuddy nicht erreichbar seit
@@ -822,6 +826,8 @@ class Waechter:
         for item in items:
             if item.get("status") != "pending" or item.get("manual_start"):
                 continue
+            if time.time() - self.gestartet.get(item["id"], 0) < 900:
+                continue        # hat der Wächter selbst gestartet – Bambuddy nimmt dafür „manuell“ weg
             if item.get("printer_id") is not None and str(item.get("printer_id")) != str(self.pid):
                 continue
             name = auftragsname(item)
@@ -1007,6 +1013,12 @@ class Waechter:
 
     def _starte_markiert(self, *a, **k):
         """starte() kann lange dauern (Einschalten, Plattenprüfung, Rückfrage) – PrintHub soll dann nichts ausschalten."""
+        item = a[0] if a else k.get("item") or {}
+        seit = time.time() - self.gestartet.get(item.get("id"), 0)
+        if seit < 300:      # Bambuddy braucht nach „Start“ etwas, bis der Auftrag auf „druckt“ wechselt
+            log(f"'{auftragsname(item)}' wurde vor {int(seit)} s gestartet – warte, bis Bambuddy ihn übernimmt.",
+                einmalig=True)
+            return
         self.beschaeftigt = True
         self._zustand()
         try:
@@ -1033,6 +1045,7 @@ class Waechter:
         # 1. Drucker einschalten, falls offline
         if not st.get("connected"):
             if self.plug is None:
+                self.gestartet[item["id"]] = time.time()
                 schalten(f"Starte '{name}'", "POST", f"/queue/{item['id']}/start")
                 self.druck_gestartet()
                 self.gestartet_melden(item, name, fertig)
@@ -1082,6 +1095,7 @@ class Waechter:
         # 4. Starten – Foto VOR dem Start holen (danach fährt das Bett los)
         bild = self.start_bild()
         _, fertig, _ = self.passt_ins_fenster(item)
+        self.gestartet[item["id"]] = time.time()
         schalten(f"Starte '{name}'", "POST", f"/queue/{item['id']}/start")
         self.druck_gestartet()
         self.gesperrt_bis = None

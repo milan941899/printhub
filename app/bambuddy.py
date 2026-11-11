@@ -78,7 +78,14 @@ class Bambuddy:
         return self.get("/updates/version", timeout=4).json().get("version")
 
     def queue(self):
-        items = self.get("/queue/", status="pending,printing").json()
+        # manche Bambuddy-Versionen verstehen nur EINEN Status pro Abfrage („pending,printing“ → leer)
+        items, ids = [], set()
+        for stt in ("printing", "pending"):
+            d = self.get("/queue/", status=stt).json()
+            for it in (d.get("items", d) if isinstance(d, dict) else d) or []:
+                if it.get("id") not in ids and it.get("status") in ("printing", "pending"):
+                    ids.add(it.get("id"))
+                    items.append(it)
         out = []
         for it in items:
             if it.get("archive_id") and it.get("archive_thumbnail"):

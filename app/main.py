@@ -1426,12 +1426,12 @@ def _queue_plan(items):
             except Exception:
                 rem = None
             left = (rem * 60) if rem else (q.get("seconds") or 0) // 2
-    pend = []
+    pend, lokal = [], {}
     for q in items:
         if q.get("status") == "pending":
-            q["sched_local"] = _to_local(q.get("scheduled"), tz)
+            lokal[q["id"]] = _to_local(q.get("scheduled"), tz)
             q["forced"] = q["id"] in forced
-            pend.append({**q, "scheduled": q["sched_local"]})
+            pend.append({**q, "scheduled": lokal[q["id"]]})
     if not pend:
         out, ende = {}, None
     else:
@@ -1439,7 +1439,7 @@ def _queue_plan(items):
     for q in items:
         if q.get("status") == "pending":
             q["plan"] = out.get(q["id"])
-            d = q.pop("sched_local", None)
+            d = lokal.get(q["id"])
             q["sched_text"] = sched.wann(d, now) if d else ""
     summary = {"now": now.timestamp()}
     if druckt and left:
