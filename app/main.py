@@ -92,6 +92,7 @@ temps = TempHistory()
 energy = EnergyLog(HISTORY_DB)
 autobackup = backup.AutoBackup(settings, DATA_DIR, CONFIG, log)
 maint = Maintenance(store)
+maint.history = history
 nachtruhe = Nachtruhe(DATA_DIR, settings)
 plate = Plate(DATA_DIR)
 import secrets as _secrets
@@ -682,6 +683,143 @@ async def api_printer_swap(request):
     return JSONResponse({"ok": True, "message": msg})
 
 
+# ---------------- Nochmal drucken ----------------
+def _norm_name(n):
+    n = re.sub(r"\.(gcode\.)?3mf$|\.gcode$", "", str(n or ""), flags=re.I)
+    return re.sub(r"[^a-z0-9äöüß]+", "", n.lower())
+
+
+def _bb_printer_id(name):
+    p = next((x for x in printers.values() if x.name == name), None)
+    try:
+        for bp in bambuddy.printers():
+            if (p is not None and getattr(p, "serial", None) and bp.get("serial_number") == p.serial) or bp.get("name") == name:
+                return bp.get("id")
+    except Exception:
+        pass
+    return None
+
+
+def _reprint(hid, by="PrintHub"):
+    """Druck aus dem Verlauf nochmal: passendes Bambuddy-Archiv suchen → Warteschlange (manuell, Druckwächter startet)."""
+    if not bambuddy.enabled:
+        raise ValueError("Bambuddy ist nicht eingerichtet")
+    e = history.get(hid)
+    if not e:
+        raise LookupError("Druck nicht gefunden")
+    want = _norm_name(e.get("job"))
+    if not want:
+        raise ValueError("Druck hat keinen Namen")
+    cands = []
+    for a in bambuddy.archives(300):
+        names = {_norm_name(a.get("print_name")), _norm_name(a.get("filename")), _norm_name(a.get("subtask_name"))}
+        if want in names or any(n and (want in n or n in want) and min(len(n), len(want)) >= 6 for n in names):
+            t = _iso_ts(a.get("completed_at") or a.get("started_at") or a.get("created_at")) or 0
+            cands.append((abs(t - (e.get("time") or 0)), a))
+    if not cands:
+        raise LookupError(f"„{e.get('job')}“ ist im Bambuddy-Archiv nicht zu finden – dort von Hand in die Warteschlange legen")
+    cands.sort(key=lambda x: x[0])
+    a = cands[0][1]
+    item = bambuddy.enqueue(a["id"], _bb_printer_id(e.get("printer")) or a.get("printer_id"), manual=True)
+    _qlog(item.get("id") or 0, e.get("job") or "", f"nochmal gedruckt aus dem Verlauf ({by})")
+    log.info("Nochmal drucken: %s → Archiv %s, Auftrag %s (%s)", e.get("job"), a["id"], item.get("id"), by)
+    hint = "" if nachtruhe.running() else " – Druckwächter läuft nicht, bitte in Bambuddy starten"
+    return f"„{e.get('job')}“ liegt wieder in der Warteschlange ✓{hint}"
+
+
+async def api_history_reprint(request):
+    try:
+        msg = await run_in_threadpool(_reprint, request.path_params["hid"])
+    except (ValueError, LookupError, RuntimeError, PermissionError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"ok": True, "message": msg})
+
+
+# ---------------- Trocknen & Feuchte ----------------
+def _dry_limits():
+    out = {}
+    for part in str(settings.get("dry_days") or "").split(","):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            try:
+                out[k.strip().upper()] = float(v.strip().replace(",", "."))
+            except ValueError:
+                pass
+    return out
+
+
+def _iso_ts(v):
+    if not v:
+        return None
+    try:
+        from datetime import datetime as _d
+        return _d.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _dry_info(sp, material):
+    """Wie lange ist die Rolle offen (seit Öffnen bzw. letztem Trocknen)? → {days, limit, due, dried, opened}"""
+    d = (store.data.get("dry") or {}).get(str(sp["id"])) or {}
+    opened = d.get("opened") or _iso_ts(sp.get("first_used"))
+    if not opened and not d.get("dried"):
+        return None                                   # noch verschlossen
+    ref = max(x for x in (opened, d.get("dried")) if x)
+    lim = _dry_limits()
+    mat = (material or "").upper()
+    keys = sorted((k for k in lim if k != "*" and mat.startswith(k)), key=len, reverse=True)   # PETG-HF → PETG, PLA+ → PLA
+    limit = lim[keys[0]] if keys else lim.get("*", 30)
+    days = (time.time() - ref) / 86400
+    return {"days": round(days, 1), "limit": limit, "due": bool(limit) and days >= limit,
+            "dried": d.get("dried"), "opened": opened}
+
+
+def _dry_set(sid, what):
+    with store.lock:
+        d = store.data.setdefault("dry", {}).setdefault(str(int(sid)), {})
+        d[what] = int(time.time())
+        d.pop("notified", None)
+        store._save()
+
+
+async def api_lager_dried(request):
+    sid = int(request.path_params["sid"])
+    what = "opened" if request.query_params.get("what") == "opened" else "dried"
+    _dry_set(sid, what)
+    log.info("Lager: Spule #%s %s", sid, "geöffnet" if what == "opened" else "getrocknet")
+    return JSONResponse({"ok": True})
+
+
+def _watch_dry():
+    """Spulen im Drucker, die zu lange offen sind: einmal melden, bis getrocknet."""
+    if "dry" not in notifier.events and "dry" not in (settings.get("tg_events") or []):
+        return
+    in_slot = _slot_names()
+    if not in_slot:
+        return
+    inv = spoolman.inventory()
+    fil = {f["id"]: f for f in inv["filaments"]}
+    msgs, knoepfe = [], []
+    for sp in inv["spools"]:
+        if sp["id"] not in in_slot:
+            continue
+        f = fil.get((sp.get("filament") or {}).get("id")) or sp.get("filament") or {}
+        info = _dry_info(sp, f.get("material"))
+        d = (store.data.get("dry") or {}).get(str(sp["id"])) or {}
+        if info and info["due"] and not d.get("notified"):
+            name = " ".join(x for x in [(f.get("vendor") or {}).get("name", ""), f.get("name") or "", f.get("material") or ""] if x)
+            msgs.append(f"{name} (#{sp['id']}, {in_slot[sp['id']]}): seit {int(info['days'])} Tagen offen"
+                        f"{' bzw. seit dem letzten Trocknen' if info['dried'] else ''} (Grenze {int(info['limit'])} Tage)")
+            knoepfe.append([(f"🔥 #{sp['id']} getrocknet", f"ph:dry:{sp['id']}")])
+            with store.lock:
+                store.data.setdefault("dry", {}).setdefault(str(sp["id"]), {})["notified"] = int(time.time())
+                store._save()
+    if msgs:
+        notifier.send("dry", "Trocknen empfohlen 💧", "\n".join(msgs) +
+                      "\nFeuchtes Filament: Fäden, Blasen, raue Oberfläche. Nach dem Trocknen auf „getrocknet“ tippen.",
+                      "droplet", buttons=knoepfe + [[("Später", "noop")]])
+
+
 async def api_lager(request):
     try:
         inv = await run_in_threadpool(spoolman.inventory, request.query_params.get("archived") == "1")
@@ -701,6 +839,7 @@ async def api_lager(request):
             "last_used": sp.get("last_used"), "price": sp.get("price"),
             "spool_weight": sp.get("spool_weight"), "empty": spoolman.empty_weight(sp),
             "comment": sp.get("comment") or "", "lot": sp.get("lot_nr") or "",
+            "dry": _dry_info(sp, (sp.get("filament") or {}).get("material")),
         })
     fils = []
     for f in inv["filaments"]:
@@ -1069,6 +1208,11 @@ def _sampler():
                 _watch_stock()
             except Exception as e:
                 log.debug("Lager-Überwachung: %s", e)
+        if tick % 720 == 90:            # stündlich
+            try:
+                _watch_dry()
+            except Exception as e:
+                log.debug("Trocknen-Überwachung: %s", e)
         tick += 1
         time.sleep(5)
 
@@ -2438,7 +2582,16 @@ def _tg_verlauf(args):
                                         f"{_de(r['grams'])} g" if r.get("grams") else "",
                                         f"{_de(r['total_cost'], 2)} €" if r.get("total_cost") else ""] if x)
         lines.append(f"{ic.get(r.get('outcome'), '⏹️')} {t} · {r.get('job') or '?'}" + (f"\n   {extra}" if extra else ""))
-    return [{"title": "Letzte Drucke", "text": "\n".join(lines), "tags": "checkered_flag"}]
+    knoepfe, seen = [], set()
+    for r in rows:
+        if r.get("job") and r["job"] not in seen and len(knoepfe) < 4:
+            seen.add(r["job"])
+            knoepfe.append([(f"↻ {r['job'][:28]}", f"ph:re:{r['id']}")])
+    out = {"title": "Letzte Drucke", "text": "\n".join(lines), "tags": "checkered_flag"}
+    if knoepfe and bambuddy.enabled:
+        out["text"] += "\n\n↻ = nochmal in die Warteschlange"
+        out["buttons"] = knoepfe
+    return [out]
 
 
 def _tg_statistik(args):
@@ -2459,7 +2612,7 @@ def _tg_wartung(args):
     for p in printers.values():
         _, hours = _hours_total(p)
         ms = maint.printer_status(p, hours)
-        unit = lambda i: "Tage" if i["unit"] == "d" else "h"
+        unit = lambda i: {"d": "Tage", "p": "Drucke"}.get(i["unit"], "h")
         due = [i for i in ms["items"] if i["due"]]
         warn = [i for i in ms["items"] if i["warn"]]
         lines = [f"🔴 {i['name']} – fällig (seit {_de(i['since'], 0)} {unit(i)})" for i in due] + \
@@ -2552,6 +2705,14 @@ def _tg_button(data):
             return p.swap_slot(parts[3])[:190], []
         except ValueError as e:
             return str(e)[:190], []
+    if parts[1] == "re" and len(parts) == 3:
+        try:
+            return _reprint(parts[2], "Telegram")[:190], []
+        except (ValueError, LookupError, RuntimeError, PermissionError) as e:
+            return str(e)[:190], []
+    if parts[1] == "dry" and len(parts) == 3:
+        _dry_set(parts[2], "dried")
+        return f"Spule #{parts[2]} als getrocknet gespeichert ✓", []
     if parts[1] == "sp" and len(parts) == 4 and parts[2] == "zero":
         sid = int(parts[3])
         try:
@@ -2736,6 +2897,8 @@ app = Starlette(
         Route("/api/lager/filament", api_lager_filament, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/archive", api_lager_archive, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/weigh", api_lager_weigh, methods=["POST"]),
+        Route("/api/lager/spools/{sid:int}/dried", api_lager_dried, methods=["POST"]),
+        Route("/api/history/{hid:int}/reprint", api_history_reprint, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/edit", api_lager_spool_edit, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/unarchive", api_lager_unarchive, methods=["POST"]),
         Route("/api/lager/min", api_lager_min, methods=["PUT"]),

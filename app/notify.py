@@ -28,6 +28,7 @@ CATALOG = {
     "low_spool": ("Spulen & Lager", "Spule fast leer", True, False),
     "short": ("Spulen & Lager", "Filament reicht nicht für den Druck", True, False),
     "stock_low": ("Spulen & Lager", "Lagerbestand unter Minimum", False, False),
+    "dry": ("Spulen & Lager", "Spule im Drucker sollte getrocknet werden", True, False),
     "runout": ("Spulen & Lager", "Spule leer gelaufen – Lager prüfen / Leergewicht korrigieren", True, False),
     "maintenance": ("Wartung", "Wartung fällig", True, False),
     "service": ("Dienste", "Spoolman / Bambuddy / OctoEverywhere nicht erreichbar", True, False),
@@ -40,7 +41,7 @@ EVENTS = list(CATALOG)
 # die Meldung durchbricht dann den Android-Ruhemodus, auch ohne „Sofortnachrichten“ in der App.
 PRIO_DEFAULT = {
     "fail": 5, "error": 5, "pause": 5, "offline": 5, "waiting": 5, "plate": 5, "power": 5,
-    "finish": 4, "low_spool": 4, "runout": 4, "short": 4, "bed_cooled": 4, "queue_check": 4,
+    "finish": 4, "low_spool": 4, "runout": 4, "dry": 3, "short": 4, "bed_cooled": 4, "queue_check": 4,
     "start": 3, "first_layer": 3, "progress": 3, "cfg": 3, "stock_low": 3, "maintenance": 3, "service": 3,
     "queue_add": 3, "queue_done": 3,
 }

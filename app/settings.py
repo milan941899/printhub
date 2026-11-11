@@ -31,6 +31,7 @@ SPEC = {
     "notify_v": (int, 1),
     "low_spool_g": (float, 100.0),
     "runout_tol_g": (float, 15.0),
+    "dry_days": (str, "PLA=60, PETG=21, ABS=30, ASA=30, TPU=7, PA=3, PC=7, PVA=2, *=30"),   # Tage offen bis „trocknen“
     "oe_restart": (bool, False),
     "oe_container": (str, "octoeverywhere"),
     "oe_delay": (int, 20),
@@ -127,12 +128,19 @@ class Settings:
                 if "queue_check" not in ev:
                     self.values[k] = ev + ["queue_check"]
             self.values["notify_v"] = 3
+        if int(self.values.get("notify_v") or 1) < 5:   # v5: Trocknen
+            for k in ("notify_events", "tg_events"):
+                ev = list(self.values.get(k) or [])
+                if "dry" not in ev:
+                    self.values[k] = ev + ["dry"]
         if int(self.values.get("notify_v") or 1) < 4:   # v4: Spule leer gelaufen
             for k in ("notify_events", "tg_events"):
                 ev = list(self.values.get(k) or [])
                 if "runout" not in ev:
                     self.values[k] = ev + ["runout"]
             self.values["notify_v"] = 4
+        if int(self.values.get("notify_v") or 1) < 5:
+            self.values["notify_v"] = 5
             try:
                 self._write()
             except OSError:

@@ -877,3 +877,7 @@ details.steps div.now { color:var(--acc); font-weight:600; }
 details.prep { text-align:left; font-size:.8em; margin-top:2px; }
 details.prep summary { cursor:pointer; list-style:none; white-space:nowrap; }
 details.prep div { white-space:nowrap; display:flex; justify-content:space-between; gap:8px; }
+
+.drytag { font-size:.72em; padding:1px 6px; border-radius:99px; background:var(--tile); color:var(--muted, #888); white-space:nowrap; margin-right:4px; }
+.drytag.warn { color:#b7791f; background:rgba(214,158,46,.15); }
+.drytag.due { color:#c0392b; background:rgba(192,57,43,.14); font-weight:600; }

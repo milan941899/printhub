@@ -206,6 +206,13 @@ function drawChart() {
   }).join("");
 }
 
+async function reprint(id, btn) {
+  if (!confirm("Diesen Druck nochmal in die Warteschlange legen?\nDer Druckwächter startet ihn wie gewohnt (Druckfenster, Plattenprüfung).")) return;
+  btn.disabled = true;
+  const r = await (await fetch(`/api/history/${id}/reprint`, {method: "POST"})).json();
+  btn.disabled = false;
+  PH.toast(r.error || r.message, !!r.error);
+}
 function prep(e) {
   const st = e.stages || [];
   if (!st.length) return "";
@@ -229,7 +236,8 @@ function row(e) {
     <td class="num">${g(e.grams)}<div class="muted small">${e.filament_cost != null ? eur(e.filament_cost) : ""}</div></td>
     <td class="num hide-s">${e.kwh != null ? kwh(e.kwh) : "–"}<div class="muted small">${e.energy_cost != null ? eur(e.energy_cost) : ""}</div></td>
     <td class="num"><b>${eur(e.total_cost)}</b>${e.wear_cost ? `<div class="muted small">🔧 ${eur(e.wear_cost)}</div>` : ""}</td>
-    <td><button class="small-btn" title="Eintrag löschen (Spoolman bleibt unverändert)" onclick="del(${e.id})">✕</button></td>
+    <td style="white-space:nowrap"><button class="small-btn" title="Nochmal drucken – aus dem Bambuddy-Archiv wieder in die Warteschlange (Druckwächter startet)" onclick="reprint(${e.id}, this)">↻</button>
+      <button class="small-btn" title="Eintrag löschen (Spoolman bleibt unverändert)" onclick="del(${e.id})">✕</button></td>
   </tr>`;
 }
 

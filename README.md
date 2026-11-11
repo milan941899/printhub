@@ -385,6 +385,9 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
   Waage zeigen sollte („⚖ 1165 g“) – so sieht man Abweichungen sofort.
 - **Neue Rollen brutto gewogen anlegen:** zeigt gleich, ob wirklich 1000 g drauf sind („994 g – −6 g zum Nenngewicht“).
 - **✎ Rolle bearbeiten:** Filament neu, übrig, Leergewicht, Preis, Ort, Charge, Notiz – ohne Spoolman öffnen zu müssen.
+- **💧 Trocknen:** Jede angebrochene Rolle zeigt, wie viele Tage sie offen ist (seit dem Öffnen bzw. dem letzten Trocknen).
+  Nach dem Trocknen (z. B. im Filamenttrockner) auf **🔥** tippen. Grenzen pro Material einstellbar (Standard: PLA 60,
+  PETG 21, TPU 7, PA 3 Tage …). Steckt eine zu lange offene Rolle im Drucker, kommt eine Meldung mit Knopf „getrocknet“.
 - Leere Spulen ins **Archiv** (📦 an jeder Rolle, auch wenn sie noch einem Slot zugeordnet ist).
 - **Etiketten** einzeln oder für mehrere Spulen auf einmal.
 
@@ -405,6 +408,8 @@ Pro Druck rechnet PrintHub:
 
 - **Drucke:** jeder Druck mit Zeit, Drucker, Datei, Ergebnis (fertig / abgebrochen bei x % / Fehler), Verbrauch pro Slot,
   Kosten, Modellbild und **Foto nach dem Druck** (antippen zum Vergrößern). Filter, Suche, Monatsübersicht, **CSV-Export**.
+- **↻ Nochmal drucken:** legt einen Druck aus dem Verlauf wieder in die Bambuddy-Warteschlange (sucht dazu die Datei im
+  Bambuddy-Archiv). Gestartet wird wie immer über den Druckwächter. Auch per Telegram unter `/verlauf`.
 - **Warteschlange:** Was mit deinen Aufträgen passiert ist – aus Bambuddy (fertig, abgebrochen), vom Druckwächter
   (übernommen, wartet, Platte belegt, gestartet) und aus PrintHub (geplant, nach vorne geholt, entfernt). Filter nach Quelle.
 
@@ -495,7 +500,7 @@ Jede Meldung einzeln ein/aus, getrennt für ntfy und Telegram, mit eigener Dring
 ### 6.13 Wartung
 
 *Einstellungen → Wartung*: Aufgaben mit Intervall in Druckstunden oder Tagen (z. B. „Platte reinigen alle 25 h“,
-„Trockenmittel wechseln alle 30 Tage“). **Erledigt** antippen setzt den Zähler zurück. Fällige Wartungen erscheinen auf der
+„Trockenmittel wechseln alle 30 Tage“) – oder nach **Anzahl Drucke** (z. B. „Druckplatte waschen alle 20 Drucke“). **Erledigt** antippen setzt den Zähler zurück. Fällige Wartungen erscheinen auf der
 Übersicht, per Meldung und mit `/wartung`. Vorhandene Wartungsdaten aus Bambuddy werden mit angezeigt.
 
 ### 6.14 Handy & Datensparen

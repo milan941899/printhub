@@ -304,8 +304,9 @@ function spoolRow(f, s) {
     <b class="sid">#${s.id}</b>
     <div class="sbar"><div style="width:${pct}%;background:${barColor(f.color)}"></div></div>
     <span class="sg">${s.remaining != null ? Math.round(s.remaining) + " g" : "–"}${s.remaining != null && s.empty ? `<small title="So viel sollte die Waage jetzt zeigen (Filament + leere Spule ${Math.round(s.empty)} g)">⚖ ${Math.round(s.remaining + s.empty)} g</small>` : ""}</span>
-    <span class="sloc ${s.in_printer ? "inp" : ""}">${s.in_printer ? "🖨 " : ""}${esc(s.location || "–")}${s.opened ? "" : " · neu"}${last ? ` · zuletzt ${last}` : ""}</span>
+    <span class="sloc ${s.in_printer ? "inp" : ""}">${dryBadge(s)}${s.in_printer ? "🖨 " : ""}${esc(s.location || "–")}${s.opened ? "" : " · neu"}${last ? ` · zuletzt ${last}` : ""}</span>
     <span class="sact">
+      ${s.dry ? `<button class="small-btn" title="Gerade getrocknet (z. B. im SH02) – Zähler zurücksetzen" onclick="dried(${s.id})">🔥</button>` : ""}
       <button class="small-btn" title="Wiegen: Bruttogewicht eingeben" onclick="openWeigh(${s.id})">⚖</button>
       <button class="small-btn" title="Rolle bearbeiten" onclick="openSpool(${s.id})">✎</button>
       <button class="small-btn" title="NFC-/QR-Link kopieren" onclick="copyLink(${s.id})">🔗</button>
@@ -373,6 +374,15 @@ async function copyLink(id) {
 }
 
 // --- Dialoge ---
+function dryBadge(s) {
+  const d = s.dry;
+  if (!d) return "";
+  const t = d.dried ? `zuletzt getrocknet ${new Date(d.dried * 1000).toLocaleDateString("de-DE")}` : "seit dem Öffnen";
+  return `<span class="drytag ${d.due ? "due" : d.days >= d.limit * 0.8 ? "warn" : ""}" title="${Math.floor(d.days)} Tage offen (${t}) – trocknen ab ${Math.round(d.limit)} Tagen">💧 ${Math.floor(d.days)} T</span>`;
+}
+async function dried(id) {
+  await api(`/api/lager/spools/${id}/dried`, "POST"); PH.toast(`Rolle #${id} als getrocknet gespeichert`); load();
+}
 function _fil(sid) { return D.filaments.find(f => f.spools.some(x => x.id === sid)); }
 function openWeigh(id, leer = false) {
   const s = _spool(id), f = _fil(id);

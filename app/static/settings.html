@@ -293,6 +293,10 @@
       <div class="unit-in"><input type="number" min="0" max="200" step="1" data-k="runout_tol_g" style="width:90px"> g</div>
     </div>
     <div class="row">
+      <div><div class="t">Trocknen empfohlen nach … Tagen offen</div><div class="d">Pro Material, gezählt ab Öffnen bzw. letztem Trocknen (🔥 im Lager). Gemeldet wird für Rollen im Drucker. „*“ = alle anderen</div></div>
+      <input type="text" data-k="dry_days" style="width:100%;max-width:420px">
+    </div>
+    <div class="row">
       <div><div class="t">Adresse für QR-Codes &amp; NFC</div><div class="d">Leer = so wie gerade im Browser. Am besten die feste Adresse im WLAN</div></div>
       <input type="url" data-k="public_url" placeholder="http://192.168.1.10:8095" style="width:230px">
     </div>
@@ -615,7 +619,7 @@ async function loadServices() {
 
 // ---------- Wartung ----------
 let M = null;
-const unitL = u => u === "d" ? "Tage" : "h";
+const unitL = u => u === "d" ? "Tage" : u === "p" ? "Drucke" : "h";
 const fmtN = v => Number(v || 0).toLocaleString("de-DE", {maximumFractionDigits: 1});
 async function loadMaint(quiet) {
   try { M = await (await fetch("/api/maintenance")).json(); } catch { return; }
@@ -676,7 +680,7 @@ function editType(tid) {
     <input id="tf-name" value="${esc(t.name)}" placeholder="Name, z. B. Lüfter reinigen" style="flex:2;min-width:160px">
     <input id="tf-desc" value="${esc(t.desc || "")}" placeholder="Beschreibung (optional)" style="flex:3;min-width:160px">
     <span class="unit-in">alle <input id="tf-int" type="number" min="0" step="1" value="${t.interval}" style="width:80px">
-      <select id="tf-unit"><option value="h" ${t.unit !== "d" ? "selected" : ""}>Druckstunden</option><option value="d" ${t.unit === "d" ? "selected" : ""}>Tage</option></select></span>
+      <select id="tf-unit"><option value="h" ${t.unit === "h" || !t.unit ? "selected" : ""}>Druckstunden</option><option value="p" ${t.unit === "p" ? "selected" : ""}>Drucke</option><option value="d" ${t.unit === "d" ? "selected" : ""}>Tage</option></select></span>
     <button class="small-btn primary" onclick="saveType('${tid || ""}')">Speichern</button>
     <button class="small-btn" onclick="$('tform').innerHTML=''">Abbrechen</button></div>`;
   $("tf-name").focus();
@@ -1204,7 +1208,7 @@ const EVG = [
     ["finish", "Druck fertig – mit Dauer und Kosten", 1], ["fail", "Druck abgebrochen / fehlgeschlagen", 1], ["pause", "Druck pausiert (Gadget, Filament …)", 1],
     ["error", "Druckerfehler (HMS)", 1], ["bed_cooled", "Bett abgekühlt – Teil entnehmen", 0], ["offline", "Drucker während eines Drucks offline", 0]]],
   ["Druckwächter", "🛡️", [["waiting", "Auftrag wartet aufs Druckfenster", 0], ["plate", "Platte belegt – mit Antwort-Knöpfen", 1], ["power", "Drucker ausgeschaltet", 0], ["cfg", "Einstellungen übernommen", 0]]],
-  ["Spulen & Lager", "🧵", [["low_spool", "Spule fast leer", 0], ["short", "Filament reicht nicht für den Druck", 0], ["stock_low", "Lagerbestand unter Minimum", 0], ["runout", "Spule leer gelaufen (Lager-Abgleich, anderen Slot wählen)", 0]]],
+  ["Spulen & Lager", "🧵", [["low_spool", "Spule fast leer", 0], ["short", "Filament reicht nicht für den Druck", 0], ["stock_low", "Lagerbestand unter Minimum", 0], ["runout", "Spule leer gelaufen (Lager-Abgleich, anderen Slot wählen)", 0], ["dry", "Spule im Drucker sollte getrocknet werden", 0]]],
   ["Wartung", "🔧", [["maintenance", "Wartung fällig", 0]]],
   ["Dienste", "🔗", [["service", "Spoolman / Bambuddy / OctoEverywhere nicht erreichbar", 0]]],
   ["Warteschlange", "📥", [["queue_add", "Neuer Auftrag in der Bambuddy-Warteschlange", 0], ["queue_done", "Warteschlange abgearbeitet", 0], ["queue_check", "Neuer Auftrag mit Filament-Problem", 0]]],

@@ -1,7 +1,7 @@
 """Wartung mit mehreren Aufgaben – angelehnt an Bambuddy.
 
 Gespeichert in state.json unter "maintenance2":
-  types:    [{id, name, desc, icon, interval, unit ("h"|"d"), system, rails}]
+  types:    [{id, name, desc, icon, interval, unit ("h"|"d"|"p" = Drucke), system, rails}]
   printers: {pid: {offset: Stunden-Startwert, items: {tid: {interval, enabled, last_hours, last_time, notified}}}}
   log:      [{time, pid, printer, tid, name, hours, note}]
 """
@@ -13,6 +13,9 @@ import uuid
 DEFAULT_TYPES = [
     {"id": "clean_plate", "name": "Druckplatte reinigen", "desc": "Gründlich mit Spülmittel oder IPA reinigen",
      "icon": "🧽", "interval": 25, "unit": "h", "rails": ""},
+    {"id": "wash_plate", "name": "Druckplatte waschen", "desc": "Mit warmem Wasser und Spülmittel waschen, gut trocknen – "
+     "nicht mehr mit den Fingern auf die Druckfläche fassen",
+     "icon": "🫧", "interval": 20, "unit": "p", "rails": ""},
     {"id": "lube_rails", "name": "Linearschienen schmieren", "desc": "Schienen dünn mit Fett bzw. Öl versorgen",
      "icon": "💧", "interval": 50, "unit": "h", "rails": "linear"},
     {"id": "clean_rails", "name": "Linearschienen reinigen", "desc": "Mit trockenem Tuch Staub und Abrieb entfernen",
@@ -54,6 +57,7 @@ def rails_of(printer):
 class Maintenance:
     def __init__(self, store):
         self.store = store
+        self.history = None      # wird in main gesetzt – für Wartung nach Anzahl Drucke
         with store.lock:
             d = store.data.get("maintenance2")
             if not d:
@@ -66,6 +70,14 @@ class Maintenance:
                             for t in DEFAULT_TYPES}}
                 store.data["maintenance2"] = d
                 store._save()
+            have = {t["id"] for t in d["types"]}
+            for t in DEFAULT_TYPES:                          # neue Standard-Aufgaben nachtragen
+                if t["id"] not in have and t["id"] not in d.setdefault("seen_defaults", []):
+                    d["types"].insert(1 if t["id"] == "wash_plate" else len(d["types"]), dict(t, system=True))
+                d.setdefault("seen_defaults", [])
+                if t["id"] not in d["seen_defaults"]:
+                    d["seen_defaults"].append(t["id"])
+            store._save()
 
     @property
     def d(self):
@@ -104,6 +116,10 @@ class Maintenance:
             ref = it.get("last_time") or it.get("created") or now
             it.setdefault("created", int(now))
             since = (now - ref) / 86400
+        elif t.get("unit") == "p":
+            ref = it.get("last_time") or it.get("created") or now
+            it.setdefault("created", int(now))
+            since = float(self.history.count_since(printer.name, ref)) if self.history else 0.0
         else:
             since = max(0.0, hours - (it.get("last_hours") or 0))
         due = bool(interval) and since >= interval
@@ -153,8 +169,8 @@ class Maintenance:
     def save_type(self, data, tid=None):
         name = str(data.get("name") or "").strip()
         unit = data.get("unit") or "h"
-        if unit not in ("h", "d"):
-            raise ValueError("Einheit muss h oder d sein")
+        if unit not in ("h", "d", "p"):
+            raise ValueError("Einheit muss h, d oder p sein")
         with self.store.lock:
             if tid:
                 t = self._type(tid)
@@ -216,7 +232,7 @@ class Maintenance:
                 self.store._save()
         if due:
             printer.notify("maintenance", "Wartung fällig 🔧",
-                           "\n".join(f"{s['icon']} {s['name']} ({s['since']:g} {'Tage' if s['unit'] == 'd' else 'h'})"
+                           "\n".join(f"{s['icon']} {s['name']} ({s['since']:g} { {'d': 'Tage', 'p': 'Drucke'}.get(s['unit'], 'h')})"
                                      for s in due), "wrench", "default")
 
     # --- Import aus Bambuddy ---------------------------------------------------

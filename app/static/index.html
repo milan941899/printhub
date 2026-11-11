@@ -648,7 +648,7 @@ function maintBody(p) {
       ${(m.items || []).map(i => `<div class="mline ${i.due ? "due" : i.warn ? "warn" : ""}">
         <span>${esc(i.icon)} ${esc(i.name)}</span>
         <div class="mini"><div style="width:${i.pct}%"></div></div>
-        <span class="small muted">${i.due ? `<b>fällig</b>` : `noch ${(i.remaining || 0).toLocaleString("de-DE", {maximumFractionDigits: 1})} ${i.unit === "d" ? "Tage" : "h"}`}</span>
+        <span class="small muted">${i.due ? `<b>fällig</b>` : `noch ${(i.remaining || 0).toLocaleString("de-DE", {maximumFractionDigits: 1})} ${i.unit === "d" ? "Tage" : i.unit === "p" ? "Drucke" : "h"}`}</span>
         <button class="small-btn" title="erledigt" onclick="maintDone('${p.id}','${i.id}','${esc(i.name)}')">✓</button>
       </div>`).join("")}
     </div>`;

@@ -54,6 +54,16 @@ class Bambuddy:
         return r.json() if r.content else {}
 
     # --- Steckdosen (Smart Plugs) ---
+    def archives(self, limit=200):
+        d = self.get("/archives/", timeout=15, limit=limit).json()
+        return d.get("items", d) if isinstance(d, dict) else (d or [])
+
+    def enqueue(self, archive_id, printer_id=None, manual=True):
+        body = {"archive_id": int(archive_id), "manual_start": bool(manual)}
+        if printer_id:
+            body["printer_id"] = int(printer_id)
+        return self.send("POST", "/queue/", body)
+
     def printers(self):
         return self.get("/printers/").json() or []
 

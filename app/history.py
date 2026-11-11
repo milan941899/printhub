@@ -76,6 +76,16 @@ class History:
                      u.get("color"), u.get("cost"), 1 if u.get("booked") else 0, u.get("error"), u.get("remaining")))
             return pid
 
+    def get(self, pid):
+        with self._db() as db:
+            r = db.execute("SELECT * FROM prints WHERE id=?", (int(pid),)).fetchone()
+        return dict(r) if r else None
+
+    def count_since(self, printer, t):
+        """Anzahl Drucke (fertig oder abgebrochen) eines Druckers seit Zeitpunkt t."""
+        with self._db() as db:
+            return db.execute("SELECT COUNT(*) FROM prints WHERE printer=? AND time>?", (printer, int(t))).fetchone()[0]
+
     def has_ext(self, ext_id):
         with self._db() as db:
             return db.execute("SELECT 1 FROM prints WHERE ext_id=?", (ext_id,)).fetchone() is not None
