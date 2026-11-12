@@ -881,3 +881,9 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .drytag { font-size:.72em; padding:1px 6px; border-radius:99px; background:var(--tile); color:var(--muted, #888); white-space:nowrap; margin-right:4px; }
 .drytag.warn { color:#b7791f; background:rgba(214,158,46,.15); }
 .drytag.due { color:#c0392b; background:rgba(192,57,43,.14); font-weight:600; }
+
+/* Fortschritt-Kachel wächst mit (Ablauf aufgeklappt, Filament-leer-Knöpfe) – eingestellte Höhe ist nur Mindesthöhe */
+.pgrid12:not(.ff) > .blk.hset[data-b="progress"] { height:auto; min-height:var(--bh); overflow:visible; }
+/* Warteschlange: Höhe nach Anzahl Aufträge, ab ca. 5 Aufträgen scrollen */
+#queuecard { height:auto !important; }
+#queue { max-height:min(560px, 70vh); overflow-y:auto; overscroll-behavior:contain; }

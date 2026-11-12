@@ -301,7 +301,7 @@ function stageHtml(p) {
   }
   const steps = (p.stage_steps || []).filter(x => x.text !== "Druckt" || x.now);
   const done = steps.filter(x => !x.now || x.text !== "Druckt");
-  const list = done.length > 1 || (done.length && !st) ? `<details class="steps" ${window._stepsOpen ? "open" : ""} ontoggle="window._stepsOpen=this.open"><summary>Ablauf (${done.length} Schritte)</summary>${steps.map(x =>
+  const list = done.length > 1 || (done.length && !st) ? `<details class="steps" ${window._stepsOpen ? "open" : ""} ontoggle="window._stepsOpen=this.open;if(DESK())applyFree()"><summary>Ablauf (${done.length} Schritte)</summary>${steps.map(x =>
     `<div class="${x.now ? "now" : ""}">${x.icon} ${esc(x.text)}<span>${x.now ? "läuft · " : ""}${fmtSec(x.sec)}</span></div>`).join("")}</details>` : "";
   return line + list;
 }
@@ -490,7 +490,7 @@ function resetBoard() {
 
 // ---------- Freie Anordnung (ab Tablet-Breite) ----------
 const DESK = () => innerWidth >= 900;
-const autoH = el => el.dataset.b && (el.dataset.b.startsWith("p:") || el.dataset.b === "services");
+const autoH = el => el.dataset.b && (el.dataset.b.startsWith("p:") || el.dataset.b === "services" || el.dataset.b === "queue");
 function freePos(map, cont, sel, defW) {   // fehlende Positionen unten anhängen
   const items = [...cont.children].filter(x => x.matches(sel));
   let bottom = 0;
@@ -507,7 +507,7 @@ function applyFree() {
     if (!cont) continue;
     const L = bl(p.id), on = desk && L.pos && Object.keys(L.pos).length > 0;
     cont.classList.toggle("ff", !!on);
-    if (on) PHUI.freeLayout(cont, freePos(L.pos, cont, ".blk", 0.5));
+    if (on) PHUI.freeLayout(cont, freePos(L.pos, cont, ".blk", 0.5), el => el.dataset.b === "progress");
     else { cont.style.height = ""; [...cont.children].forEach(el => { if (el.matches(".blk")) el.style.cssText = el.style.cssText.replace(/(left|top|width|height):[^;]+;?/g, ""); }); }
   }
   const board = document.getElementById("board");
@@ -868,6 +868,7 @@ async function loadQueue() {
         <button class="small-btn" onclick="qAct(${q.id},'cancel')" title="Aus der Warteschlange nehmen">🗑</button>` : ""}</div>
     </div>`; }).join("");
     qWaechter = d.waechter;
+    if (DESK()) applyFree();            // Kachel wächst/schrumpft mit der Anzahl Aufträge
   } catch {}
 }
 let qWaechter = false, qData = {};
