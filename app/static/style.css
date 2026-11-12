@@ -1012,3 +1012,29 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .codemsg.known { border-color:#22c55e66; } .codemsg.similar { border-color:var(--acc); } .codemsg.multi { border-color:var(--warn); }
 /* Ort/Slot der Rolle am Handy vollständig zeigen (umbrechen statt „…“) */
 @media (max-width:640px) { .srow .sloc { white-space:normal; overflow:visible; text-overflow:clip; line-height:1.35; } }
+/* Einstellungen am Handy: nichts breiter als der Bildschirm (sonst wird die ganze Seite samt unterer Leiste breiter) */
+.evgroups { grid-template-columns:repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
+@media (max-width:640px) {
+  .nr-week { width:100%; table-layout:fixed; }
+  .nr-week th, .nr-week td { padding:5px 3px; }
+  .nr-week th:first-child, .nr-week td:first-child { width:27%; }
+  .nr-week th:nth-child(4), .nr-week td:nth-child(4) { width:13%; text-align:center; }
+  .nr-week th:last-child, .nr-week td:last-child { display:none; }      /* „gilt“ – steht ohnehin in den Feldern */
+  .nr-week input[type=time], .nr-week select { width:100%; min-width:0; padding:4px 2px; font-size:13px; }
+  .unit-in input[type=time] { min-width:0; width:42%; }
+  .card, .page > * { max-width:100%; min-width:0; }
+}
+.nr-week .effm { display:none; font-size:11px; }
+@media (max-width:640px) { .nr-week .effm { display:block; } }
+@media (max-width:640px) {
+  .row { flex-wrap:wrap; }
+  .row > div:first-child { flex:1 1 180px; min-width:0; }
+  .row .unit-in { flex:0 1 auto; min-width:0; max-width:100%; flex-wrap:wrap; justify-content:flex-end; }
+  .row .unit-in input { min-width:0; max-width:100%; }
+  .row .unit-in input[type=time] { width:auto; max-width:46%; }
+  .row input[type=text], .row input[type=number], .row input[type=url], .row input[type=password] { max-width:100%; }
+}
+@media (max-width:640px) { .nr-week th { white-space:normal; font-size:10px; letter-spacing:.02em; } .nr-week { max-width:100%; } }
+@media (max-width:640px) { table.list.nr-week th { white-space:normal !important; overflow-wrap:anywhere; } }
+.nr-week th .sm { display:none; }
+@media (max-width:640px) { .nr-week th .lg { display:none; } .nr-week th .sm { display:inline; } }

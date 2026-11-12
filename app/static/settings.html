@@ -192,7 +192,7 @@
         <div class="unit-in"><input type="time" name="DRUCK_AB_WE"> – <input type="time" name="DRUCK_BIS_WE"></div></div>
       <div class="row"><div><div class="t">Puffer</div><div class="d">So viel früher muss der Druck fertig sein</div></div>
         <div class="unit-in"><input type="number" min="0" max="240" name="PUFFER_MIN" style="width:80px"> min</div></div>
-      <table class="list small nr-week"><tr><th>Tag</th><th>Ab</th><th>Bis</th><th title="An diesem Tag gar nicht drucken">kein Druck</th><th>gilt</th></tr>
+      <table class="list small nr-week"><tr><th>Tag</th><th>Ab</th><th>Bis</th><th title="An diesem Tag gar nicht drucken"><span class="lg">kein Druck</span><span class="sm">aus</span></th><th>gilt</th></tr>
         <tbody id="nr-days"></tbody></table>
     </section>
     <section class="card">
@@ -736,7 +736,7 @@ function fillNR() {
   }
   $("nr-days").innerHTML = NR_DAYS.map(([k, n]) => {
     const ab = c["DRUCK_AB_" + k] || "", bis = c["DRUCK_BIS_" + k] || "", off = ab === "aus" || bis === "aus";
-    return `<tr><td>${n}</td>
+    return `<tr><td>${n}<div class="muted effm" id="effm-${k}"></div></td>
       <td><input type="time" name="DRUCK_AB_${k}" value="${off ? "" : ab}" ${off ? "disabled" : ""}></td>
       <td><input type="time" name="DRUCK_BIS_${k}" value="${off ? "" : bis}" ${off ? "disabled" : ""}></td>
       <td style="text-align:center"><input type="checkbox" data-off="${k}" ${off ? "checked" : ""}></td>
@@ -755,6 +755,7 @@ function effNR() {   // was gilt tatsächlich an jedem Tag?
     const off = nrf().querySelector(`[data-off="${k}"]`).checked;
     const ab = v("DRUCK_AB_" + k) || (we && v("DRUCK_AB_WE")) || v("DRUCK_AB"), bis = v("DRUCK_BIS_" + k) || (we && v("DRUCK_BIS_WE")) || v("DRUCK_BIS");
     $("eff-" + k).textContent = off ? "kein Druck" : `${ab}–${bis}`;
+    $("effm-" + k).textContent = $("eff-" + k).textContent;
   }
 }
 document.addEventListener("input", e => { if (e.target.form && e.target.form.id === "nr-form") { nrDirty = true; effNR(); } });
