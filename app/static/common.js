@@ -94,32 +94,28 @@
 // unteren Rand ausgleichen – so kann sie weder in der Mitte hängen noch aus dem Bild rutschen.
 (() => {
   const vv = window.visualViewport; if (!vv) return;
-  let cur = 0, timer = 0;
-  // Erst messen, wenn das Scrollen/Einblenden der Browser-Leisten vorbei ist (währenddessen liefern Browser Zwischenwerte,
-  // dann springt die Leiste). Gemessen wird immer ohne Verschiebung, damit sich Fehler nicht aufaddieren.
+  let cur = 0, timer = 0, touching = false;
+  const navEl = () => document.querySelector("header .nav");
+  const clear = () => { const nav = navEl(); if (nav && cur) { nav.style.transform = ""; cur = 0; } };
+  // Nur im Ruhezustand korrigieren: Während Scrollen/Zoomen positioniert der Browser die Leiste selbst (Chrome macht das
+  // richtig – eine Korrektur mit Zwischenwerten hat sie dort erst verschoben). Bleibt danach eine Lücke (Vivaldi), schließen.
   const fix = () => {
-    const nav = document.querySelector("header .nav");
-    if (!nav) return;
+    const nav = navEl();
+    if (!nav || touching) return;
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");
-    if (getComputedStyle(nav).position !== "fixed" || vv.scale > 1.05 || typing) { if (cur) { nav.style.transform = ""; cur = 0; } return; }
+    if (getComputedStyle(nav).position !== "fixed" || vv.scale > 1.02 || typing) { clear(); return; }
     nav.style.transform = "";
-    const bottom = nav.getBoundingClientRect().bottom;
-    const want = vv.offsetTop + vv.height;
-    let d = Math.round(want - bottom);
-    if (Math.abs(d) <= 2 || Math.abs(d) > 260) d = 0;
-    cur = d;
-    nav.style.transform = d ? `translateY(${d}px)` : "";
+    const d = Math.round(vv.offsetTop + vv.height - nav.getBoundingClientRect().bottom);
+    cur = Math.abs(d) <= 2 || Math.abs(d) > 260 ? 0 : d;
+    nav.style.transform = cur ? `translateY(${cur}px)` : "";
   };
-  // bei jeder Bewegung sofort frisch messen (folgt dem Ein-/Ausblenden der Browser-Leisten), danach noch einmal in Ruhe
-  let raf = 0;
-  const later = () => {
-    if (!raf) raf = requestAnimationFrame(() => { raf = 0; fix(); });
-    clearTimeout(timer); timer = setTimeout(fix, 200);
-  };
-  vv.addEventListener("resize", later); vv.addEventListener("scroll", later);
-  addEventListener("scroll", later, {passive: true}); addEventListener("resize", later);
-  addEventListener("touchend", () => setTimeout(fix, 350), {passive: true});      // nach dem Loslassen (Zoom/Scroll) nachziehen
-  setTimeout(fix, 300); setInterval(fix, 1000);
+  const moving = () => { clear(); clearTimeout(timer); timer = setTimeout(fix, 450); };
+  vv.addEventListener("resize", moving); vv.addEventListener("scroll", moving);
+  addEventListener("scroll", moving, {passive: true}); addEventListener("resize", moving);
+  addEventListener("touchstart", () => { touching = true; }, {passive: true});
+  addEventListener("touchend", () => { touching = false; moving(); }, {passive: true});
+  addEventListener("touchcancel", () => { touching = false; moving(); }, {passive: true});
+  setTimeout(fix, 400);
 })();
 
 // Handy „Zurück“ (Android-Taste/Geste) schließt ein offenes Fenster, statt die Seite zu verlassen.
