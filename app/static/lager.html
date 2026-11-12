@@ -510,11 +510,17 @@ function muRow(name = "", hex = "", ext = "") {
   d.dataset.ext = ext; d.dataset.touched = hex ? "1" : "";
   d.querySelector(".mu-c").oninput = () => { d.dataset.touched = "1"; d.querySelector(".mu-h").textContent = ""; };
   d.querySelector(".mu-p").onclick = () => pipette(h => { d.querySelector(".mu-c").value = "#" + h; d.dataset.touched = "1"; d.querySelector(".mu-h").textContent = "🎯 aus Foto"; });
+  attachSuggest(d.querySelector(".mu-n"), () => ({vendor: muVendorName(), material: $("mu-mat").value}), i => {
+    clearTimeout(colT.get(d)); d.querySelector(".mu-c").value = "#" + i.hex.toLowerCase(); d.dataset.touched = "";
+    d.querySelector(".mu-h").textContent = "✓ " + i.source; d.querySelector(".mu-p").style.display = "none";
+  });
   d.querySelector(".mu-n").oninput = e => {
     if (d.dataset.touched) return;
     colorLookup(e.target.value, muVendorName(), $("mu-mat").value, r => {
       const h = d.querySelector(".mu-h"), pb = d.querySelector(".mu-p");
-      if (r.hex) { d.querySelector(".mu-c").value = "#" + r.hex.toLowerCase(); h.textContent = (r.exact ? "✓ " : "≈ ") + r.source; pb.style.display = r.exact ? "none" : ""; }
+      if (r.hex) { d.querySelector(".mu-c").value = "#" + r.hex.toLowerCase(); h.textContent = (r.exact ? "✓ " : "≈ ") + r.source; pb.style.display = r.exact ? "none" : "";
+        if (r.suggest) { const b = document.createElement("button"); b.type = "button"; b.className = "small-btn"; b.textContent = "übernehmen"; b.style.marginLeft = "6px";
+          b.onclick = () => { d.querySelector(".mu-n").value = r.suggest; h.textContent = "✓ " + r.suggest; }; h.appendChild(b); } }
       else { h.textContent = e.target.value.trim() ? "nicht gefunden – Farbe wählen oder 📷" : ""; pb.style.display = ""; }
     }, d);
   };
@@ -880,6 +886,32 @@ function autoTpl() {
     if (r.template) applyTpl(r.template, false);
   }, 300);
 }
+// Vorschlagsliste beim Tippen (eigene Sorten, Filament-Datenbank, Farbliste) – antippen übernimmt Name + Farbe
+function attachSuggest(inp, ctx, onPick) {
+  const box = document.createElement("div"); box.className = "sugbox"; box.hidden = true;
+  const row = inp.closest(".murow");
+  if (row) row.appendChild(box); else inp.insertAdjacentElement("afterend", box);
+  inp.setAttribute("autocomplete", "off");
+  let t, seq = 0;
+  const hide = () => { box.hidden = true; };
+  inp.addEventListener("input", () => {
+    clearTimeout(t);
+    const q = inp.value.trim();
+    if (q.length < 2) return hide();
+    t = setTimeout(async () => {
+      const my = ++seq, c = ctx();
+      let r; try { r = await (await fetch(`/api/lager/colorsuggest?q=${encodeURIComponent(q)}&vendor=${encodeURIComponent(c.vendor)}&material=${encodeURIComponent(c.material)}`)).json(); } catch { return; }
+      if (my !== seq || inp.value.trim() !== q) return;
+      const items = (r.items || []).filter(i => i.name.toLowerCase() !== q.toLowerCase());
+      if (!items.length || document.activeElement !== inp) return hide();
+      box.innerHTML = items.map((i, n) => `<button type="button" data-n="${n}"><i style="background:#${i.hex}"></i><span>${esc(i.name)}</span><small>${esc(i.source)}</small></button>`).join("");
+      box.querySelectorAll("button").forEach(b => b.onpointerdown = e => { e.preventDefault(); const i = items[+b.dataset.n]; inp.value = i.name; hide(); onPick(i); });
+      box.hidden = false;
+    }, 200);
+  });
+  inp.addEventListener("blur", () => setTimeout(hide, 150));
+  inp.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
+}
 const colT = new Map();
 function colorLookup(name, vendor, material, cb, key = "f") {
   clearTimeout(colT.get(key));
@@ -893,11 +925,17 @@ function filColor() {
   if (colTouched || $("f-id").value) return;
   const vend = $("f-vendor").value === "new" ? $("f-vname").value : (D.vendors.find(v => v.id === +$("f-vendor").value) || {}).name || "";
   colorLookup($("f-name").value, vend, $("f-mat").value, r => {
-    if (r.hex) { $("f-color").value = "#" + r.hex.toLowerCase(); $("f-colhint").textContent = (r.exact ? "✓ " : "≈ ") + r.source; $("f-pip").style.display = r.exact ? "none" : ""; }
+    if (r.hex) {
+      $("f-color").value = "#" + r.hex.toLowerCase(); $("f-colhint").textContent = (r.exact ? "✓ " : "≈ ") + r.source; $("f-pip").style.display = r.exact ? "none" : "";
+      if (r.suggest) { const b = document.createElement("button"); b.type = "button"; b.className = "small-btn"; b.textContent = "Name übernehmen"; b.style.marginLeft = "6px";
+        b.onclick = () => { $("f-name").value = r.suggest; $("f-colhint").textContent = "✓ " + r.suggest; }; $("f-colhint").appendChild(b); }
+    }
     else { $("f-colhint").textContent = $("f-name").value.trim() ? "Farbe nicht gefunden – bitte selbst wählen oder aus Foto übernehmen" : ""; $("f-pip").style.display = ""; }
   });
 }
 $("f-name").addEventListener("input", filColor);
+attachSuggest($("f-name"), () => ({vendor: $("f-vendor").value === "new" ? $("f-vname").value : (D.vendors.find(v => v.id === +$("f-vendor").value) || {}).name || "", material: $("f-mat").value}),
+  i => { clearTimeout(colT.get("f")); $("f-color").value = "#" + i.hex.toLowerCase(); colTouched = false; $("f-colhint").textContent = "✓ " + i.source + ": " + i.name; $("f-pip").style.display = "none"; });
 $("f-color").addEventListener("input", () => { colTouched = true; $("f-colhint").textContent = ""; });
 $("f-mat").addEventListener("input", autoTpl);
 $("f-vendor").addEventListener("change", autoTpl);

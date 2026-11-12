@@ -88,3 +88,19 @@
   const f = () => document.body && document.body.classList.toggle("zoomed", vv.scale > 1.05);
   vv.addEventListener("resize", f); f();
 })();
+
+// Handy: Manche Browser (z. B. Vivaldi) blenden beim Scrollen ihre Leisten aus, vergrößern aber den Bereich für
+// „fest unten“ nicht mit – dann hängt unsere Navigationsleiste mitten im Bild. Hier nachschieben, bis sie wirklich unten sitzt.
+(() => {
+  const vv = window.visualViewport; if (!vv) return;
+  const fix = () => {
+    const nav = document.querySelector("header .nav");
+    if (!nav || getComputedStyle(nav).position !== "fixed") return;
+    if (vv.scale > 1.05) { nav.style.transform = ""; return; }      // gezoomt: Leiste ist ohnehin ausgeblendet
+    const gap = Math.round(vv.offsetTop + vv.height - document.documentElement.clientHeight);
+    nav.style.transform = gap > 1 ? `translateY(${gap}px)` : "";
+  };
+  vv.addEventListener("resize", fix); vv.addEventListener("scroll", fix);
+  addEventListener("scroll", fix, {passive: true}); addEventListener("resize", fix);
+  setTimeout(fix, 300);
+})();

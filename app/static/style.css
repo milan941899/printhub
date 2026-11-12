@@ -933,3 +933,14 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 }
 .moremenu > summary { font-weight:600; padding:8px 14px; border-radius:9px; border:1px solid var(--line); background:var(--tile2); color:var(--fg); }
 .moremenu[open] > summary, .moremenu > summary:hover { border-color:var(--acc); }
+
+/* Vorschlagsliste unter Namensfeldern */
+.sugbox { position:relative; z-index:5; margin-top:4px; border:1px solid var(--line, #8884); border-radius:10px; background:var(--card, #fff); box-shadow:0 6px 18px #0003; max-height:240px; overflow:auto; }
+.sugbox[hidden] { display:none; }
+.sugbox button { display:flex; align-items:center; gap:8px; width:100%; padding:8px 10px; border:0; border-bottom:1px solid #8882; background:none; color:inherit; text-align:left; font:inherit; cursor:pointer; }
+.sugbox button:last-child { border-bottom:0; }
+.sugbox button:hover, .sugbox button:active { background:#8882; }
+.sugbox i { flex:0 0 20px; height:20px; border-radius:5px; border:1px solid #0003; }
+.sugbox span { flex:1; }
+.sugbox small { opacity:.65; font-size:.78em; white-space:nowrap; }
+.murow .sugbox { grid-column:1 / -1; }

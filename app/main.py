@@ -688,6 +688,55 @@ async def api_printer_swap(request):
 from . import colors as colormod
 
 
+def _own_filaments():
+    try:
+        return spoolman._get("/filament")
+    except Exception:
+        return []
+
+
+def _color_suggest(q, vendor="", material="", limit=8):
+    """Namensvorschläge beim Tippen: eigene Sorten, Filament-Datenbank (Hersteller zuerst), eingebaute Farbliste.
+    Treffer = jedes eingegebene Wort ist Anfang eines Wortes im Namen („tennis court“ → „Tennis Court Green“)."""
+    qw = [w for w in re.split(r"[^a-z0-9äöüß]+", (q or "").lower()) if w]
+    if not qw:
+        return []
+    enw = [w for w in re.split(r"[^a-z0-9]+", (colormod.to_english(q) or "").lower()) if w]
+    def ok(name):
+        nw = [w for w in re.split(r"[^a-z0-9äöüß]+", (name or "").lower()) if w]
+        return any(all(any(x.startswith(w) for x in nw) for w in ws) for ws in (qw, enw) if ws)
+    vend, mat = (vendor or "").strip().lower(), (material or "").strip().upper()
+    out, seen = [], set()
+    def add(name, hx, src, rank):
+        k = (name or "").strip().lower()
+        if not k or k in seen or not hx:
+            return
+        seen.add(k)
+        out.append({"name": name.strip(), "hex": hx[:6].upper(), "source": src, "rank": rank})
+    for f in _own_filaments():
+        v = ((f.get("vendor") or {}).get("name") or "").lower()
+        if ok(f.get("name")):
+            add(f.get("name"), f.get("color_hex"), "eigene Sorte", 0 if v == vend else 2)
+    try:
+        ext = spoolman.external_filaments()
+    except Exception:
+        ext = []
+    for f in ext:
+        if (f.get("manufacturer") or "").lower() == vend and ok(f.get("name")):
+            add(f.get("name"), f.get("color_hex"), "Datenbank" + ("" if not mat or (f.get("material") or "").upper() == mat else f" ({f.get('material')})"),
+                1 if not mat or (f.get("material") or "").upper() == mat else 3)
+    for k, hx in colormod.NAMES.items():
+        if ok(k):
+            add(k.title(), hx, "Farbliste", 4)
+    out.sort(key=lambda x: (x["rank"], not x["name"].lower().startswith(qw[0]), len(x["name"])))
+    return out[:limit]
+
+
+async def api_lager_colorsuggest(request):
+    q = request.query_params
+    return JSONResponse({"items": await run_in_threadpool(_color_suggest, q.get("q", ""), q.get("vendor", ""), q.get("material", ""))})
+
+
 def _color_lookup(name, vendor="", material=""):
     """Farbname → {hex, source, exact}: 1. Filament-Datenbank (gleicher Hersteller+Material), 2. andere Hersteller,
     3. eingebaute Farbliste. Nichts gefunden → hex None (dann Pipette anbieten)."""
@@ -697,6 +746,13 @@ def _color_lookup(name, vendor="", material=""):
     en = colormod.to_english(n)
     words = [w for w in re.split(r"\s+", en.lower()) if w]
     vend, mat = (vendor or "").strip().lower(), (material or "").strip().upper()
+    # 0. eigene, schon angelegte Sorte mit genau diesem Namen (so „lernt“ PrintHub selbst gewählte Farben)
+    own = [f for f in _own_filaments() if (f.get("name") or "").strip().lower() == n.lower() and f.get("color_hex")]
+    own.sort(key=lambda f: ((f.get("vendor") or {}).get("name") or "").lower() != vend)
+    if own:
+        f = own[0]
+        return {"hex": f["color_hex"][:6].upper(), "exact": True,
+                "source": f"eigene Sorte: {((f.get('vendor') or {}).get('name') or '').strip()} {f.get('material') or ''} {f.get('name')}".replace("  ", " ")}
     try:
         ext = spoolman.external_filaments()
     except Exception:
@@ -721,6 +777,10 @@ def _color_lookup(name, vendor="", material=""):
         f = min(others, key=lambda f: len(f.get("name") or ""))
         return {"hex": f["color_hex"][:6].upper(), "exact": False,
                 "source": f"Filament-Datenbank, anderer Hersteller: {f.get('manufacturer')} {f.get('name')} – ungefähr"}
+    sug = _color_suggest(n, vendor, material, limit=1)
+    if sug:
+        g = sug[0]
+        return {"hex": g["hex"], "exact": False, "suggest": g["name"], "source": f"meintest du „{g['name']}“? ({g['source']})"}
     return {"hex": None, "source": "nicht gefunden"}
 
 
@@ -3236,6 +3296,7 @@ app = Starlette(
         Route("/api/lager/spools/{sid:int}/dried", api_lager_dried, methods=["POST"]),
         Route("/api/lager/scan", api_lager_scan, methods=["POST"]),
         Route("/api/lager/colorhex", api_lager_colorhex),
+        Route("/api/lager/colorsuggest", api_lager_colorsuggest),
         Route("/api/lager/template", api_lager_template),
         Route("/api/lager/multi", api_lager_multi, methods=["POST"]),
         Route("/api/lager/bulk", api_lager_bulk, methods=["POST"]),
