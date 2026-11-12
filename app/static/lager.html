@@ -370,8 +370,7 @@ const STATUS = {
   empty: {t: "fast leer", s: nearEmpty},
   printer: {t: "im Drucker", s: (f, s) => s.in_printer},
 };
-function statusBar() {
-  const all = D.filaments;
+function statusBar(all) {     // zählt nur, was zu Suche/Material/Anzeige passt
   const n = k => STATUS[k].f ? all.filter(STATUS[k].f).length : all.reduce((a, f) => a + f.spools.filter(s => STATUS[k].s(f, s)).length, 0);
   $("statbar").innerHTML = Object.keys(STATUS).map(k => { const c = n(k);
     return c || V.status === k ? `<button type="button" class="stchip ${k} has ${V.status === k ? "on" : ""}" onclick="setStatus('${k}')">
@@ -484,7 +483,10 @@ function listHtml(fl) {
 function render() {
   const q = $("q").value.trim().toLowerCase(), mat = $("mat").value, show = $("show").value;
   const match = f => (!mat || f.material === mat) && (!q || `${f.vendor} ${f.name} ${f.material} ${f.color || ""}`.toLowerCase().includes(q));
-  if (!ARCH) { matChips(); statusBar(); }
+  if (!ARCH) {
+    matChips();
+    statusBar(D.filaments.filter(f => match(f) && (show === "all" || (show === "low" ? isLow(f) : f.spools.length > 0 || isLow(f)))));
+  }
   document.querySelectorAll("#vseg button").forEach(b => b.classList.toggle("on", b.dataset.v === V.view));
   const tile = (l, v, s = "", c = "") => `<div class="etile"><div class="label">${l}</div><div class="v ${c}">${v}</div><div class="s">${s}</div></div>`;
   let fl;
