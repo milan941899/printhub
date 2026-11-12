@@ -1,6 +1,7 @@
 """PrintHub – Status, Spulenzuordnung und Verbrauchsbuchung für Bambu- und Klipper-Drucker."""
 import base64
 import contextlib
+import io
 import ipaddress
 import json
 import logging
@@ -683,6 +684,147 @@ async def api_printer_swap(request):
     return JSONResponse({"ok": True, "message": msg})
 
 
+# ---------------- Rolle per Foto / Strichcode erkennen ----------------
+from . import scan as scanmod
+
+
+def _learn_code(code, fid):
+    code = str(code).strip()
+    if not code:
+        return
+    with store.lock:
+        store.data.setdefault("ean_map", {})[code] = int(fid)
+        store._save()
+    log.info("Lager: Code %s gehört jetzt zu Sorte #%s", code, fid)
+
+
+def _hexdist(a, b):
+    try:
+        a, b = a.strip("#")[:6], b.strip("#")[:6]
+        return sum(abs(int(a[i:i + 2], 16) - int(b[i:i + 2], 16)) for i in (0, 2, 4))
+    except (ValueError, AttributeError, IndexError):
+        return 999
+
+
+def _mat_norm(m):
+    return re.sub(r"[\s_]+", "", (m or "").upper()).replace("PLUS", "+").replace("PRO", "+")
+
+
+def _scan_match(parsed, brand=""):
+    """Sorten aus dem Lager nach Ähnlichkeit: Material, Farbe, Hersteller, Gewicht."""
+    inv = spoolman.inventory()
+    out = []
+    pm, pc = _mat_norm(parsed.get("material")), parsed.get("color_hex")
+    for f in inv["filaments"]:
+        fm = _mat_norm(f.get("material"))
+        sc, why = 0, []
+        if pm and fm:
+            if pm == fm:
+                sc += 4; why.append("Material")
+            elif pm.rstrip("+") == fm.rstrip("+") or fm.startswith(pm) or pm.startswith(fm):
+                sc += 2; why.append("Material ähnlich")
+            else:
+                sc -= 4
+        if pc and f.get("color_hex"):
+            d = _hexdist(pc, f["color_hex"])
+            if d < 70:
+                sc += 4; why.append("Farbe")
+            elif d < 150:
+                sc += 1
+            else:
+                sc -= 2
+        vend = ((f.get("vendor") or {}).get("name") or "")
+        if brand and vend and (brand.lower() in vend.lower() or vend.lower() in brand.lower()):
+            sc += 3; why.append("Hersteller")
+        if parsed.get("weight") and f.get("weight") and abs(parsed["weight"] - f["weight"]) <= 20:
+            sc += 1
+        if sc >= 4:
+            out.append({"id": f["id"], "label": " ".join(x for x in [vend, f.get("name") or "", f.get("material") or ""] if x),
+                        "color": "#" + (f.get("color_hex") or "999999")[:6], "score": sc, "why": ", ".join(why)})
+    out.sort(key=lambda x: -x["score"])
+    return out[:6]
+
+
+def _scan(img_bytes=None, code=None):
+    from PIL import Image
+    res = {"codes": [], "parsed": {}, "matches": [], "learned": None, "online": None}
+    img = None
+    if img_bytes:
+        img = Image.open(io.BytesIO(img_bytes))
+        codes = scanmod.barcodes(img)
+        res["codes"] = [{"type": c["type"], "data": c["data"]} for c in codes]
+    else:
+        codes = []
+    if code:
+        res["codes"].insert(0, {"type": "manuell", "data": code.strip()})
+    eans = [c["data"] for c in res["codes"] if scanmod.is_ean(c["data"])]
+    others = [c["data"] for c in res["codes"] if not scanmod.is_ean(c["data"]) and not c["data"].startswith("http")]
+    res["ean"] = eans[0] if eans else None
+    res["lot"] = others[0] if others and not eans else (others[0] if others else None)
+    known = store.data.get("ean_map") or {}
+    for c in [res["ean"]] + others:
+        if c and c in known:
+            res["learned"] = known[c]
+            break
+    # Text auf dem Etikett: erst der Bereich um den Strichcode, dann das ganze Foto
+    if img is not None:
+        texts = []
+        for c in codes:
+            if c.get("box"):
+                texts += scanmod.ocr_texts(scanmod.label_crop(img, c), small=True)
+                break
+        p = scanmod.parse_votes(texts)
+        if not all(k in p for k in ("material", "color", "weight")):
+            full = scanmod.parse_votes(scanmod.ocr_texts(img, small=not texts))
+            p = {**full, **p}
+        res["parsed"] = p
+    brand = ""
+    if res["ean"] and not res["learned"]:
+        on = scanmod.online_lookup(requests, res["ean"])
+        res["online"] = on
+        if on and not on.get("error"):
+            brand = on.get("brand") or ""
+            res["parsed"] = {**scanmod.parse_text(on.get("text") or ""), **{k: v for k, v in res["parsed"].items() if v}}
+            res["parsed"]["brand"] = brand
+    try:
+        res["matches"] = _scan_match(res["parsed"], brand)
+    except Exception as e:
+        log.info("Scan: Abgleich mit dem Lager fehlgeschlagen: %s", e)
+    if res["learned"] and not any(m["id"] == res["learned"] for m in res["matches"]):
+        f = next((x for x in spoolman.inventory()["filaments"] if x["id"] == res["learned"]), None)
+        if f:
+            res["matches"].insert(0, {"id": f["id"], "label": " ".join(x for x in [(f.get("vendor") or {}).get("name", ""),
+                                      f.get("name") or "", f.get("material") or ""] if x),
+                                      "color": "#" + (f.get("color_hex") or "999999")[:6], "score": 99, "why": "Code gelernt"})
+    elif res["learned"]:
+        for m in res["matches"]:
+            if m["id"] == res["learned"]:
+                m["score"], m["why"] = 99, "Code gelernt"
+        res["matches"].sort(key=lambda x: -x["score"])
+    log.info("Scan: Codes %s, Text %s, Treffer %s", [c["data"] for c in res["codes"]], res["parsed"],
+             [(m["id"], m["score"]) for m in res["matches"][:3]])
+    return res
+
+
+async def api_lager_scan(request):
+    ct = request.headers.get("content-type", "")
+    try:
+        if ct.startswith("image/"):
+            body = await request.body()
+            if len(body) > 15_000_000:
+                return JSONResponse({"error": "Foto zu groß"}, status_code=400)
+            res = await run_in_threadpool(_scan, body, request.query_params.get("code"))
+        else:
+            b = await request.json()
+            if not (b.get("code") or "").strip():
+                return JSONResponse({"error": "Kein Code"}, status_code=400)
+            res = await run_in_threadpool(_scan, None, b["code"])
+    except Exception as e:
+        log.warning("Scan fehlgeschlagen: %s", e)
+        return JSONResponse({"error": f"Foto konnte nicht gelesen werden: {e}"}, status_code=400)
+    return JSONResponse(res)
+
+
 # ---------------- Nochmal drucken ----------------
 def _norm_name(n):
     n = re.sub(r"\.(gcode\.)?3mf$|\.gcode$", "", str(n or ""), flags=re.I)
@@ -915,7 +1057,9 @@ async def api_lager_spools(request):
             await run_in_threadpool(spoolman.update_filament, int(b["filament_id"]), {"spool_weight": empty})
         ids = await run_in_threadpool(spoolman.create_spools, b["filament_id"], count,
                                       b.get("location") or settings["storage_location"],
-                                      initial, _num(b.get("price")))
+                                      initial, _num(b.get("price")), b.get("lot") or None)
+        if b.get("ean"):
+            _learn_code(b["ean"], int(b["filament_id"]))
         if empty and not b.get("empty_for_filament"):
             for i in ids:
                 await run_in_threadpool(spoolman.update_spool, i, {"spool_weight": empty})
@@ -949,7 +1093,10 @@ async def api_lager_filament(request):
         else:
             f = await run_in_threadpool(spoolman.create_filament, data)
         if b.get("count"):
-            await run_in_threadpool(spoolman.create_spools, f["id"], int(b["count"]), settings["storage_location"], None, None)
+            await run_in_threadpool(spoolman.create_spools, f["id"], int(b["count"]), settings["storage_location"], None, None,
+                                    b.get("lot") or None)
+        if b.get("ean"):
+            _learn_code(b["ean"], f["id"])
     except (ValueError, KeyError, RuntimeError, TypeError) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     return JSONResponse({"ok": True, "id": f["id"]})
@@ -2898,6 +3045,7 @@ app = Starlette(
         Route("/api/lager/spools/{sid:int}/archive", api_lager_archive, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/weigh", api_lager_weigh, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/dried", api_lager_dried, methods=["POST"]),
+        Route("/api/lager/scan", api_lager_scan, methods=["POST"]),
         Route("/api/history/{hid:int}/reprint", api_history_reprint, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/edit", api_lager_spool_edit, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/unarchive", api_lager_unarchive, methods=["POST"]),

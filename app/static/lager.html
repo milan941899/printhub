@@ -36,8 +36,9 @@
     </div>
     <div class="tb-right" id="tb-lager">
       <a class="btn" href="/lager?ansicht=archiv" id="archlink">📦 Archiv</a>
-      <button onclick="openFil()">＋ Neue Sorte</button>
-      <button class="primary" onclick="openAdd()">＋ Neue Rollen</button>
+      <button onclick="scanCtx=null;openFil()">＋ Neue Sorte</button>
+      <button onclick="scanStart()" title="Etikett oder Strichcode der Rolle fotografieren">📷 Rolle scannen</button>
+      <button class="primary" onclick="scanCtx=null;openAdd()">＋ Neue Rollen</button>
     </div>
     <div class="tb-right" id="tb-archiv" style="display:none">
       <a class="btn" href="/lager">← Zurück zum Lager</a>
@@ -76,6 +77,28 @@
     <div class="muted small">Sorte fehlt in der Liste? <a href="#" onclick="event.preventDefault();closeM();openFil()">＋ Neue Sorte anlegen</a> – auch direkt aus der Filament-Datenbank.</div>
     <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Anlegen</button></div>
   </form>
+</div>
+
+<input type="file" id="scan-file" accept="image/*" capture="environment" style="display:none">
+<!-- Dialog: Rolle scannen -->
+<div class="modal" id="m-scan" onclick="if(event.target===this)scanClose()">
+  <div class="mbox card">
+    <h2>📷 Rolle scannen</h2>
+    <div id="sc-live" style="display:none"><video id="sc-video" playsinline muted style="width:100%;border-radius:10px;background:#000"></video>
+      <div class="muted small">Strichcode oder Etikett ins Bild halten …</div></div>
+    <div id="sc-start">
+      <p class="muted small">Etikett der Rolle oder Schachtel fotografieren – PrintHub liest Strichcode (EAN oder Charge) und Text (Material, Farbe, Gewicht).</p>
+      <div class="mact" style="justify-content:flex-start;flex-wrap:wrap">
+        <button class="primary" type="button" onclick="$('scan-file').click()">📷 Foto aufnehmen</button>
+        <button type="button" id="sc-livebtn" onclick="scanLive()" style="display:none">🎥 Live scannen</button>
+      </div>
+      <div class="field" style="margin-top:10px"><span class="lab">… oder Code eintippen</span>
+        <div style="display:flex;gap:6px"><input id="sc-code" type="text" inputmode="numeric" placeholder="z. B. 6933582308674"><button type="button" onclick="scanCode()">Suchen</button></div></div>
+    </div>
+    <div id="sc-busy" class="wres" style="display:none">⏳ Erkenne Strichcode und Text …</div>
+    <div id="sc-res"></div>
+    <div class="mact"><button type="button" onclick="scanClose()">Schließen</button></div>
+  </div>
 </div>
 
 <!-- Dialog: Rolle wiegen -->
@@ -383,6 +406,110 @@ function dryBadge(s) {
 async function dried(id) {
   await api(`/api/lager/spools/${id}/dried`, "POST"); PH.toast(`Rolle #${id} als getrocknet gespeichert`); load();
 }
+// ---------- Rolle scannen ----------
+let scanCtx = null, scanStream = null;
+function scanStart() {
+  scanCtx = null; $("sc-res").innerHTML = ""; $("sc-busy").style.display = "none"; $("sc-start").style.display = "";
+  $("sc-live").style.display = "none"; $("sc-code").value = "";
+  $("sc-livebtn").style.display = window.isSecureContext && "BarcodeDetector" in window ? "" : "none";
+  $("m-scan").classList.add("open");
+}
+function scanClose() {
+  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  $("m-scan").classList.remove("open");
+}
+$("scan-file").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  // aufs Handy-Foto verkleinern (schneller hochladen), Strichcode bleibt lesbar
+  const img = await createImageBitmap(f).catch(() => null);
+  let blob = f;
+  if (img) {
+    const k = Math.min(1, 2600 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+    c.width = img.width * k; c.height = img.height * k; c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.9));
+  }
+  scanSend(blob);
+};
+async function scanSend(blob, code) {
+  $("sc-start").style.display = "none"; $("sc-live").style.display = "none"; $("sc-busy").style.display = ""; $("sc-res").innerHTML = "";
+  try {
+    const r = blob ? await fetch("/api/lager/scan" + (code ? `?code=${encodeURIComponent(code)}` : ""), {method: "POST", headers: {"Content-Type": "image/jpeg"}, body: blob})
+                   : await fetch("/api/lager/scan", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({code})});
+    const d = await r.json();
+    $("sc-busy").style.display = "none";
+    if (d.error) { $("sc-res").innerHTML = `<div class="err">${esc(d.error)}</div>`; $("sc-start").style.display = ""; return; }
+    scanShow(d);
+  } catch (e) { $("sc-busy").style.display = "none"; $("sc-start").style.display = ""; PH.toast("Scan fehlgeschlagen", true); }
+}
+function scanCode() { const c = $("sc-code").value.trim(); if (c) scanSend(null, c); }
+async function scanLive() {
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "environment", width: {ideal: 1920}}});
+  } catch (e) { PH.toast("Kamera nicht freigegeben", true); return; }
+  const v = $("sc-video"); v.srcObject = scanStream; await v.play();
+  $("sc-start").style.display = "none"; $("sc-live").style.display = "";
+  const det = new BarcodeDetector();
+  const tick = async () => {
+    if (!scanStream) return;
+    const r = await det.detect(v).catch(() => []);
+    if (r.length) {
+      const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext("2d").drawImage(v, 0, 0);
+      const blob = await new Promise(res => c.toBlob(res, "image/jpeg", 0.9));
+      scanStream.getTracks().forEach(t => t.stop()); scanStream = null;
+      return scanSend(blob, r[0].rawValue);
+    }
+    setTimeout(tick, 250);
+  };
+  tick();
+}
+function scanShow(d) {
+  scanCtx = d;
+  const p = d.parsed || {}, chips = [];
+  if (p.brand) chips.push(esc(p.brand));
+  if (p.material) chips.push(esc(p.material));
+  if (p.color) chips.push(`<span class="dot" style="background:#${p.color_hex}"></span>${esc(p.color)}`);
+  if (p.weight) chips.push(`${p.weight} g`);
+  if (p.diameter) chips.push(`Ø ${p.diameter} mm`);
+  if (p.extruder_temp) chips.push(`Düse ~${p.extruder_temp} °C`);
+  if (p.bed_temp) chips.push(`Bett ~${p.bed_temp} °C`);
+  const codes = (d.codes || []).map(c => `<code>${esc(c.data)}</code> <span class="muted small">${d.ean === c.data ? "EAN" : c.data === d.lot ? "Charge" : esc(c.type)}</span>`).join(" · ");
+  let online = "";
+  if (d.online && d.online.error) online = `<div class="muted small">🌐 ${esc(d.online.error)}</div>`;
+  else if (d.online) online = `<div class="small">🌐 Online gefunden: <b>${esc(d.online.title)}</b></div>`;
+  else if (d.ean && !d.learned) online = `<div class="muted small">🌐 Online nichts gefunden – <a href="https://www.google.com/search?q=${d.ean}" target="_blank">im Web suchen ↗</a></div>`;
+  const opts = (d.matches || []).map((m, i) => `<label class="scopt"><input type="radio" name="scf" value="${m.id}" ${i === 0 ? "checked" : ""}>
+      <span class="dot" style="background:${m.color}"></span><b>${esc(m.label)}</b> <span class="muted small">${esc(m.why || "")}</span></label>`).join("");
+  $("sc-res").innerHTML = `
+    ${codes ? `<div class="small">Code: ${codes}</div>` : `<div class="muted small">Kein Strichcode erkannt.</div>`}
+    ${chips.length ? `<div class="scchips">${chips.map(c => `<span>${c}</span>`).join("")}</div>` : `<div class="muted small">Kein Text erkannt – Foto näher und gerade aufnehmen.</div>`}
+    ${online}
+    <div class="label" style="margin-top:10px">Welche Sorte?</div>
+    ${opts || `<div class="muted small">Keine passende Sorte im Lager.</div>`}
+    <label class="scopt"><input type="radio" name="scf" value="other" ${opts ? "" : "checked"}> Andere Sorte aus dem Lager …</label>
+    <label class="scopt"><input type="radio" name="scf" value="new"> ＋ Neue Sorte mit diesen Daten anlegen</label>
+    <div class="mact"><button type="button" onclick="scanStart()">↺ Nochmal</button><button class="primary" type="button" onclick="scanNext()">Weiter</button></div>`;
+}
+function scanNext() {
+  const v = (document.querySelector("input[name=scf]:checked") || {}).value, p = scanCtx.parsed || {};
+  scanClose();
+  if (v === "new") {
+    openFil();
+    if (p.material) $("f-mat").value = p.material;
+    if (p.color) $("f-name").value = p.color;
+    if (p.color_hex) $("f-color").value = "#" + p.color_hex.toLowerCase();
+    if (p.weight) $("f-weight").value = p.weight;
+    if (p.extruder_temp) $("f-et").value = p.extruder_temp;
+    if (p.bed_temp) $("f-bt").value = p.bed_temp;
+    if (p.diameter) $("f-diam").value = p.diameter;
+    if (p.brand) { const vd = D.vendors.find(x => x.name.toLowerCase() === p.brand.toLowerCase()); if (vd) $("f-vendor").value = vd.id; }
+    $("f-count").value = 1;
+    return;
+  }
+  openAdd(v === "other" ? undefined : +v);
+  if (p.weight && v !== "other") { const f = D.filaments.find(x => x.id === +v); if (f && f.weight && Math.abs(f.weight - p.weight) > 20) $("a-weight").value = p.weight; }
+  $("a-res").innerHTML = scanCtx.lot ? `Charge <b>${esc(scanCtx.lot)}</b> wird bei den Rollen gespeichert.` : "";
+}
 function _fil(sid) { return D.filaments.find(f => f.spools.some(x => x.id === sid)); }
 function openWeigh(id, leer = false) {
   const s = _spool(id), f = _fil(id);
@@ -464,7 +591,9 @@ function addCalc() {
 async function saveAdd() {
   const d = await api("/api/lager/spools", "POST", {filament_id: +$("a-fil").value, count: +$("a-count").value,
     initial_weight: $("a-weight").value, price: $("a-price").value, location: $("a-loc").value,
-    gross: $("a-gross").value, empty: $("a-empty").value, empty_for_filament: $("a-forfil").checked});
+    gross: $("a-gross").value, empty: $("a-empty").value, empty_for_filament: $("a-forfil").checked,
+    lot: scanCtx ? scanCtx.lot : "", ean: scanCtx ? (scanCtx.ean || scanCtx.lot) : ""});
+  scanCtx = null;
   closeM(); PH.toast(`${d.ids.length} Rolle(n) angelegt: #${d.ids.join(", #")}`);
   if ($("a-labels").checked) return printLabels(d.ids);
   open.add(+$("a-fil").value); load();
@@ -497,8 +626,10 @@ async function saveFil() {
     weight: $("f-weight").value, spool_weight: $("f-sw").value, price: $("f-price").value, extruder_temp: $("f-et").value,
     bed_temp: $("f-bt").value, count: +$("f-count").value || 0,
     external_id: dbPicked && dbPicked.name === $("f-name").value && dbPicked.color === $("f-color").value ? $("f-ext").value : "",
-    density: $("f-dens").value, diameter: $("f-diam").value};
+    density: $("f-dens").value, diameter: $("f-diam").value,
+    lot: scanCtx && !$("f-id").value ? scanCtx.lot : "", ean: scanCtx && !$("f-id").value ? (scanCtx.ean || scanCtx.lot) : ""};
   const d = await api("/api/lager/filament", "POST", body);
+  scanCtx = null;
   closeM(); PH.toast("Sorte gespeichert"); open.add(d.id); load();
 }
 

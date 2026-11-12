@@ -5,7 +5,7 @@ ENV PYTHONUNBUFFERED=1 \
     DATA=/data/state.json \
     TZ=Europe/Rome
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg tzdata fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg tzdata fonts-dejavu-core libzbar0 tesseract-ocr tesseract-ocr-eng && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv
 COPY requirements.txt .

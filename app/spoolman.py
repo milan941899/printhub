@@ -144,10 +144,12 @@ class Spoolman:
     def update_filament(self, fid, data):
         return self._send("PATCH", f"/filament/{fid}", data)
 
-    def create_spools(self, filament_id, count, location="", initial_weight=None, price=None):
+    def create_spools(self, filament_id, count, location="", initial_weight=None, price=None, lot=None):
         made = []
         for _ in range(int(count)):
             body = {"filament_id": int(filament_id)}
+            if lot:
+                body["lot_nr"] = str(lot)[:64]
             if location:
                 body["location"] = location
             if initial_weight:

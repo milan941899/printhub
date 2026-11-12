@@ -383,6 +383,11 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
 - **⚖ Wiegen:** Bruttogewicht von der Waage eingeben – PrintHub zieht das Leergewicht der Spule ab und speichert den
   Rest. Das Leergewicht merkt sich PrintHub auf Wunsch für die ganze Sorte. In der Liste steht bei jeder Rolle, was die
   Waage zeigen sollte („⚖ 1165 g“) – so sieht man Abweichungen sofort.
+- **📷 Rolle scannen:** Etikett oder Schachtel mit dem Handy fotografieren. PrintHub liest den Strichcode (EAN oder
+  Chargen-Nummer) und den Text auf dem Etikett (Material, Farbe, Gewicht, Temperaturen) und schlägt die passende Sorte vor –
+  oder legt mit diesen Daten eine neue an. Codes werden gelernt: ab der zweiten Rolle reicht ein Scan. Unbekannte EAN-Codes
+  schlägt PrintHub online nach (UPCitemdb, kostenlos, 100 Abfragen/Tag). Die Chargen-Nummer wird bei der Rolle gespeichert.
+  Live-Scannen mit der Kamera geht, wenn PrintHub über HTTPS aufgerufen wird (z. B. Tailscale Serve); sonst per Foto.
 - **Neue Rollen brutto gewogen anlegen:** zeigt gleich, ob wirklich 1000 g drauf sind („994 g – −6 g zum Nenngewicht“).
 - **✎ Rolle bearbeiten:** Filament neu, übrig, Leergewicht, Preis, Ort, Charge, Notiz – ohne Spoolman öffnen zu müssen.
 - **💧 Trocknen:** Jede angebrochene Rolle zeigt, wie viele Tage sie offen ist (seit dem Öffnen bzw. dem letzten Trocknen).
