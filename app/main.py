@@ -1349,7 +1349,11 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         for c in codes:
             if c.get("box"):
                 texts += scanmod.band_texts(img, c)
-                texts += scanmod.ocr_texts(scanmod.label_crop(img, c), small=True)
+                # Farbe schon gefunden? Sonst Stufe 2: gedreht, Schatten ausgleichen, ganzes Etikett
+                tj, pv = "\n".join(texts), scanmod.parse_votes(texts)
+                if not ((_own_color(tj, pv.get("material", ""), vendor) or pv.get("color")) and pv.get("material") and pv.get("weight")):
+                    texts += scanmod.band_texts(img, c, stage=2)
+                    texts += scanmod.ocr_texts(scanmod.label_crop(img, c), small=True)
                 break
         p = scanmod.parse_votes(texts)
         alltexts += texts

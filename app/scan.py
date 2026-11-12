@@ -122,7 +122,7 @@ def label_crop(img, code):
     return base.crop(box)
 
 
-def band_texts(img, code):
+def band_texts(img, code, stage=1):
     """Text in Streifen über und unter dem Strichcode lesen – in Originalgröße (Vergrößern verschlechtert schmale
     Etikettenschrift). Oben steht meist Material/Farbe, unten Nummer, Gewicht, Temperaturen."""
     base = ImageOps.exif_transpose(img).convert("L")
@@ -159,11 +159,15 @@ def band_texts(img, code):
         if sharp:
             b = b.filter(ImageFilter.SHARPEN)
         jobs.append((b, psm))
-    for sc, sh, psm in ((0.7, False, "6"), (0.7, True, "11"), (1.0, True, "6"), (1.0, False, "7")):
-        go(top, sc, sh, psm)
-    for sc, sh, psm in ((1.0, False, "6"), (1.0, True, "6"), (1.5, False, "6")):
-        go(bot, sc, sh, psm)
-    # schräge Etiketten: großzügiger Bereich über der Lese-Linie, leicht gedreht
+    if stage == 1:
+        for sc, sh, psm in ((0.7, False, "6"), (0.7, True, "11"), (1.0, True, "6"), (1.0, False, "7")):
+            go(top, sc, sh, psm)
+        for sc, sh, psm in ((1.0, False, "6"), (1.0, True, "6"), (1.5, False, "6")):
+            go(bot, sc, sh, psm)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            return list(ex.map(lambda j: _tess(*j), jobs))
+    # Stufe 2 (nur wenn Stufe 1 keine Farbe fand) – schräge Etiketten: großzügiger Bereich über der Lese-Linie, leicht gedreht
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     for ang in (0, -3, 3):
         rb = base.rotate(ang, center=(cx, cy), resample=Image.BICUBIC, fillcolor=255) if ang else base
@@ -270,6 +274,24 @@ _OCR_FIX = [(r"(\d)\s?k[9gq](?![a-z])", r"\1kg"), (r"(?<![A-Za-z])Whi[l1I]e(?![a
             (r"(?<![A-Z0-9])A8S(?![A-Z0-9])", "ABS"), (r"(?<![A-Z0-9])TP[UV](?![A-Z0-9])", "TPU")]
 
 
+_WEIGHTS = (250, 330, 500, 600, 750, 800, 900, 1000, 1100, 1200, 1250, 1500, 2000, 2500, 3000, 4500, 5000, 10000)
+
+
+def plausible_weight(g):
+    """Übliche Rollengewichte. Typische Lesefehler (1↔4/7, 0↔8) zurückbiegen: „4.1kg“ → 1100 g."""
+    g = round(g)
+    if g in _WEIGHTS:
+        return g
+    s = str(g)
+    for a, b in (("4", "1"), ("7", "1"), ("8", "0"), ("6", "0"), ("9", "0")):
+        for i, ch in enumerate(s):
+            if ch == a:
+                t = int(s[:i] + b + s[i + 1:])
+                if t in _WEIGHTS:
+                    return t
+    return None
+
+
 def parse_text(text):
     """Etikett-/Produkttext → Material, Farbe, Gewicht, Durchmesser, Temperaturen."""
     t = " " + re.sub(r"\s+", " ", text or "") + " "
@@ -290,8 +312,9 @@ def parse_text(text):
     if m:
         v = float(m.group(1).replace(",", "."))
         g = v * 1000 if m.group(2) in ("kg", "k") else v
-        if 100 <= g <= 10000:
-            out["weight"] = round(g)
+        g = plausible_weight(g)
+        if g:
+            out["weight"] = g
     m = re.search(r"(1[.,]75|2[.,]85|3[.,]00?)\s?mm", low)
     if m:
         out["diameter"] = float(m.group(1).replace(",", "."))
