@@ -102,6 +102,7 @@
 </div>
 
 <input type="file" id="scan-file" accept="image/*" capture="environment" style="display:none">
+<input type="file" id="scan-gal" accept="image/*" style="display:none">
 <!-- Dialog: Rolle scannen -->
 <div class="modal" id="m-scan">
   <div class="mbox card">
@@ -111,13 +112,14 @@
     <div id="sc-start">
       <p class="muted small">Etikett der Rolle oder Schachtel fotografieren – PrintHub liest Strichcode (EAN oder Charge) und Text (Material, Farbe, Gewicht).</p>
       <div class="mact" style="justify-content:flex-start;flex-wrap:wrap">
-        <button class="primary" type="button" onclick="$('scan-file').click()">📷 Foto aufnehmen</button>
+        <button class="primary" type="button" onclick="scanPick('scan-file')">📷 Foto aufnehmen</button>
+        <button type="button" onclick="scanPick('scan-gal')" title="Foto, das du vorher mit der Kamera-App gemacht hast">🖼 Aus Galerie</button>
         <button type="button" id="sc-livebtn" onclick="scanLive()" style="display:none">🎥 Live scannen</button>
       </div>
       <div class="field" style="margin-top:10px"><span class="lab">… oder Code eintippen</span>
         <div style="display:flex;gap:6px"><input id="sc-code" type="text" inputmode="numeric" placeholder="z. B. 6933582308674"><button type="button" onclick="scanCode()">Suchen</button></div></div>
     </div>
-    <div id="sc-busy" class="wres" style="display:none">⏳ Erkenne Strichcode und Text …</div>
+    <div id="sc-busy" class="wres" style="display:none">⏳ <span id="sc-busytxt">Erkenne Strichcode und Text …</span></div>
     <div id="sc-res"></div>
     <div class="mact"><button type="button" onclick="scanClose()">Schließen</button></div>
   </div>
@@ -760,7 +762,7 @@ $("mu-cam").onchange = e => { const f = e.target.files[0]; e.target.value = ""; 
 $("mu-gal").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; fs.forEach(f => muScanFile(f, null)); };
 function muScanFile(f, row) { muBusy(+1); muQueue = muQueue.then(() => muScanOne(f, row)).catch(() => {}).finally(() => muBusy(-1)); }
 async function muScanOne(f, row) {
-  const blob = await photoBlob(f);
+  const blob = await uploadBlob(f);
   const qs = new URLSearchParams({vendor: muVendorName(), material: $("mu-mat").value.trim()});
   let d; try { d = await (await fetch("/api/lager/scan?" + qs, {method: "POST", headers: {"Content-Type": "image/jpeg"}, body: blob})).json(); }
   catch { d = {error: "keine Verbindung"}; }
@@ -929,21 +931,41 @@ function scanClose() {
   if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
   $("m-scan").classList.remove("open");
 }
-$("scan-file").onchange = async e => {
-  const f = e.target.files[0]; e.target.value = "";
-  if (!f) return;
-  // aufs Handy-Foto verkleinern (schneller hochladen), Strichcode bleibt lesbar
-  const img = await createImageBitmap(f).catch(() => null);
-  let blob = f;
-  if (img) {
-    const k = Math.min(1, 2600 / Math.max(img.width, img.height)), c = document.createElement("canvas");
-    c.width = img.width * k; c.height = img.height * k; c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.9));
-  }
-  scanSend(blob);
-};
+// Foto vom Handy: sofort Rückmeldung, Original direkt hochladen (Verkleinern am Handy dauert auf älteren Geräten Sekunden).
+// Kommt nach der Kamera kein Foto zurück (Browser hat es verworfen), nach kurzer Zeit klar sagen und Galerie anbieten.
+let scanWait = 0;
+function scanPick(id) {
+  scanWait = Date.now();
+  $(id).click();
+}
+function scanBusy(t) { $("sc-start").style.display = "none"; $("sc-res").innerHTML = ""; $("sc-busy").style.display = ""; $("sc-busytxt").textContent = t; }
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || !scanWait || !$("m-scan").classList.contains("open")) return;
+  const t0 = scanWait;
+  scanBusy("Foto wird übernommen …");
+  setTimeout(() => {
+    if (scanWait !== t0) return;           // inzwischen angekommen
+    scanWait = 0; $("sc-busy").style.display = "none"; $("sc-start").style.display = "";
+    $("sc-res").innerHTML = `<div class="wres small codemsg multi">Es ist kein Foto angekommen – der Browser hat es nach der Kamera verworfen (passiert bei wenig freiem Speicher).
+      Nochmal versuchen, oder das Foto mit der Kamera-App machen und über <b>🖼 Aus Galerie</b> wählen.</div>`;
+  }, 10000);
+});
+async function scanFile(f) {
+  scanWait = 0;
+  if (!f) { $("sc-busy").style.display = "none"; $("sc-start").style.display = ""; return; }
+  scanBusy(`Foto wird hochgeladen (${(f.size / 1e6).toFixed(1)} MB) …`);
+  scanSend(await uploadBlob(f));
+}
+// JPEG bis 10 MB direkt schicken, sonst (oder bei HEIC usw.) am Handy verkleinern
+async function uploadBlob(f) {
+  if (f.size <= 10e6 && /jpe?g/i.test(f.type || "jpeg")) return f;
+  return photoBlob(f);
+}
+$("scan-file").onchange = e => { const f = e.target.files[0]; e.target.value = ""; scanFile(f); };
+$("scan-gal").onchange = e => { const f = e.target.files[0]; e.target.value = ""; scanFile(f); };
 async function scanSend(blob, code) {
   $("sc-start").style.display = "none"; $("sc-live").style.display = "none"; $("sc-busy").style.display = ""; $("sc-res").innerHTML = "";
+  $("sc-busytxt").textContent = "Erkenne Strichcode und Text … (ca. 3–5 Sekunden)";
   try {
     const r = blob ? await fetch("/api/lager/scan" + (code ? `?code=${encodeURIComponent(code)}` : ""), {method: "POST", headers: {"Content-Type": "image/jpeg"}, body: blob})
                    : await fetch("/api/lager/scan", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({code})});
@@ -980,7 +1002,7 @@ function codeMsg(d) {
   const t = {known: `✓ Nummer <b>${esc(ci.code)}</b> ist bekannt – Sorte steht oben.`,
     similar: `≈ Nummer <b>${esc(ci.code)}</b> ist neu, aber ähnlich wie <b>${esc((ci.near || []).join(", "))}</b> (${L}). Bitte unten bestätigen – dann wird sie gelernt.`,
     multi: `⚠ Nummer <b>${esc(ci.code)}</b> kommt bei mehreren Sorten vor (${L}) – bitte die richtige wählen.`,
-    text: `ℹ Charge <b>${esc(ci.code)}</b> war bei <b>${L}</b> gespeichert – das Etikett nennt aber eine andere Farbe/Material, deshalb zählt der Text.`,
+    text: `ℹ Charge <b>${esc(ci.code)}</b> war ${L ? `bei <b>${L}</b>` : "bei einer anderen Sorte"} gespeichert – das Etikett nennt aber eine andere Farbe/Material, deshalb zählt der Text.`,
     unknown: `Nummer <b>${esc(ci.code)}</b> ist noch unbekannt – wird gelernt, sobald du unten eine Sorte wählst.`}[ci.status];
   return t ? `<div class="wres small codemsg ${ci.status}">${t}</div>` : "";
 }

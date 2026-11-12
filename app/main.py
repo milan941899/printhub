@@ -1324,7 +1324,9 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
     alltexts = []
     img = None
     if img_bytes:
-        img = Image.open(io.BytesIO(img_bytes))
+        from PIL import ImageOps
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(img_bytes)))
+        img.thumbnail((2600, 2600))          # Handy schickt das Original (schneller als dort zu verkleinern)
         codes = scanmod.barcodes(img)
         res["codes"] = [{"type": c["type"], "data": c["data"]} for c in codes]
     else:
