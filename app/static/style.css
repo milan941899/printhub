@@ -893,3 +893,43 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .scchips span { background:var(--tile); border:1px solid var(--line); border-radius:99px; padding:3px 10px; font-size:.88em; }
 .scopt { display:flex; align-items:center; gap:8px; padding:7px 4px; border-bottom:1px solid var(--line); cursor:pointer; }
 .scchips .dot, .scopt .dot { display:inline-block; width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,0,0,.25); margin-right:4px; vertical-align:-1px; }
+
+/* Dialoge am Handy: nie breiter als der Bildschirm, nie unter der Navigationsleiste,
+   Abbrechen/Speichern bleiben unten immer sichtbar */
+.modal { padding:10px; }
+.mbox { max-width:100%; box-sizing:border-box; max-height:calc(100dvh - 20px); overflow-y:auto; overscroll-behavior:contain; }
+.mbox * { min-width:0; }
+.mbox input, .mbox select, .mbox textarea { max-width:100%; box-sizing:border-box; }
+.mbox .fgrid { grid-template-columns:repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.mbox > .mact { position:sticky; bottom:-16px; margin:4px -16px -16px; padding:10px 16px 14px; background:var(--card, var(--bg));
+  border-top:1px solid var(--line); z-index:2; flex-wrap:wrap; }
+@media (max-width:700px) {
+  .modal { padding:8px 8px calc(78px + env(safe-area-inset-bottom)); place-items:start center; z-index:200; }
+  .mbox { max-height:calc(100dvh - 96px - env(safe-area-inset-bottom)); margin-top:6px; }
+}
+
+/* Lager: Komfort */
+.moremenu { position:relative; display:inline-block; }
+.moremenu > summary { list-style:none; cursor:pointer; }
+.moremenu > summary::-webkit-details-marker { display:none; }
+.moremenu .mm { position:absolute; right:0; top:calc(100% + 6px); z-index:40; background:var(--card); border:1px solid var(--line);
+  border-radius:12px; padding:6px; display:flex; flex-direction:column; gap:4px; min-width:250px; box-shadow:0 12px 30px var(--shadow); }
+.moremenu .mm button { text-align:left; }
+.murow { display:grid; grid-template-columns:minmax(0,1fr) 44px 60px auto auto; gap:6px; align-items:center; padding:5px 0; border-bottom:1px solid var(--line); }
+.murow .mu-c { height:36px; padding:2px; }
+.murow .mu-h { grid-column:1/-1; }
+.murow .mu-h:empty { display:none; }
+.mudb { max-height:260px; overflow-y:auto; border:1px solid var(--line); border-radius:10px; padding:4px 8px; margin:6px 0; }
+.nmrow { flex-wrap:wrap; }
+.nmrow .nm-new { flex:1; min-width:140px; }
+.fselbox { width:20px; height:20px; flex:0 0 auto; }
+.pipsw { width:34px; height:34px; border-radius:8px; border:1px solid var(--line); display:inline-block; }
+#pip-mode button.on { background:var(--acc); color:#fff; }
+#m-pip { z-index:260; }
+@media (max-width:640px) {
+  #tb-lager > * { flex:1 1 calc(50% - 8px); }
+  #tb-lager .moremenu > summary { display:flex; justify-content:center; width:100%; box-sizing:border-box; }
+  #tb-lager .moremenu .mm { right:auto; left:0; }
+}
+.moremenu > summary { font-weight:600; padding:8px 14px; border-radius:9px; border:1px solid var(--line); background:var(--tile2); color:var(--fg); }
+.moremenu[open] > summary, .moremenu > summary:hover { border-color:var(--acc); }

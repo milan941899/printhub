@@ -13,6 +13,8 @@ import time
 
 from PIL import Image, ImageFilter, ImageOps
 
+from . import colors
+
 log = logging.getLogger("printhub.scan")
 
 # ---------------------------------------------------------------- Strichcode
@@ -218,14 +220,9 @@ def parse_text(text):
                                "PLA SILK": "SILK PLA", "MATTE PLA": "PLA MATTE"}.get(m, m)
             break
     low = t.lower()
-    best = None
-    for w, (name, hx) in COLORS.items():
-        mm = re.search(r"(?<![a-zäöü])(" + "|".join(_MOD) + r")?\s?" + re.escape(w) + r"(?![a-zäöü])", low)
-        if mm and (best is None or mm.start() < best[0]):
-            mod = (mm.group(1) or "").strip()
-            best = (mm.start(), (mod.capitalize() + " " if mod else "") + name, hx)
-    if best:
-        out["color"], out["color_hex"] = best[1].strip(), best[2]
+    name, hx = colors.find_in_text(t)           # Originalname wie gedruckt, z. B. „Sky Blue“
+    if name:
+        out["color"], out["color_hex"] = name, hx or "999999"
     m = re.search(r"(\d+(?:[.,]\d+)?)\s?(kg|k|g)(?![a-z])", low)
     if m:
         v = float(m.group(1).replace(",", "."))

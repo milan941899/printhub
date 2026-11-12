@@ -132,6 +132,9 @@ class Spoolman:
         hits.sort(key=lambda f: ((f.get("material") or ""), (f.get("name") or "").lower()))
         return hits[:limit], len(hits), sorted(mats)
 
+    def update_vendor(self, vid, data):
+        return self._send("PATCH", f"/vendor/{int(vid)}", data)
+
     def create_vendor(self, name, empty_spool_weight=None):
         body = {"name": name}
         if empty_spool_weight:

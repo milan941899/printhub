@@ -383,6 +383,17 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
 - **⚖ Wiegen:** Bruttogewicht von der Waage eingeben – PrintHub zieht das Leergewicht der Spule ab und speichert den
   Rest. Das Leergewicht merkt sich PrintHub auf Wunsch für die ganze Sorte. In der Liste steht bei jeder Rolle, was die
   Waage zeigen sollte („⚖ 1165 g“) – so sieht man Abweichungen sofort.
+- **Viele ähnliche Sorten bequem anlegen:**
+  - Bei „Neue Sorte“ übernimmt PrintHub automatisch Preis, Temperaturen, Netto- und Leergewicht der zuletzt angelegten Sorte
+    desselben Herstellers und Materials – nur Name und Farbe eintragen. **⧉** an jeder Sorte macht dasselbe gezielt.
+  - **⋯ Mehr → 🎨 Mehrere Farben anlegen:** gemeinsame Werte einmal, dann pro Farbe eine Zeile (Name, Farbe, Anzahl Rollen) –
+    oder Farben direkt aus der Filament-Datenbank ankreuzen.
+  - **☑ Sorten auswählen → ✎ Gemeinsam bearbeiten:** Preis, Temperaturen, Gewichte für viele Sorten auf einmal ändern.
+  - **Farbe zum Namen:** PrintHub sucht zu „Sky Blue“ & Co. den Farbwert – zuerst in der Filament-Datenbank (gleicher Hersteller),
+    sonst in einer eingebauten Farbliste. Passt nichts, gibt es **📷 aus Foto** (Pipette, mit Weißabgleich am Etikett).
+  - **Namen:** Sorten heißen wie auf dem Etikett (meist Englisch). **⋯ Mehr → Aa Namen vereinheitlichen** benennt deutsche
+    Farbnamen um („Weiß“ → „White“). Suche und Abgleich verstehen beide Sprachen.
+  - Leergewicht beim Wiegen auch **für alle Rollen eines Herstellers** merken.
 - **📷 Rolle scannen:** Etikett oder Schachtel mit dem Handy fotografieren. PrintHub liest den Strichcode (EAN oder
   Chargen-Nummer) und den Text auf dem Etikett (Material, Farbe, Gewicht, Temperaturen) und schlägt die passende Sorte vor –
   oder legt mit diesen Daten eine neue an. Codes werden gelernt: ab der zweiten Rolle reicht ein Scan. Unbekannte EAN-Codes

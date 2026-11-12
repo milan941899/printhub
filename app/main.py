@@ -684,6 +684,173 @@ async def api_printer_swap(request):
     return JSONResponse({"ok": True, "message": msg})
 
 
+# ---------------- Sorten bequemer anlegen ----------------
+from . import colors as colormod
+
+
+def _color_lookup(name, vendor="", material=""):
+    """Farbname → {hex, source, exact}: 1. Filament-Datenbank (gleicher Hersteller+Material), 2. andere Hersteller,
+    3. eingebaute Farbliste. Nichts gefunden → hex None (dann Pipette anbieten)."""
+    n = (name or "").strip()
+    if not n:
+        return {"hex": None}
+    en = colormod.to_english(n)
+    words = [w for w in re.split(r"\s+", en.lower()) if w]
+    vend, mat = (vendor or "").strip().lower(), (material or "").strip().upper()
+    try:
+        ext = spoolman.external_filaments()
+    except Exception:
+        ext = []
+    def hit(f):
+        nm = (f.get("name") or "").lower()
+        return f.get("color_hex") and all(re.search(r"(?<![a-z])" + re.escape(w) + r"(?![a-z])", nm) for w in words)
+    tiers = [
+        [f for f in ext if hit(f) and (f.get("manufacturer") or "").lower() == vend and (not mat or (f.get("material") or "").upper() == mat)],
+        [f for f in ext if hit(f) and (f.get("manufacturer") or "").lower() == vend],
+    ]
+    for t in tiers:
+        if t:
+            f = min(t, key=lambda f: len(f.get("name") or ""))
+            return {"hex": f["color_hex"][:6].upper(), "exact": True,
+                    "source": f"Filament-Datenbank: {f.get('manufacturer')} {f.get('material')} {f.get('name')}"}
+    hx, k = colormod.from_list(en)
+    if hx:
+        return {"hex": hx, "exact": False, "source": f"Farbliste („{k}“) – ungefähr"}
+    others = [f for f in ext if hit(f)]
+    if others:
+        f = min(others, key=lambda f: len(f.get("name") or ""))
+        return {"hex": f["color_hex"][:6].upper(), "exact": False,
+                "source": f"Filament-Datenbank, anderer Hersteller: {f.get('manufacturer')} {f.get('name')} – ungefähr"}
+    return {"hex": None, "source": "nicht gefunden"}
+
+
+async def api_lager_colorhex(request):
+    q = request.query_params
+    return JSONResponse(await run_in_threadpool(_color_lookup, q.get("name", ""), q.get("vendor", ""), q.get("material", "")))
+
+
+def _template(vendor_id=None, material="", fid=None):
+    """Werte einer vorhandenen Sorte als Vorlage (gleicher Hersteller + Material, zuletzt angelegt)."""
+    fils = spoolman.inventory()["filaments"]
+    if fid:
+        cand = [f for f in fils if f["id"] == int(fid)]
+    else:
+        mat = (material or "").strip().upper()
+        cand = [f for f in fils if (f.get("vendor") or {}).get("id") == (int(vendor_id) if vendor_id else None)
+                and (f.get("material") or "").upper() == mat]
+    if not cand:
+        return None
+    f = max(cand, key=lambda f: f["id"])
+    v = f.get("vendor") or {}
+    return {"id": f["id"], "label": " ".join(x for x in [v.get("name", ""), f.get("material") or "", f.get("name") or ""] if x),
+            "vendor_id": v.get("id"), "material": f.get("material"), "weight": f.get("weight"),
+            "spool_weight": f.get("spool_weight") or v.get("empty_spool_weight"), "price": f.get("price"),
+            "extruder_temp": f.get("settings_extruder_temp"), "bed_temp": f.get("settings_bed_temp"),
+            "density": f.get("density"), "diameter": f.get("diameter")}
+
+
+async def api_lager_template(request):
+    q = request.query_params
+    return JSONResponse({"template": await run_in_threadpool(_template, q.get("vendor_id"), q.get("material", ""), q.get("id"))})
+
+
+def _multi(b):
+    vendor_id = b.get("vendor_id")
+    if not vendor_id and (b.get("vendor_name") or "").strip():
+        vendor_id = spoolman.create_vendor(b["vendor_name"].strip(), _num(b.get("spool_weight")))["id"]
+    made, rolls = [], 0
+    for row in b.get("colors") or []:
+        if not (row.get("name") or "").strip():
+            continue
+        data = _fil_data({**b, "name": row["name"], "color": row.get("hex") or "", "external_id": row.get("external_id")}, vendor_id)
+        f = spoolman.create_filament(data)
+        n = int(row.get("count") or 0)
+        if n > 0:
+            spoolman.create_spools(f["id"], n, b.get("location") or settings["storage_location"])
+            rolls += n
+        made.append(f["id"])
+    log.info("Lager: %s Sorten mit %s Rollen auf einmal angelegt", len(made), rolls)
+    return {"ok": True, "ids": made, "rolls": rolls}
+
+
+async def api_lager_multi(request):
+    try:
+        return JSONResponse(await run_in_threadpool(_multi, await request.json()))
+    except (ValueError, RuntimeError, KeyError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+def _bulk(b):
+    data = {}
+    for k, key, conv in (("price", "price", float), ("extruder_temp", "settings_extruder_temp", int),
+                         ("bed_temp", "settings_bed_temp", int), ("spool_weight", "spool_weight", float),
+                         ("weight", "weight", float), ("density", "density", float), ("diameter", "diameter", float)):
+        v = _num(b.get(k))
+        if v is not None:
+            data[key] = conv(v)
+    if b.get("material"):
+        data["material"] = str(b["material"]).strip().upper()
+    if not data:
+        raise ValueError("Nichts zu ändern – leere Felder bleiben, wie sie sind")
+    ids = [int(i) for i in b.get("ids") or []]
+    for fid in ids:
+        spoolman.update_filament(fid, data)
+    log.info("Lager: %s Sorten gemeinsam geändert: %s", len(ids), ", ".join(data))
+    return {"ok": True, "count": len(ids)}
+
+
+async def api_lager_bulk(request):
+    try:
+        return JSONResponse(await run_in_threadpool(_bulk, await request.json()))
+    except (ValueError, RuntimeError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+async def api_lager_vendor(request):
+    b = await request.json()
+    try:
+        await run_in_threadpool(spoolman.update_vendor, int(request.path_params["vid"]),
+                                {"empty_spool_weight": _num(b.get("empty_spool_weight"))})
+    except (ValueError, RuntimeError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"ok": True})
+
+
+def _names():
+    """Sorten mit deutschem Farbnamen → Vorschlag Originalname (Datenbank, sonst übersetzt)."""
+    out = []
+    try:
+        ext = spoolman.external_filaments()
+    except Exception:
+        ext = []
+    for f in spoolman.inventory()["filaments"]:
+        nm = f.get("name") or ""
+        if not colormod.has_german(nm):
+            continue
+        en = colormod.to_english(nm)
+        vend = ((f.get("vendor") or {}).get("name") or "").lower()
+        # gibt es in der Datenbank beim selben Hersteller genau diese Farbe? → deren Schreibweise
+        for e in ext:
+            if (e.get("manufacturer") or "").lower() == vend and (e.get("name") or "").lower() == en.lower():
+                en = e["name"]
+                break
+        out.append({"id": f["id"], "old": nm, "new": en, "label": f"{(f.get('vendor') or {}).get('name', '')} {f.get('material', '')}".strip()})
+    return out
+
+
+async def api_lager_names(request):
+    if request.method == "POST":
+        b = await request.json()
+        n = 0
+        for r in b.get("renames") or []:
+            if (r.get("name") or "").strip():
+                await run_in_threadpool(spoolman.update_filament, int(r["id"]), {"name": r["name"].strip()})
+                n += 1
+        log.info("Lager: %s Sortennamen vereinheitlicht", n)
+        return JSONResponse({"ok": True, "count": n})
+    return JSONResponse({"items": await run_in_threadpool(_names)})
+
+
 # ---------------- Rolle per Foto / Strichcode erkennen ----------------
 from . import scan as scanmod
 
@@ -790,6 +957,17 @@ def _scan(img_bytes=None, code=None):
         res["matches"] = _scan_match(res["parsed"], brand)
     except Exception as e:
         log.info("Scan: Abgleich mit dem Lager fehlgeschlagen: %s", e)
+    # gleiche Sorte (Hersteller/Material) gibt es, aber nicht in dieser Farbe → „Neue Sorte wie …“
+    pm = _mat_norm(res["parsed"].get("material"))
+    exact_color = any("Farbe" in (m.get("why") or "") for m in res["matches"])
+    if pm and not exact_color and not res["learned"]:
+        fils = spoolman.inventory()["filaments"]
+        same = [f for f in fils if _mat_norm(f.get("material")) == pm and
+                (not brand or brand.lower() in ((f.get("vendor") or {}).get("name") or "").lower())]
+        if same:
+            tpl = _template(fid=max(same, key=lambda f: f["id"])["id"])
+            if tpl:
+                res["template"] = tpl
     if res["learned"] and not any(m["id"] == res["learned"] for m in res["matches"]):
         f = next((x for x in spoolman.inventory()["filaments"] if x["id"] == res["learned"]), None)
         if f:
@@ -1069,6 +1247,22 @@ async def api_lager_spools(request):
     return JSONResponse({"ok": True, "ids": ids})
 
 
+def _fil_data(b, vendor_id=None):
+    name, material = (b.get("name") or "").strip(), (b.get("material") or "").strip().upper()
+    if not name or not material:
+        raise ValueError("Name und Material sind Pflicht")
+    data = {"name": name, "material": material, "vendor_id": int(vendor_id) if vendor_id else None,
+            "density": _num(b.get("density")) or {"PLA": 1.24, "PETG": 1.27, "ABS": 1.04, "ASA": 1.07, "TPU": 1.21}.get(
+                material.split("+")[0].split("-")[0], 1.24),
+            "diameter": _num(b.get("diameter")) or 1.75,
+            "weight": _num(b.get("weight")), "spool_weight": _num(b.get("spool_weight")),
+            "price": _num(b.get("price")), "color_hex": (b.get("color") or "").lstrip("#").upper() or None,
+            "settings_extruder_temp": int(_num(b["extruder_temp"])) if _num(b.get("extruder_temp")) else None,
+            "settings_bed_temp": int(_num(b["bed_temp"])) if _num(b.get("bed_temp")) else None,
+            "external_id": b.get("external_id") or None}
+    return {k: v for k, v in data.items() if v is not None}
+
+
 async def api_lager_filament(request):
     b = await request.json()
     try:
@@ -1076,18 +1270,9 @@ async def api_lager_filament(request):
         if not vendor_id and (b.get("vendor_name") or "").strip():
             v = await run_in_threadpool(spoolman.create_vendor, b["vendor_name"].strip(), _num(b.get("vendor_spool_weight")))
             vendor_id = v["id"]
-        name, material = (b.get("name") or "").strip(), (b.get("material") or "").strip().upper()
-        if not name or not material:
-            raise ValueError("Name und Material sind Pflicht")
-        data = {"name": name, "material": material, "vendor_id": int(vendor_id) if vendor_id else None,
-                "density": _num(b.get("density")) or {"PLA": 1.24, "PETG": 1.27, "ABS": 1.04, "ASA": 1.07, "TPU": 1.21}.get(material.split("+")[0].split("-")[0], 1.24),
-                "diameter": _num(b.get("diameter")) or 1.75,
-                "weight": _num(b.get("weight")), "spool_weight": _num(b.get("spool_weight")),
-                "price": _num(b.get("price")), "color_hex": (b.get("color") or "").lstrip("#").upper() or None,
-                "settings_extruder_temp": int(_num(b["extruder_temp"])) if _num(b.get("extruder_temp")) else None,
-                "settings_bed_temp": int(_num(b["bed_temp"])) if _num(b.get("bed_temp")) else None,
-                "external_id": (b.get("external_id") or None) if not b.get("id") else None}
-        data = {k: v for k, v in data.items() if v is not None}
+        data = _fil_data(b, vendor_id)
+        if b.get("id"):
+            data.pop("external_id", None)
         if b.get("id"):
             f = await run_in_threadpool(spoolman.update_filament, int(b["id"]), data)
         else:
@@ -1117,6 +1302,10 @@ def _weigh(sid, b):
         spoolman.update_spool(sid, {"initial_weight": initial})
     if b.get("for_filament") and (raw.get("filament") or {}).get("id"):
         spoolman.update_filament(raw["filament"]["id"], {"spool_weight": empty})
+    vend = ((raw.get("filament") or {}).get("vendor") or {})
+    if b.get("for_vendor") and vend.get("id"):
+        spoolman.update_vendor(vend["id"], {"empty_spool_weight": empty})
+        log.info("Lager: Leergewicht %s g gilt jetzt für alle Rollen von %s", empty, vend.get("name"))
     spoolman.update_spool(sid, {"remaining_weight": rest, "spool_weight": empty})
     log.info("Lager: Spule #%s gewogen – brutto %s g, leer %s g → %s g Filament", sid, gross, empty, rest)
     return {"ok": True, "remaining": rest, "initial": initial}
@@ -3046,6 +3235,12 @@ app = Starlette(
         Route("/api/lager/spools/{sid:int}/weigh", api_lager_weigh, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/dried", api_lager_dried, methods=["POST"]),
         Route("/api/lager/scan", api_lager_scan, methods=["POST"]),
+        Route("/api/lager/colorhex", api_lager_colorhex),
+        Route("/api/lager/template", api_lager_template),
+        Route("/api/lager/multi", api_lager_multi, methods=["POST"]),
+        Route("/api/lager/bulk", api_lager_bulk, methods=["POST"]),
+        Route("/api/lager/vendor/{vid:int}", api_lager_vendor, methods=["POST"]),
+        Route("/api/lager/names", api_lager_names, methods=["GET", "POST"]),
         Route("/api/history/{hid:int}/reprint", api_history_reprint, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/edit", api_lager_spool_edit, methods=["POST"]),
         Route("/api/lager/spools/{sid:int}/unarchive", api_lager_unarchive, methods=["POST"]),

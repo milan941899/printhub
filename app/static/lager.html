@@ -37,6 +37,12 @@
     <div class="tb-right" id="tb-lager">
       <a class="btn" href="/lager?ansicht=archiv" id="archlink">📦 Archiv</a>
       <button onclick="scanCtx=null;openFil()">＋ Neue Sorte</button>
+      <button id="bulkbtn" style="display:none" onclick="openBulk()">✎ Gemeinsam bearbeiten</button>
+      <details class="moremenu"><summary class="btn">⋯ Mehr</summary><div class="mm">
+        <button onclick="this.closest('details').open=false;openMulti()">🎨 Mehrere Farben anlegen</button>
+        <button onclick="this.closest('details').open=false;openNames()">Aa Namen vereinheitlichen</button>
+        <button onclick="this.closest('details').open=false;fsel.clear();bulkMode=!bulkMode;render()">☑ Sorten auswählen (gemeinsam bearbeiten)</button>
+      </div></details>
       <button onclick="scanStart()" title="Etikett oder Strichcode der Rolle fotografieren">📷 Rolle scannen</button>
       <button class="primary" onclick="scanCtx=null;openAdd()">＋ Neue Rollen</button>
     </div>
@@ -101,6 +107,73 @@
   </div>
 </div>
 
+<!-- Dialog: Mehrere Farben -->
+<div class="modal" id="m-multi" onclick="if(event.target===this)closeM()">
+  <form class="mbox card" onsubmit="event.preventDefault();saveMulti()">
+    <h2>🎨 Mehrere Farben anlegen</h2>
+    <div class="muted small">Gemeinsame Werte einmal eintragen, dann pro Farbe eine Zeile. Werte einer vorhandenen Sorte werden automatisch übernommen.</div>
+    <div id="mu-tplhint" class="wres small" style="display:none"></div>
+    <div class="fgrid">
+      <div class="field"><span class="lab">Hersteller</span><select id="mu-vendor"></select></div>
+      <div class="field" id="mu-newv" style="display:none"><span class="lab">Neuer Hersteller</span><input id="mu-vname"></div>
+      <div class="field"><span class="lab">Material</span><input id="mu-mat" list="mats" required placeholder="PETG"></div>
+      <div class="field"><span class="lab">Netto je Rolle (g)</span><input id="mu-weight" type="number" min="1" value="1000"></div>
+      <div class="field"><span class="lab">Leere Spule (g)</span><input id="mu-sw" type="number" min="0"></div>
+      <div class="field"><span class="lab">Preis je Rolle (€)</span><input id="mu-price" type="number" min="0" step="0.01"></div>
+      <div class="field"><span class="lab">Düse (°C)</span><input id="mu-et" type="number"></div>
+      <div class="field"><span class="lab">Bett (°C)</span><input id="mu-bt" type="number"></div>
+      <div class="field"><span class="lab">Durchmesser (mm)</span><input id="mu-diam" type="number" step="0.01" value="1.75"></div>
+    </div>
+    <div class="label">Farben</div>
+    <div id="mu-rows"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" onclick="muRow()">＋ Farbe</button>
+      <button type="button" onclick="muFromDb()">📚 Farben aus der Datenbank wählen</button></div>
+    <div id="mu-db"></div>
+    <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit" id="mu-save">Anlegen</button></div>
+  </form>
+</div>
+
+<!-- Dialog: Gemeinsam bearbeiten -->
+<div class="modal" id="m-bulk" onclick="if(event.target===this)closeM()">
+  <form class="mbox card" onsubmit="event.preventDefault();saveBulk()">
+    <h2 id="bk-title">Sorten gemeinsam bearbeiten</h2>
+    <div class="muted small">Nur ausgefüllte Felder werden geändert – leere bleiben, wie sie sind.</div>
+    <div id="bk-list" class="muted small"></div>
+    <div class="fgrid">
+      <div class="field"><span class="lab">Preis je Rolle (€)</span><input id="bk-price" type="number" min="0" step="0.01"></div>
+      <div class="field"><span class="lab">Düse (°C)</span><input id="bk-et" type="number"></div>
+      <div class="field"><span class="lab">Bett (°C)</span><input id="bk-bt" type="number"></div>
+      <div class="field"><span class="lab">Leere Spule (g)</span><input id="bk-sw" type="number" min="0"></div>
+      <div class="field"><span class="lab">Netto je Rolle (g)</span><input id="bk-weight" type="number" min="1"></div>
+      <div class="field"><span class="lab">Material</span><input id="bk-mat" list="mats"></div>
+    </div>
+    <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Für alle speichern</button></div>
+  </form>
+</div>
+
+<!-- Dialog: Namen vereinheitlichen -->
+<div class="modal" id="m-names" onclick="if(event.target===this)closeM()">
+  <form class="mbox card" onsubmit="event.preventDefault();saveNames()">
+    <h2>Aa Namen vereinheitlichen</h2>
+    <div class="muted small">Sorten mit deutschem Farbnamen – Vorschlag ist der Originalname (aus der Filament-Datenbank, sonst übersetzt). Vorschlag lässt sich ändern.</div>
+    <div id="nm-list"></div>
+    <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit" id="nm-save">Umbenennen</button></div>
+  </form>
+</div>
+
+<!-- Pipette: Farbe aus Foto -->
+<input type="file" id="pip-file" accept="image/*" capture="environment" style="display:none">
+<div class="modal" id="m-pip">
+  <div class="mbox card">
+    <h2>🎯 Farbe aus Foto</h2>
+    <div class="seg" id="pip-mode"><button type="button" class="on" data-m="c" onclick="pipMode('c')">🎯 Filament antippen</button><button type="button" data-m="w" onclick="pipMode('w')">⚪ Weiß-Referenz antippen</button></div>
+    <div class="muted small" id="pip-help">Tippe aufs Filament. Für echte Farben vorher „Weiß-Referenz“ wählen und aufs weiße Etikett tippen.</div>
+    <canvas id="pip-cv" style="width:100%;border-radius:10px;touch-action:none;cursor:crosshair"></canvas>
+    <div style="display:flex;gap:10px;align-items:center"><span id="pip-sw" class="pipsw"></span><code id="pip-hex">–</code><span id="pip-wb" class="muted small"></span></div>
+    <div class="mact"><button type="button" onclick="$('m-pip').classList.remove('open')">Abbrechen</button><button class="primary" type="button" onclick="pipOk()">Übernehmen</button></div>
+  </div>
+</div>
+
 <!-- Dialog: Rolle wiegen -->
 <div class="modal" id="m-weigh" onclick="if(event.target===this)closeM()">
   <form class="mbox card" onsubmit="event.preventDefault();saveWeigh()">
@@ -112,6 +185,7 @@
     </div>
     <div id="w-leerhint" class="wres" style="display:none">Die Rolle ist leer gelaufen: Leere Spule <b>mit Karton-Kern</b> wiegen und hier eintragen.</div>
     <label class="chk"><input type="checkbox" id="w-forfil"> Leergewicht für alle Rollen dieser Sorte merken</label>
+    <label class="chk"><input type="checkbox" id="w-forvendor"> … und für alle Rollen von <span id="w-vname">diesem Hersteller</span> (ohne eigenen Wert)</label>
     <div id="w-res" class="wres"></div>
     <div class="muted small">Brutto = Rolle mit allem, was beim Wiegen drauf ist (auch der Karton-Kern). Leergewicht = dieselbe Spule ohne Filament.</div>
     <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Speichern</button></div>
@@ -153,11 +227,14 @@
       <div id="f-dbsel" class="muted small"></div>
     </div>
     <div class="fgrid">
+      <div class="field" style="grid-column:1/-1"><div id="f-tplhint" class="wres small" style="display:none"></div></div>
       <div class="field"><span class="lab">Hersteller</span><select id="f-vendor"></select></div>
       <div class="field" id="f-newv" style="display:none"><span class="lab">Neuer Hersteller</span><input id="f-vname" placeholder="z. B. Jayo"></div>
       <div class="field"><span class="lab">Name / Farbe</span><input id="f-name" required placeholder="z. B. Black"></div>
       <div class="field"><span class="lab">Material</span><input id="f-mat" list="mats" required placeholder="PLA, PETG …"></div>
-      <div class="field"><span class="lab">Farbe</span><input id="f-color" type="color" value="#000000" style="height:40px;padding:3px"></div>
+      <div class="field"><span class="lab">Farbe</span><div style="display:flex;gap:6px;align-items:center"><input id="f-color" type="color" value="#000000" style="height:40px;padding:3px;flex:0 0 64px">
+        <button type="button" class="small-btn" id="f-pip" style="display:none" onclick="pipette(h => { $('f-color').value = '#' + h; colTouched = true; $('f-colhint').textContent = '🎯 Farbe aus Foto'; })">📷 aus Foto</button></div>
+        <div id="f-colhint" class="muted small"></div></div>
       <div class="field"><span class="lab">Netto je Rolle (g)</span><input id="f-weight" type="number" min="1" value="1000"></div>
       <div class="field"><span class="lab">Leere Spule (g)</span><input id="f-sw" type="number" min="0" placeholder="wiegen"></div>
       <div class="field"><span class="lab">Preis je Rolle (€)</span><input id="f-price" type="number" min="0" step="0.01"></div>
@@ -297,6 +374,7 @@ function filRow(f) {
   const allSel = f.spools.length && f.spools.every(s => sel.has(s.id));
   return `<div class="fil ${isLow(f) ? "low" : ""}">
     <div class="fil-top" onclick="toggle(${f.id})">
+      ${bulkMode ? `<input type="checkbox" class="fselbox" ${fsel.has(f.id) ? "checked" : ""} onclick="event.stopPropagation();fselToggle(${f.id}, this.checked)">` : ""}
       <span class="sw" style="background:${f.color || "transparent"}"></span>
       <div class="fil-main">
         <div class="fil-name">${esc(f.name)} <span class="mtag">${esc(f.material)}</span>${isLow(f) ? ` <span class="lowtag">nachkaufen</span>` : ""}</div>
@@ -308,6 +386,7 @@ function filRow(f) {
         </span>
         <button class="small-btn" onclick="openAdd(${f.id})">＋ Rollen</button>
         <button class="small-btn" onclick="openFil(${f.id})" title="Sorte bearbeiten">✎</button>
+        <button class="small-btn" onclick="scanCtx=null;openFil(null, ${f.id})" title="Ähnliche Sorte: alle Werte übernehmen, nur Name und Farbe neu">⧉</button>
       </div>
       <span class="chev">${isOpen ? "▾" : "▸"}</span>
     </div>
@@ -406,6 +485,156 @@ function dryBadge(s) {
 async function dried(id) {
   await api(`/api/lager/spools/${id}/dried`, "POST"); PH.toast(`Rolle #${id} als getrocknet gespeichert`); load();
 }
+// ---------- Mehrere Farben ----------
+function venderOpts(sel) {
+  return D.vendors.map(v => `<option value="${v.id}" ${v.id === sel ? "selected" : ""}>${esc(v.name)}</option>`).join("") + `<option value="new">＋ Neuer Hersteller …</option>`;
+}
+function openMulti() {
+  $("mu-vendor").innerHTML = venderOpts(D.vendors[0]?.id);
+  $("mu-newv").style.display = $("mu-vendor").value === "new" ? "" : "none";
+  ["mu-mat", "mu-sw", "mu-price", "mu-et", "mu-bt", "mu-vname"].forEach(id => $(id).value = "");
+  $("mu-weight").value = 1000; $("mu-diam").value = 1.75; $("mu-rows").innerHTML = ""; $("mu-db").innerHTML = "";
+  $("mu-tplhint").style.display = "none";
+  muRow(); muRow(); muRow();
+  $("m-multi").classList.add("open");
+}
+function muVendorName() { return $("mu-vendor").value === "new" ? $("mu-vname").value : (D.vendors.find(v => v.id === +$("mu-vendor").value) || {}).name || ""; }
+function muRow(name = "", hex = "", ext = "") {
+  const d = document.createElement("div"); d.className = "murow";
+  d.innerHTML = `<input class="mu-n" placeholder="Farbname, z. B. Sky Blue" value="${esc(name)}">
+    <input class="mu-c" type="color" value="#${hex || "999999"}" title="Farbe">
+    <input class="mu-k" type="number" min="0" value="1" title="Anzahl Rollen" inputmode="numeric">
+    <button type="button" class="small-btn mu-p" title="Farbe aus Foto" style="${hex ? "display:none" : ""}">📷</button>
+    <button type="button" class="small-btn" title="Zeile entfernen" onclick="this.parentNode.remove()">✕</button>
+    <div class="mu-h muted small">${ext ? "✓ aus der Datenbank" : ""}</div>`;
+  d.dataset.ext = ext; d.dataset.touched = hex ? "1" : "";
+  d.querySelector(".mu-c").oninput = () => { d.dataset.touched = "1"; d.querySelector(".mu-h").textContent = ""; };
+  d.querySelector(".mu-p").onclick = () => pipette(h => { d.querySelector(".mu-c").value = "#" + h; d.dataset.touched = "1"; d.querySelector(".mu-h").textContent = "🎯 aus Foto"; });
+  d.querySelector(".mu-n").oninput = e => {
+    if (d.dataset.touched) return;
+    colorLookup(e.target.value, muVendorName(), $("mu-mat").value, r => {
+      const h = d.querySelector(".mu-h"), pb = d.querySelector(".mu-p");
+      if (r.hex) { d.querySelector(".mu-c").value = "#" + r.hex.toLowerCase(); h.textContent = (r.exact ? "✓ " : "≈ ") + r.source; pb.style.display = r.exact ? "none" : ""; }
+      else { h.textContent = e.target.value.trim() ? "nicht gefunden – Farbe wählen oder 📷" : ""; pb.style.display = ""; }
+    }, d);
+  };
+  $("mu-rows").appendChild(d);
+  return d;
+}
+let muT;
+function muTpl() {
+  clearTimeout(muT);
+  muT = setTimeout(async () => {
+    const vid = $("mu-vendor").value, mat = $("mu-mat").value.trim();
+    if (!vid || vid === "new" || !mat) return;
+    const r = await (await fetch(`/api/lager/template?vendor_id=${vid}&material=${encodeURIComponent(mat)}`)).json();
+    const t = r.template; if (!t) return;
+    const set = (id, v) => { if (v != null && v !== "") $(id).value = v; };
+    set("mu-weight", t.weight); set("mu-sw", t.spool_weight); set("mu-price", t.price); set("mu-et", t.extruder_temp); set("mu-bt", t.bed_temp); set("mu-diam", t.diameter);
+    $("mu-tplhint").style.display = ""; $("mu-tplhint").innerHTML = `⧉ Werte von <b>${esc(t.label)}</b> übernommen.`;
+  }, 300);
+}
+$("mu-vendor").onchange = () => { $("mu-newv").style.display = $("mu-vendor").value === "new" ? "" : "none"; muTpl(); };
+$("mu-mat").oninput = muTpl;
+async function muFromDb() {
+  const man = muVendorName(), mat = $("mu-mat").value.trim().toUpperCase();
+  if (!man) return PH.toast("Erst Hersteller wählen", true);
+  $("mu-db").innerHTML = `<div class="muted small">Suche …</div>`;
+  const r = await (await fetch("/api/lager/external?" + new URLSearchParams({q: "", manufacturer: man, material: mat}))).json();
+  const items = (r.items || []).filter(f => f.color);
+  if (!items.length) { $("mu-db").innerHTML = `<div class="muted small">Für ${esc(man)} ${esc(mat)} nichts in der Datenbank – Farben bitte von Hand eintragen.</div>`; return; }
+  const have = new Set(D.filaments.filter(f => f.vendor.toLowerCase() === man.toLowerCase()).map(f => f.name.toLowerCase()));
+  $("mu-db").innerHTML = `<div class="mudb">${items.map((f, i) => `<label class="scopt"><input type="checkbox" data-i="${i}" ${have.has((f.name || "").toLowerCase()) ? "disabled" : ""}>
+      <span class="dot" style="background:${f.color}"></span>${esc(f.name)} <span class="muted small">${esc(f.material)}${have.has((f.name || "").toLowerCase()) ? " · schon im Lager" : ""}</span></label>`).join("")}</div>
+    <button type="button" onclick="muDbTake()">Ausgewählte übernehmen</button>`;
+  window._muDb = items;
+}
+function muDbTake() {
+  // leere Zeilen weg, dann ausgewählte Datenbank-Farben als Zeilen
+  [...$("mu-rows").children].forEach(r => { if (!r.querySelector(".mu-n").value.trim()) r.remove(); });
+  $("mu-db").querySelectorAll("input:checked").forEach(c => {
+    const f = window._muDb[+c.dataset.i];
+    muRow(f.name, (f.color || "").replace("#", "").slice(0, 6), f.external_id || "x");
+    if (!$("mu-et").value && f.extruder_temp) $("mu-et").value = f.extruder_temp;
+    if (!$("mu-bt").value && f.bed_temp) $("mu-bt").value = f.bed_temp;
+    if (!$("mu-sw").value && f.spool_weight) $("mu-sw").value = f.spool_weight;
+  });
+  $("mu-db").innerHTML = "";
+}
+async function saveMulti() {
+  const rows = [...$("mu-rows").children].map(r => ({name: r.querySelector(".mu-n").value.trim(), hex: r.querySelector(".mu-c").value,
+    count: +r.querySelector(".mu-k").value || 0, external_id: r.dataset.ext && r.dataset.ext !== "x" ? r.dataset.ext : ""})).filter(r => r.name);
+  if (!rows.length) return PH.toast("Mindestens eine Farbe eintragen", true);
+  const newV = $("mu-vendor").value === "new";
+  $("mu-save").disabled = true;
+  try {
+    const d = await api("/api/lager/multi", "POST", {vendor_id: newV ? null : +$("mu-vendor").value, vendor_name: newV ? $("mu-vname").value : "",
+      material: $("mu-mat").value, weight: $("mu-weight").value, spool_weight: $("mu-sw").value, price: $("mu-price").value,
+      extruder_temp: $("mu-et").value, bed_temp: $("mu-bt").value, diameter: $("mu-diam").value, colors: rows});
+    closeM(); PH.toast(`${d.ids.length} Sorten mit ${d.rolls} Rollen angelegt`); d.ids.forEach(i => open.add(i)); load();
+  } finally { $("mu-save").disabled = false; }
+}
+
+// ---------- Gemeinsam bearbeiten ----------
+let bulkMode = false;
+const fsel = new Set();
+function fselToggle(id, on) { on ? fsel.add(id) : fsel.delete(id); $("bulkbtn").style.display = fsel.size ? "" : "none"; $("bulkbtn").textContent = `✎ ${fsel.size} Sorten bearbeiten`; }
+function openBulk() {
+  const fs = D.filaments.filter(f => fsel.has(f.id));
+  $("bk-title").textContent = `${fs.length} Sorten gemeinsam bearbeiten`;
+  $("bk-list").textContent = fs.map(f => `${f.vendor} ${f.name} ${f.material}`).join(" · ");
+  ["bk-price", "bk-et", "bk-bt", "bk-sw", "bk-weight", "bk-mat"].forEach(id => $(id).value = "");
+  $("m-bulk").classList.add("open");
+}
+async function saveBulk() {
+  const d = await api("/api/lager/bulk", "POST", {ids: [...fsel], price: $("bk-price").value, extruder_temp: $("bk-et").value,
+    bed_temp: $("bk-bt").value, spool_weight: $("bk-sw").value, weight: $("bk-weight").value, material: $("bk-mat").value});
+  closeM(); PH.toast(`${d.count} Sorten geändert`); fsel.clear(); bulkMode = false; $("bulkbtn").style.display = "none"; load();
+}
+
+// ---------- Namen vereinheitlichen ----------
+async function openNames() {
+  $("nm-list").innerHTML = `<div class="muted small">Suche …</div>`; $("m-names").classList.add("open");
+  const r = await (await fetch("/api/lager/names")).json();
+  const it = r.items || [];
+  $("nm-save").disabled = !it.length;
+  $("nm-list").innerHTML = it.length ? it.map(x => `<label class="scopt nmrow"><input type="checkbox" checked data-id="${x.id}">
+      <span class="muted small">${esc(x.label)}</span> <s>${esc(x.old)}</s> → <input class="nm-new" value="${esc(x.new)}"></label>`).join("")
+    : `<div class="muted">✓ Alle Sorten haben schon Originalnamen.</div>`;
+}
+async function saveNames() {
+  const renames = [...$("nm-list").querySelectorAll(".nmrow")].filter(r => r.querySelector("input[type=checkbox]").checked)
+    .map(r => ({id: +r.querySelector("input[type=checkbox]").dataset.id, name: r.querySelector(".nm-new").value}));
+  const d = await api("/api/lager/names", "POST", {renames});
+  closeM(); PH.toast(`${d.count} Sorten umbenannt`); load();
+}
+
+// ---------- Pipette: Farbe aus Foto ----------
+let pipCb = null, pipImg = null, pipWhite = null, pipHex = null, pipM = "c";
+function pipette(cb) { pipCb = cb; $("pip-file").click(); }
+$("pip-file").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  pipImg = await createImageBitmap(f); pipWhite = null; pipHex = null; pipMode("c");
+  const cv = $("pip-cv"), k = Math.min(1, 1400 / Math.max(pipImg.width, pipImg.height));
+  cv.width = pipImg.width * k; cv.height = pipImg.height * k; cv.getContext("2d").drawImage(pipImg, 0, 0, cv.width, cv.height);
+  $("pip-hex").textContent = "–"; $("pip-sw").style.background = "transparent"; $("pip-wb").textContent = "";
+  $("m-pip").classList.add("open");
+};
+function pipMode(m) { pipM = m; document.querySelectorAll("#pip-mode button").forEach(b => b.classList.toggle("on", b.dataset.m === m)); }
+$("pip-cv").addEventListener("pointerdown", e => {
+  const cv = $("pip-cv"), r = cv.getBoundingClientRect();
+  const x = Math.round((e.clientX - r.left) * cv.width / r.width), y = Math.round((e.clientY - r.top) * cv.height / r.height);
+  const R = 6, d = cv.getContext("2d").getImageData(Math.max(0, x - R), Math.max(0, y - R), 2 * R + 1, 2 * R + 1).data;
+  let s = [0, 0, 0], n = 0;
+  for (let i = 0; i < d.length; i += 4) { s[0] += d[i]; s[1] += d[i + 1]; s[2] += d[i + 2]; n++; }
+  const avg = s.map(v => v / n);
+  if (pipM === "w") { pipWhite = avg; $("pip-wb").textContent = "⚪ Weißabgleich gesetzt"; pipMode("c"); if (pipHex) return; return; }
+  const c = pipWhite ? avg.map((v, i) => Math.min(255, v * 245 / Math.max(30, pipWhite[i]))) : avg;
+  pipHex = c.map(v => Math.round(v).toString(16).padStart(2, "0")).join("").toUpperCase();
+  $("pip-hex").textContent = "#" + pipHex; $("pip-sw").style.background = "#" + pipHex;
+});
+function pipOk() { if (pipHex && pipCb) pipCb(pipHex); $("m-pip").classList.remove("open"); }
+
 // ---------- Rolle scannen ----------
 let scanCtx = null, scanStream = null;
 function scanStart() {
@@ -486,17 +715,24 @@ function scanShow(d) {
     ${online}
     <div class="label" style="margin-top:10px">Welche Sorte?</div>
     ${opts || `<div class="muted small">Keine passende Sorte im Lager.</div>`}
-    <label class="scopt"><input type="radio" name="scf" value="other" ${opts ? "" : "checked"}> Andere Sorte aus dem Lager …</label>
+    ${d.template ? `<label class="scopt"><input type="radio" name="scf" value="tpl" ${opts ? "" : "checked"}> ＋ Neue Sorte wie <b>${esc(d.template.label)}</b> – Farbe <b>${esc(p.color || "?")}</b></label>` : ""}
+    <label class="scopt"><input type="radio" name="scf" value="other" ${opts || d.template ? "" : "checked"}> Andere Sorte aus dem Lager …</label>
     <label class="scopt"><input type="radio" name="scf" value="new"> ＋ Neue Sorte mit diesen Daten anlegen</label>
     <div class="mact"><button type="button" onclick="scanStart()">↺ Nochmal</button><button class="primary" type="button" onclick="scanNext()">Weiter</button></div>`;
 }
 function scanNext() {
   const v = (document.querySelector("input[name=scf]:checked") || {}).value, p = scanCtx.parsed || {};
   scanClose();
+  if (v === "tpl") {
+    openFil(null, scanCtx.template.id);
+    if (p.color) { $("f-name").value = p.color; filColor(); }
+    $("f-count").value = 1;
+    return;
+  }
   if (v === "new") {
     openFil();
     if (p.material) $("f-mat").value = p.material;
-    if (p.color) $("f-name").value = p.color;
+    if (p.color) { $("f-name").value = p.color; filColor(); }
     if (p.color_hex) $("f-color").value = "#" + p.color_hex.toLowerCase();
     if (p.weight) $("f-weight").value = p.weight;
     if (p.extruder_temp) $("f-et").value = p.extruder_temp;
@@ -518,7 +754,7 @@ function openWeigh(id, leer = false) {
   $("w-leerhint").style.display = leer ? "" : "none";
   $("w-name").textContent = `${f.vendor} ${f.name} ${f.material} · Rolle #${id}` + (s.remaining != null ? ` · laut Lager ${Math.round(s.remaining)} g` : "");
   $("w-gross").value = ""; $("w-empty").value = s.empty ? Math.round(s.empty) : "";
-  $("w-forfil").checked = !f.empty;
+  $("w-forfil").checked = !f.empty; $("w-forvendor").checked = false; $("w-vname").textContent = f.vendor || "diesem Hersteller";
   if (leer) $("w-empty").value = "";
   weighCalc(); $("m-weigh").classList.add("open"); (leer ? $("w-empty") : $("w-gross")).focus();
 }
@@ -532,7 +768,7 @@ function weighCalc() {
 async function saveWeigh() {
   const id = +$("m-weigh").dataset.id, leer = !!$("m-weigh").dataset.leer;
   const d = await api(`/api/lager/spools/${id}/weigh`, "POST", {gross: leer ? $("w-empty").value : $("w-gross").value,
-    empty: $("w-empty").value, for_filament: $("w-forfil").checked});
+    empty: $("w-empty").value, for_filament: $("w-forfil").checked, for_vendor: $("w-forvendor").checked});
   closeM();
   if (leer) {
     PH.toast(`Leergewicht ${Math.round(+$("w-empty").value)} g gespeichert`);
@@ -598,8 +834,10 @@ async function saveAdd() {
   if ($("a-labels").checked) return printLabels(d.ids);
   open.add(+$("a-fil").value); load();
 }
-function openFil(fid) {
+let colTouched = false, tplApplied = false;
+function openFil(fid, tplId) {
   const f = fid ? D.filaments.find(x => x.id === fid) : null;
+  colTouched = !!f; tplApplied = false;
   $("f-title").textContent = f ? `Sorte bearbeiten: ${f.vendor} ${f.name}` : "Neue Sorte";
   $("f-vendor").innerHTML = D.vendors.map(v => `<option value="${v.id}">${esc(v.name)}</option>`).join("") + `<option value="new">＋ Neuer Hersteller …</option>`;
   $("f-vendor").value = f ? (f.vendor_id ?? "new") : (D.vendors[0]?.id ?? "new");
@@ -616,8 +854,53 @@ function openFil(fid) {
   $("f-dbman").value = ""; $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; dbPicked = null;
   if (!f) loadMans();
   $("f-ext").value = ""; $("f-dens").value = f ? (f.density ?? "") : ""; $("f-diam").value = f ? (f.diameter ?? "") : "";
+  $("f-tplhint").style.display = "none"; $("f-colhint").textContent = ""; $("f-pip").style.display = f ? "" : "none";
   $("m-fil").classList.add("open"); $("f-name").focus();
+  if (tplId) applyTpl(D.filaments.find(x => x.id === tplId), true);
 }
+// Werte einer vorhandenen Sorte übernehmen (A: automatisch bei Hersteller+Material, B: ⧉ Ähnliche Sorte)
+function applyTpl(t, all) {
+  if (!t) return;
+  const set = (id, v) => { if (v != null && v !== "" && (all || !$(id).value || tplApplied)) $(id).value = v; };
+  if (all) { $("f-vendor").value = t.vendor_id ?? "new"; $("f-newv").style.display = t.vendor_id ? "none" : ""; $("f-mat").value = t.material || ""; }
+  set("f-weight", t.weight); set("f-sw", t.spool_weight ?? t.empty); set("f-price", t.price);
+  set("f-et", t.extruder_temp); set("f-bt", t.bed_temp); set("f-dens", t.density); set("f-diam", t.diameter);
+  tplApplied = true;
+  $("f-tplhint").style.display = "";
+  $("f-tplhint").innerHTML = `⧉ Werte von <b>${esc(t.label || `${t.vendor} ${t.material} ${t.name}`)}</b> übernommen – nur Name und Farbe eintragen.`;
+}
+let tplT;
+function autoTpl() {
+  clearTimeout(tplT);
+  if ($("f-id").value || dbPicked) return;
+  tplT = setTimeout(async () => {
+    const vid = $("f-vendor").value, mat = $("f-mat").value.trim();
+    if (!vid || vid === "new" || !mat) return;
+    const r = await (await fetch(`/api/lager/template?vendor_id=${vid}&material=${encodeURIComponent(mat)}`)).json();
+    if (r.template) applyTpl(r.template, false);
+  }, 300);
+}
+const colT = new Map();
+function colorLookup(name, vendor, material, cb, key = "f") {
+  clearTimeout(colT.get(key));
+  colT.set(key, setTimeout(async () => {
+    if (!name.trim()) return cb({hex: null});
+    const r = await (await fetch(`/api/lager/colorhex?name=${encodeURIComponent(name)}&vendor=${encodeURIComponent(vendor)}&material=${encodeURIComponent(material)}`)).json();
+    cb(r);
+  }, 450));
+}
+function filColor() {
+  if (colTouched || $("f-id").value) return;
+  const vend = $("f-vendor").value === "new" ? $("f-vname").value : (D.vendors.find(v => v.id === +$("f-vendor").value) || {}).name || "";
+  colorLookup($("f-name").value, vend, $("f-mat").value, r => {
+    if (r.hex) { $("f-color").value = "#" + r.hex.toLowerCase(); $("f-colhint").textContent = (r.exact ? "✓ " : "≈ ") + r.source; $("f-pip").style.display = r.exact ? "none" : ""; }
+    else { $("f-colhint").textContent = $("f-name").value.trim() ? "Farbe nicht gefunden – bitte selbst wählen oder aus Foto übernehmen" : ""; $("f-pip").style.display = ""; }
+  });
+}
+$("f-name").addEventListener("input", filColor);
+$("f-color").addEventListener("input", () => { colTouched = true; $("f-colhint").textContent = ""; });
+$("f-mat").addEventListener("input", autoTpl);
+$("f-vendor").addEventListener("change", autoTpl);
 $("f-vendor").onchange = () => $("f-newv").style.display = $("f-vendor").value === "new" ? "" : "none";
 async function saveFil() {
   const newV = $("f-vendor").value === "new";
