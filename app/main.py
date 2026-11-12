@@ -1384,6 +1384,7 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         img = ImageOps.exif_transpose(img)
         img.thumbnail((2600, 2600))          # Handy schickt das Original (schneller als dort zu verkleinern)
         t1 = time.time()
+        scanmod.TRACE.clear()
         codes = scanmod.barcodes(img)
         res["timing"] = {"bytes": len(img_bytes), "decode": round(t1 - t0, 2), "barcode": round(time.time() - t1, 2)}
         res["codes"] = [{"type": c["type"], "data": c["data"]} for c in codes]
@@ -1402,7 +1403,8 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         def enough():
             # fertig, sobald Material und eine richtige Farbe (nicht nur „Grey“) da sind – das Gewicht kommt sonst aus der Sorte
             tj, pv = "\n".join(texts), scanmod.parse_votes(texts)
-            col = _own_color(tj, pv.get("material", ""), vendor) or (pv.get("color") and pv["color"].lower() not in _BASE)
+            col = (_own_color(tj, pv.get("material", ""), vendor) or (pv.get("color") and pv["color"].lower() not in _BASE)
+                   or _db_color(tj, vendor or pv.get("brand") or _detect_vendor(tj), pv.get("material", "")))
             return bool(col and pv.get("material"))
         for c in codes:
             if c.get("box"):
@@ -1416,7 +1418,7 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 break
         p = scanmod.parse_votes(texts)
         alltexts += texts
-        if not texts or not (p.get("material") and p.get("color") and p["color"].lower() not in _BASE):
+        if not texts or not enough():          # ganzes Foto nur, wenn am Etikett nichts Brauchbares stand (z. B. kein Strichcode)
             ft = scanmod.ocr_texts(img, small=False)
             alltexts += ft
             full = scanmod.parse_votes(ft)
@@ -1424,6 +1426,10 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         res["parsed"] = p
     if res.get("timing"):
         res["timing"]["total_ocr"] = round(time.time() - t1, 2)
+        res["timing"]["steps"] = [{"name": n, "runs": r, "sec": sec, "max": mx, "mpx": round(px / 1e6, 2)} for n, r, sec, mx, px in scanmod.TRACE]
+        res["timing"]["size"] = f"{img.width}×{img.height}"
+        res["timing"]["cpus"] = scanmod._WORKERS
+        res["timing"]["fast"] = bool(scanmod._fast_lang())
     # Nummern vom Etikett (Charge/Artikel, z. B. „04260702AJ“) – auch ohne Strichcode
     res["ocr_codes"] = scanmod.find_codes(alltexts)[:3]
     pp = res["parsed"]
@@ -1560,8 +1566,11 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 res["exact_fid"] = f["id"]
                 break
     if res.get("timing"):
-        log.info("Scan: Foto %.1f MB, dekodiert %.1fs, Strichcode %.1fs, bis Text fertig %.1fs", res["timing"]["bytes"] / 1e6,
-                 res["timing"]["decode"], res["timing"]["barcode"], res["timing"].get("total_ocr", 0))
+        tm = res["timing"]
+        log.info("Scan: Foto %.1f MB (%s), dekodiert %.1fs, Strichcode %.1fs, gesamt %.1fs, %s Kerne, schnelles Modell: %s | %s",
+                 tm["bytes"] / 1e6, tm.get("size"), tm["decode"], tm["barcode"], tm.get("total_ocr", 0), tm.get("cpus"),
+                 "ja" if tm.get("fast") else "nein",
+                 " · ".join(f"{x['name']}: {x['runs']}× {x['sec']}s (längster {x['max']}s, {x['mpx']} MP)" for x in tm.get("steps", [])) or "keine Texterkennung")
     log.info("Scan: Codes %s, Text %s, Treffer %s", [c["data"] for c in res["codes"]], res["parsed"],
              [(m["id"], m["score"]) for m in res["matches"][:3]])
     return res

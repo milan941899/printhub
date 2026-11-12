@@ -159,31 +159,38 @@ def band_texts(img, code, stage="a"):
         if sharp:
             b = b.filter(ImageFilter.SHARPEN)
         jobs.append((b, psm, fast))
-    if stage == "a":            # schnell: nur die Zeile über den Balken (Material · Farbe)
-        go(top, 0.7, False, "6", True)
-        go(top, 1.0, True, "6", True)
-        return run_ocr(jobs)
-    if stage == "b":            # Rest der Streifen inkl. unter den Balken (Gewicht, Nummer, Temperaturen)
-        go(top, 0.7, True, "11")
-        go(top, 1.0, False, "7")
-        for sc, sh, psm in ((1.0, False, "6"), (1.0, True, "6"), (1.5, False, "6")):
-            go(bot, sc, sh, psm)
-        return run_ocr(jobs)
-    # Stufe 2 (nur wenn Stufe 1 keine Farbe fand) – schräge Etiketten: großzügiger Bereich über der Lese-Linie, leicht gedreht
+    # Bereich über der Lese-Linie, Licht/Schatten ausgeglichen – im Test die mit Abstand zuverlässigste Variante
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    for ang in (0, -3, 3):
-        rb = base.rotate(ang, center=(cx, cy), resample=Image.BICUBIC, fillcolor=255) if ang else base
-        wide = rb.crop((max(0, int(x0 - w * .12)), max(0, int(y0 - w * .30)), min(base.width, int(x1 + w * .12)), max(1, int(y0 - w * .02))))
-        go(wide, 0.7, False, "6")
-        go(wide, 0.7, False, "11")
-    # Schatten/ungleichmäßiges Licht ausgleichen: Hintergrund (stark weichgezeichnet) abziehen
-    wide = base.crop((max(0, int(x0 - w * .12)), max(0, int(y0 - w * .30)), min(base.width, int(x1 + w * .12)), max(1, int(y0 - w * .02))))
-    if wide.width > 20 and wide.height > 10:
-        bg = wide.filter(ImageFilter.GaussianBlur(max(10, int(w * .04))))
-        flat = Image.eval(ImageChops.subtract(bg, wide), lambda v: 255 - min(255, v * 3))
-        jobs.append((flat, "11"))
-        jobs.append((flat.resize((int(flat.width * 1.5), int(flat.height * 1.5)), Image.LANCZOS), "11"))
-    return run_ocr(jobs)
+    def wide_of(img_):
+        return img_.crop((max(0, int(x0 - w * .12)), max(0, int(y0 - w * .30)), min(base.width, int(x1 + w * .12)), max(1, int(y0 - w * .02))))
+    def flat_of(reg):
+        bg = reg.filter(ImageFilter.GaussianBlur(max(10, int(w * .04))))
+        return Image.eval(ImageChops.subtract(bg, reg), lambda v: 255 - min(255, v * 3))
+    wide = wide_of(base)
+    ok = wide.width > 20 and wide.height > 10
+    if stage == "a":            # schnell: ausgeglichener Bereich über den Balken + gerade Zeile
+        if ok:
+            jobs.append((flat_of(wide), "11"))
+        go(top, 0.7, True, "11")
+        return run_ocr(jobs, "Stufe a (über den Balken)")
+    if stage == "b":            # vergrößert + unter den Balken (Gewicht, Nummer, Temperaturen)
+        if ok:
+            f = flat_of(wide)
+            jobs.append((f.resize((int(f.width * 1.5), int(f.height * 1.5)), Image.LANCZOS), "11"))
+            go(wide, 0.7, False, "6")
+        go(top, 1.0, True, "6")
+        go(bot, 1.0, False, "6")
+        return run_ocr(jobs, "Stufe b (vergrößert + unten)")
+    # Stufe 2 – schräge Etiketten: leicht gedreht, mit und ohne Ausgleich
+    for ang in (-3, 3):
+        rb = base.rotate(ang, center=(cx, cy), resample=Image.BICUBIC, fillcolor=255)
+        wr = wide_of(rb)
+        if wr.width > 20 and wr.height > 10:
+            jobs.append((flat_of(wr), "11"))
+            go(wr, 0.7, False, "6")
+    go(top, 1.0, False, "7")
+    go(bot, 1.0, True, "6")
+    return run_ocr(jobs, "Stufe 2 (gedreht)")
 
 
 def is_ean(code):
@@ -210,13 +217,24 @@ def _fast_lang():
     return _FAST
 
 
-def run_ocr(jobs):
+TRACE = []        # Zeitmessung für den laufenden Scan (Diagnose): [(name, Läufe, Sekunden, längster Lauf, Pixel)]
+
+
+def run_ocr(jobs, name="ocr"):
     """[(bild, psm, fast?)] parallel auf allen Kernen."""
     from concurrent.futures import ThreadPoolExecutor
     if not jobs:
         return []
+    t0, each = time.time(), []
+    def one(j):
+        t = time.time()
+        r = _tess(j[0], j[1], fast=len(j) > 2 and j[2])
+        each.append(time.time() - t)
+        return r
     with ThreadPoolExecutor(max_workers=_WORKERS) as ex:
-        return list(ex.map(lambda j: _tess(j[0], j[1], fast=len(j) > 2 and j[2]), jobs))
+        out = list(ex.map(one, jobs))
+    TRACE.append((name, len(jobs), round(time.time() - t0, 2), round(max(each), 2), sum(j[0].width * j[0].height for j in jobs)))
+    return out
 
 
 def _tess(im, psm, timeout=25, fast=False):
@@ -244,12 +262,12 @@ def ocr_texts(img, small=False):
     im = ImageOps.autocontrast(im)
     sharp = im.filter(ImageFilter.SHARPEN)
     if small:
-        return run_ocr([(sharp, "6"), (im, "6")])
+        return run_ocr([(sharp, "6"), (im, "6")], "Etikett gesamt")
     # ganzes Foto: dunkle Schrift, dazu helle Schrift auf buntem/dunklem Grund (Hintergrund abziehen)
     bg = im.filter(ImageFilter.GaussianBlur(max(15, im.width // 80)))
     light = Image.eval(ImageChops.subtract(im, bg), lambda v: 255 - min(255, v * 3))
     dark = Image.eval(ImageChops.subtract(bg, im), lambda v: 255 - min(255, v * 3))
-    return run_ocr([(sharp, "11"), (light, "11"), (dark, "11")])
+    return run_ocr([(sharp, "11"), (light, "11"), (dark, "11")], "ganzes Foto")
 
 
 def ocr(img, timeout=25):
