@@ -489,6 +489,7 @@ function venderOpts(sel) {
   return D.vendors.map(v => `<option value="${v.id}" ${v.id === sel ? "selected" : ""}>${esc(v.name)}</option>`).join("") + `<option value="new">＋ Neuer Hersteller …</option>`;
 }
 function openMulti() {
+  loadMans();
   $("mu-vendor").innerHTML = venderOpts(D.vendors[0]?.id);
   $("mu-newv").style.display = $("mu-vendor").value === "new" ? "" : "none";
   ["mu-mat", "mu-sw", "mu-price", "mu-et", "mu-bt", "mu-vname"].forEach(id => $(id).value = "");
@@ -511,7 +512,7 @@ function muRow(name = "", hex = "", ext = "") {
   d.querySelector(".mu-p").onclick = () => pipette(h => { d.querySelector(".mu-c").value = "#" + h; d.dataset.touched = "1"; d.querySelector(".mu-h").textContent = "🎯 aus Foto"; });
   attachSuggest(d.querySelector(".mu-n"), () => ({vendor: muVendorName(), material: $("mu-mat").value}), i => {
     clearTimeout(colT.get(d)); d.querySelector(".mu-c").value = "#" + i.hex.toLowerCase(); d.dataset.touched = "";
-    d.querySelector(".mu-h").textContent = "✓ " + i.source; d.querySelector(".mu-p").style.display = "none";
+    d.querySelector(".mu-h").textContent = i.other ? `≈ ${i.source.replace("≈ ", "")} – bitte prüfen` : "✓ " + i.source; d.querySelector(".mu-p").style.display = i.other ? "" : "none";
   });
   d.querySelector(".mu-n").oninput = e => {
     if (d.dataset.touched) return;
@@ -909,11 +910,12 @@ function attachSuggest(inp, ctx, onPick) {
     if (q.length < 2) return hide();
     t = setTimeout(async () => {
       const my = ++seq, c = ctx();
-      let r; try { r = await (await fetch(`/api/lager/colorsuggest?q=${encodeURIComponent(q)}&vendor=${encodeURIComponent(c.vendor)}&material=${encodeURIComponent(c.material)}`)).json(); } catch { return; }
+      let r; try { r = await (await fetch(`/api/lager/colorsuggest?q=${encodeURIComponent(q)}&vendor=${encodeURIComponent(c.vendor)}&material=${encodeURIComponent(c.material)}&dbman=${encodeURIComponent(c.dbman || "")}`)).json(); } catch { return; }
       if (my !== seq || inp.value.trim() !== q) return;
       const items = (r.items || []).filter(i => i.name.toLowerCase() !== q.toLowerCase());
       if (!items.length || document.activeElement !== inp) return hide();
-      box.innerHTML = items.map((i, n) => `<button type="button" data-n="${n}"><i style="background:#${i.hex}"></i><span>${esc(i.name)}</span><small>${esc(i.source)}</small></button>`).join("");
+      box.innerHTML = items.map((i, n) => (i.other && !(items[n - 1] || {}).other ? `<div class="sughead">Andere Hersteller – Farbton nur ungefähr</div>` : "") +
+        `<button type="button" data-n="${n}"><i style="background:#${i.hex}"></i><span>${esc(i.name)}</span><small>${esc(i.source)}</small></button>`).join("");
       // erst beim echten Antippen übernehmen (click) – Wischen scrollt nur die Liste; mousedown verhindern, damit das Feld den Fokus behält
       box.querySelectorAll("button").forEach(b => {
         b.onmousedown = e => e.preventDefault();
@@ -931,34 +933,73 @@ function attachSuggest(inp, ctx, onPick) {
 }
 // Auswahlliste zum Eintippen: Feld zeigt die Auswahl, beim Tippen erscheinen passende Einträge (auch mitten im Namen).
 // newOpt: Wert der Option „neu anlegen“ + Eingabefeld, in das der getippte Name übernommen wird.
-function comboSelect(sel, {placeholder = "Tippen zum Suchen …", newOpt, newInput} = {}) {
+// Tippfehler-tolerante Suche: 0 = beginnt damit, 1 = enthält, 2 = ohne doppelte Buchstaben, 3 = ein/zwei Tippfehler, null = kein Treffer
+function dl(a, b) {           // Damerau-Levenshtein (mit Vertauschung)
+  const d = Array.from({length: a.length + 1}, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
+  return d[a.length][b.length];
+}
+function fuzzy(q, text) {
+  q = (q || "").toLowerCase().trim(); const t = (text || "").toLowerCase();
+  if (!q) return 0;
+  if (t.startsWith(q)) return 0;
+  if (t.includes(q)) return 1;
+  const dd = x => x.replace(/(.)\1+/g, "$1"), qd = dd(q), td = dd(t);
+  if (qd.length >= 3 && td.includes(qd)) return 2;
+  if (q.length < 3) return null;
+  const tol = q.length <= 5 ? 1 : 2;
+  const words = [t, ...t.split(/[^a-z0-9äöüß+]+/).filter(Boolean)];
+  for (const w of words) for (const L of [q.length - 1, q.length, q.length + 1]) {
+    if (L < 2 || L > w.length) continue;
+    if (dl(q, w.slice(0, L)) <= tol) return 3;
+  }
+  return null;
+}
+// Auswahlliste zum Eintippen: Feld zeigt die Auswahl, beim Tippen erscheinen passende Einträge (auch mitten im Namen, Tippfehler erlaubt).
+// newOpt: Wert der Option „neu anlegen“ + Eingabefeld, in das der getippte Name übernommen wird.
+// extra(): weitere Vorschläge [{name, note}] (z. B. Hersteller aus der Datenbank) – Auswahl legt sie als neu an.
+function comboSelect(sel, {placeholder = "Tippen zum Suchen …", newOpt, newInput, extra} = {}) {
   const inp = document.createElement("input");
   inp.type = "search"; inp.autocomplete = "off"; inp.placeholder = placeholder; inp.className = "combo";
   sel.insertAdjacentElement("afterend", inp); sel.style.display = "none";
   const box = document.createElement("div"); box.className = "sugbox"; box.hidden = true;
   inp.insertAdjacentElement("afterend", box);
-  const label = () => { const o = sel.selectedOptions[0]; return o && o.value !== "" ? o.textContent : ""; };
+  const label = () => {
+    const o = sel.selectedOptions[0];
+    if (o && newOpt != null && o.value === newOpt && newInput && $(newInput).value.trim()) return `＋ ${$(newInput).value.trim()} (neu)`;
+    return o && o.value !== "" ? o.textContent : "";
+  };
   const sync = () => { if (document.activeElement !== inp && inp.value !== label()) inp.value = label(); };
   const hide = () => { box.hidden = true; };
   const pick = (val, typed) => {
-    sel.value = val; inp.value = label(); hide(); inp.blur();
     if (newOpt != null && val === newOpt && newInput) { $(newInput).value = typed; }
+    sel.value = val; inp.value = label(); hide(); inp.blur();
     sel.dispatchEvent(new Event("change"));
   };
   const show = () => {
-    const q = inp.value.trim().toLowerCase();
+    const raw = inp.value.trim(), q = raw.toLowerCase();
+    const base = t => t.toLowerCase().replace(/\s*\(\d+\)$/, "");
     const opts = [...sel.options].filter(o => o.value !== "" && o.value !== newOpt);
-    let hits = q ? opts.filter(o => o.textContent.toLowerCase().includes(q)) : opts;
-    hits.sort((a, b) => (!a.textContent.toLowerCase().startsWith(q)) - (!b.textContent.toLowerCase().startsWith(q)));
-    hits = hits.slice(0, 40);
-    let html = hits.map(o => `<button type="button" data-v="${esc(o.value)}"><span>${esc(o.textContent)}</span></button>`).join("");
-    if (newOpt != null && q && !opts.some(o => o.textContent.toLowerCase().replace(/\s*\(\d+\)$/, "") === q))
-      html += `<button type="button" data-v="${esc(newOpt)}" data-new="1"><span>＋ „${esc(inp.value.trim())}“ neu anlegen</span></button>`;
+    const scored = opts.map(o => ({o, s: fuzzy(q, o.textContent)})).filter(x => x.s !== null).sort((a, b) => a.s - b.s);
+    let html = scored.slice(0, 40).map(({o}) => `<button type="button" data-v="${esc(o.value)}"><span>${esc(o.textContent)}</span></button>`).join("");
+    const own = new Set(opts.map(o => base(o.textContent)));
+    let ex = [];
+    if (extra && q) {
+      ex = extra().filter(e => !own.has(e.name.toLowerCase())).map(e => ({...e, s: fuzzy(q, e.name)})).filter(e => e.s !== null)
+        .sort((a, b) => a.s - b.s).slice(0, 8);
+      html += ex.map(e => `<button type="button" data-v="${esc(newOpt)}" data-name="${esc(e.name)}"><span>${esc(e.name)}</span><small>${esc(e.note || "")}</small></button>`).join("");
+    }
+    if (newOpt != null && q && !own.has(q) && !ex.some(e => e.name.toLowerCase() === q))
+      html += `<button type="button" data-v="${esc(newOpt)}" data-name="${esc(raw)}"><span>＋ „${esc(raw)}“ neu anlegen</span></button>`;
     if (newOpt == null && sel.value !== "" && [...sel.options].some(o => o.value === ""))
       html = `<button type="button" data-v=""><span class="muted">✕ Auswahl aufheben (alle)</span></button>` + html;
     if (!html) html = `<div class="muted small" style="padding:8px 10px">Nichts gefunden</div>`;
     box.innerHTML = html;
-    box.querySelectorAll("button").forEach(b => { b.onmousedown = e => e.preventDefault(); b.onclick = () => pick(b.dataset.v, inp.value.trim()); });
+    box.querySelectorAll("button").forEach(b => { b.onmousedown = e => e.preventDefault(); b.onclick = () => pick(b.dataset.v, b.dataset.name ?? raw); });
     box.hidden = false; box.__inp = inp; fitSug(box, inp);
     setTimeout(() => fitSug(box, inp), 350);   // nach dem Aufklappen der Tastatur noch einmal
   };
@@ -998,8 +1039,8 @@ function filColor() {
   });
 }
 $("f-name").addEventListener("input", filColor);
-attachSuggest($("f-name"), () => ({vendor: $("f-vendor").value === "new" ? $("f-vname").value : (D.vendors.find(v => v.id === +$("f-vendor").value) || {}).name || "", material: $("f-mat").value}),
-  i => { clearTimeout(colT.get("f")); $("f-color").value = "#" + i.hex.toLowerCase(); colTouched = false; $("f-colhint").textContent = "✓ " + i.source + ": " + i.name; $("f-pip").style.display = "none"; });
+attachSuggest($("f-name"), () => ({vendor: $("f-vendor").value === "new" ? $("f-vname").value : (D.vendors.find(v => v.id === +$("f-vendor").value) || {}).name || "", material: $("f-mat").value, dbman: $("f-dbman").value}),
+  i => { clearTimeout(colT.get("f")); $("f-color").value = "#" + i.hex.toLowerCase(); colTouched = false; $("f-colhint").textContent = i.other ? `≈ Farbton von ${i.source.replace("≈ ", "")} – bitte prüfen` : "✓ " + i.source + ": " + i.name; $("f-pip").style.display = i.other ? "" : "none"; });
 $("f-color").addEventListener("input", () => { colTouched = true; $("f-colhint").textContent = ""; });
 $("f-mat").addEventListener("input", autoTpl);
 $("f-vendor").addEventListener("change", autoTpl);
@@ -1025,7 +1066,7 @@ function attachList(inp, items) {
   const hide = () => { box.hidden = true; };
   const show = () => {
     const q = inp.value.trim().toLowerCase();
-    const all = items(), hits = all.filter(x => !q || x.toLowerCase().startsWith(q)).concat(all.filter(x => q && !x.toLowerCase().startsWith(q) && x.toLowerCase().includes(q)));
+    const all = items(), hits = all.map(x => ({x, s: fuzzy(q, x)})).filter(e => e.s !== null).sort((a, b) => a.s - b.s).map(e => e.x);
     if (!hits.length || (hits.length === 1 && hits[0].toLowerCase() === q)) return hide();
     box.innerHTML = hits.slice(0, 30).map(x => `<button type="button"><span>${esc(x)}</span></button>`).join("");
     box.querySelectorAll("button").forEach((b, i) => { b.onmousedown = e => e.preventDefault();
@@ -1045,8 +1086,9 @@ const MATS = ["PLA", "PLA+", "PETG", "ABS", "ASA", "TPU", "PA", "PC", "PVA", "HI
 const matItems = () => [...new Set(MATS.concat((D && D.filaments || []).map(f => (f.material || "").toUpperCase()).filter(Boolean)))];
 ["f-mat", "mu-mat", "bk-mat"].forEach(id => $(id) && attachList($(id), matItems));
 // Auswahllisten zum Eintippen
-comboSelect($("f-vendor"), {placeholder: "Hersteller tippen …", newOpt: "new", newInput: "f-vname"});
-comboSelect($("mu-vendor"), {placeholder: "Hersteller tippen …", newOpt: "new", newInput: "mu-vname"});
+const dbVendorExtra = () => (dbMans || []).map(m => ({name: m.name, note: `Datenbank (${m.count}) – wird neu angelegt`}));
+comboSelect($("f-vendor"), {placeholder: "Hersteller tippen …", newOpt: "new", newInput: "f-vname", extra: dbVendorExtra});
+comboSelect($("mu-vendor"), {placeholder: "Hersteller tippen …", newOpt: "new", newInput: "mu-vname", extra: dbVendorExtra});
 comboSelect($("f-dbman"), {placeholder: "Hersteller in der Datenbank tippen, z. B. jayo"});
 // Datenbank-Hersteller automatisch passend zum gewählten Hersteller vorbelegen
 function dbManFromVendor() {
@@ -1067,7 +1109,16 @@ async function loadMans() {
     r.map(m => `<option value="${esc(m.name)}">${esc(m.name)} (${m.count})</option>`).join("");
   dbManFromVendor();
 }
-$("f-dbman").onchange = () => { $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; dbSearch(true); };
+$("f-dbman").onchange = () => {
+  $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; dbSearch(true);
+  // Hersteller unten passend setzen (vorhandener oder als neu vorgemerkt) – nur beim Anlegen
+  const man = $("f-dbman").value;
+  if (!man || $("f-id").value) return;
+  const v = D.vendors.find(x => x.name.toLowerCase() === man.toLowerCase());
+  if (v) $("f-vendor").value = v.id; else { $("f-vendor").value = "new"; $("f-vname").value = man; }
+  $("f-newv").style.display = v ? "none" : "";
+  autoTpl();
+};
 $("f-dbmat").onchange = () => dbSearch();
 $("f-db").oninput = () => dbSearch();
 function dbSearch(fillMats, matsOnly) {

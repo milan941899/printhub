@@ -945,3 +945,4 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .sugbox small { opacity:.65; font-size:.78em; white-space:nowrap; }
 .murow .sugbox { grid-column:1 / -1; }
 .combo { width:100%; }
+.sugbox .sughead { padding:6px 10px 4px; font-size:.75em; text-transform:uppercase; letter-spacing:.04em; opacity:.6; border-bottom:1px solid #8882; }

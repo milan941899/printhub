@@ -695,46 +695,111 @@ def _own_filaments():
         return []
 
 
-def _color_suggest(q, vendor="", material="", limit=8):
-    """Namensvorschläge beim Tippen: eigene Sorten, Filament-Datenbank (Hersteller zuerst), eingebaute Farbliste.
-    Treffer = jedes eingegebene Wort ist Anfang eines Wortes im Namen („tennis court“ → „Tennis Court Green“)."""
-    qw = [w for w in re.split(r"[^a-z0-9äöüß]+", (q or "").lower()) if w]
+def _dl(a, b):
+    """Damerau-Levenshtein-Abstand (Tippfehler inkl. vertauschter Buchstaben)."""
+    d = [[i] + [0] * len(b) for i in range(len(a) + 1)]
+    for j in range(1, len(b) + 1):
+        d[0][j] = j
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] != b[j - 1]))
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                d[i][j] = min(d[i][j], d[i - 2][j - 2] + 1)
+    return d[-1][-1]
+
+
+def _word_score(w, words, typos=True):
+    """0 = Wortanfang, 1 = ohne doppelte Buchstaben, 2 = Tippfehler, None = kein Treffer."""
+    if any(x.startswith(w) for x in words):
+        return 0
+    dd = lambda x: re.sub(r"(.)\1+", r"\1", x)
+    if len(w) >= 3 and any(dd(x).startswith(dd(w)) for x in words):
+        return 1
+    if len(w) < 3 or not typos:
+        return None
+    tol = 1 if len(w) <= 5 else 2
+    for x in words:
+        for L in (len(w) - 1, len(w), len(w) + 1):
+            if 2 <= L <= len(x) and _dl(w, x[:L]) <= tol:
+                return 2
+    return None
+
+
+def _name_score(qw, name, typos=True):
+    nw = [w for w in re.split(r"[^a-z0-9äöüß+]+", (name or "").lower()) if w]
+    sc = []
+    for w in qw:
+        x = _word_score(w, nw, typos)
+        if x is None:
+            return None
+        sc.append(x)
+    return max(sc)
+
+
+def _color_suggest(q, vendor="", material="", limit=8, dbman="", others=6):
+    """Namensvorschläge beim Tippen: eigene Sorten, Filament-Datenbank (Hersteller zuerst), eingebaute Farbliste,
+    zuletzt ein paar Treffer anderer Hersteller (Farbton nur ungefähr). Jedes eingegebene Wort muss ein Wortanfang
+    im Namen sein („tennis court“ → „Tennis Court Green“); kleine Tippfehler sind erlaubt."""
+    qw = [w for w in re.split(r"[^a-z0-9äöüß+]+", (q or "").lower()) if w]
     if not qw:
         return []
-    enw = [w for w in re.split(r"[^a-z0-9]+", (colormod.to_english(q) or "").lower()) if w]
-    def ok(name):
-        nw = [w for w in re.split(r"[^a-z0-9äöüß]+", (name or "").lower()) if w]
-        return any(all(any(x.startswith(w) for x in nw) for w in ws) for ws in (qw, enw) if ws)
-    vend, mat = (vendor or "").strip().lower(), (material or "").strip().upper()
+    enw = [w for w in re.split(r"[^a-z0-9+]+", (colormod.to_english(q) or "").lower()) if w]
+    def score(name, typos=True):
+        r = [x for x in (_name_score(qw, name, typos), _name_score(enw, name, typos) if enw and enw != qw else None) if x is not None]
+        return min(r) if r else None
+    vend, mat, dman = (vendor or "").strip().lower(), (material or "").strip().upper(), (dbman or "").strip().lower()
     out, seen = [], set()
-    def add(name, hx, src, rank):
+    def add(name, hx, src, rank, sc):
         k = (name or "").strip().lower()
         if not k or k in seen or not hx:
             return
         seen.add(k)
-        out.append({"name": name.strip(), "hex": hx[:6].upper(), "source": src, "rank": rank})
+        out.append({"name": name.strip(), "hex": hx[:6].upper(), "source": src, "rank": rank, "score": sc})
     for f in _own_filaments():
         v = ((f.get("vendor") or {}).get("name") or "").lower()
-        if ok(f.get("name")):
-            add(f.get("name"), f.get("color_hex"), "eigene Sorte", 0 if v == vend else 2)
+        sc = score(f.get("name"))
+        if sc is not None:
+            add(f.get("name"), f.get("color_hex"), "eigene Sorte", 0 if v == vend else 2, sc)
     try:
         ext = spoolman.external_filaments()
     except Exception:
         ext = []
+    rest = []
     for f in ext:
-        if (f.get("manufacturer") or "").lower() == vend and ok(f.get("name")):
-            add(f.get("name"), f.get("color_hex"), "Datenbank" + ("" if not mat or (f.get("material") or "").upper() == mat else f" ({f.get('material')})"),
-                1 if not mat or (f.get("material") or "").upper() == mat else 3)
+        mine = (f.get("manufacturer") or "").lower() == vend
+        sc = score(f.get("name"), typos=mine)      # Tippfehler-Suche nur beim eigenen Hersteller (sonst zu langsam)
+        if sc is None:
+            continue
+        if mine:
+            same = not mat or (f.get("material") or "").upper() == mat
+            add(f.get("name"), f.get("color_hex"), "Datenbank" + ("" if same else f" ({f.get('material')})"), 1 if same else 3, sc)
+        else:
+            rest.append((sc, f))
     for k, hx in colormod.NAMES.items():
-        if ok(k):
-            add(k.title(), hx, "Farbliste", 4)
-    out.sort(key=lambda x: (x["rank"], not x["name"].lower().startswith(qw[0]), len(x["name"])))
-    return out[:limit]
+        sc = score(k)
+        if sc is not None:
+            add(k.title(), hx, "Farbliste", 4, sc)
+    out.sort(key=lambda x: (x["score"] > 1, x["rank"], x["score"], not x["name"].lower().startswith(qw[0]), len(x["name"])))
+    out = out[:limit]
+    # andere Hersteller (oben in der Datenbank-Suche gewählter zuerst), gleiche Namen nur einmal
+    rest.sort(key=lambda t: ((t[1].get("manufacturer") or "").lower() != dman, t[0], len(t[1].get("name") or "")))
+    n = 0
+    for sc, f in rest:
+        if n >= others:
+            break
+        k = (f.get("name") or "").strip().lower()
+        if k in seen or not f.get("color_hex"):
+            continue
+        seen.add(k)
+        out.append({"name": f["name"].strip(), "hex": f["color_hex"][:6].upper(), "rank": 9, "score": sc, "other": True,
+                    "source": f"≈ {f.get('manufacturer')}" + (f" ({f.get('material')})" if f.get("material") else "")})
+        n += 1
+    return out
 
 
 async def api_lager_colorsuggest(request):
     q = request.query_params
-    return JSONResponse({"items": await run_in_threadpool(_color_suggest, q.get("q", ""), q.get("vendor", ""), q.get("material", ""))})
+    return JSONResponse({"items": await run_in_threadpool(_color_suggest, q.get("q", ""), q.get("vendor", ""), q.get("material", ""), 8, q.get("dbman", ""))})
 
 
 def _color_lookup(name, vendor="", material=""):
@@ -777,7 +842,7 @@ def _color_lookup(name, vendor="", material=""):
         f = min(others, key=lambda f: len(f.get("name") or ""))
         return {"hex": f["color_hex"][:6].upper(), "exact": False,
                 "source": f"Filament-Datenbank, anderer Hersteller: {f.get('manufacturer')} {f.get('name')} – ungefähr"}
-    sug = _color_suggest(n, vendor, material, limit=1)
+    sug = _color_suggest(n, vendor, material, limit=1, others=0)
     if sug:
         g = sug[0]
         return {"hex": g["hex"], "exact": False, "suggest": g["name"], "source": f"meintest du „{g['name']}“? ({g['source']})"}
