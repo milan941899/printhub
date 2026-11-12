@@ -905,11 +905,19 @@ function attachSuggest(inp, ctx, onPick) {
       const items = (r.items || []).filter(i => i.name.toLowerCase() !== q.toLowerCase());
       if (!items.length || document.activeElement !== inp) return hide();
       box.innerHTML = items.map((i, n) => `<button type="button" data-n="${n}"><i style="background:#${i.hex}"></i><span>${esc(i.name)}</span><small>${esc(i.source)}</small></button>`).join("");
-      box.querySelectorAll("button").forEach(b => b.onpointerdown = e => { e.preventDefault(); const i = items[+b.dataset.n]; inp.value = i.name; hide(); onPick(i); });
+      // erst beim echten Antippen übernehmen (click) – Wischen scrollt nur die Liste; mousedown verhindern, damit das Feld den Fokus behält
+      box.querySelectorAll("button").forEach(b => {
+        b.onmousedown = e => e.preventDefault();
+        b.onclick = () => { const i = items[+b.dataset.n]; inp.value = i.name; hide(); onPick(i); };
+      });
       box.hidden = false;
     }, 200);
   });
-  inp.addEventListener("blur", () => setTimeout(hide, 150));
+  let inBox = false;
+  box.addEventListener("touchstart", () => { inBox = true; }, {passive: true});
+  box.addEventListener("touchend", () => setTimeout(() => { inBox = false; }, 400), {passive: true});
+  inp.addEventListener("blur", () => setTimeout(() => { if (!inBox) hide(); }, 250));
+  document.addEventListener("pointerdown", e => { if (!box.hidden && !box.contains(e.target) && e.target !== inp) hide(); });
   inp.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
 }
 const colT = new Map();

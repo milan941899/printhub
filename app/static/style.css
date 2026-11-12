@@ -935,7 +935,7 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .moremenu[open] > summary, .moremenu > summary:hover { border-color:var(--acc); }
 
 /* Vorschlagsliste unter Namensfeldern */
-.sugbox { position:relative; z-index:5; margin-top:4px; border:1px solid var(--line, #8884); border-radius:10px; background:var(--card, #fff); box-shadow:0 6px 18px #0003; max-height:240px; overflow:auto; }
+.sugbox { position:relative; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; touch-action:pan-y; z-index:5; margin-top:4px; border:1px solid var(--line, #8884); border-radius:10px; background:var(--card, #fff); box-shadow:0 6px 18px #0003; max-height:240px; overflow:auto; }
 .sugbox[hidden] { display:none; }
 .sugbox button { display:flex; align-items:center; gap:8px; width:100%; padding:8px 10px; border:0; border-bottom:1px solid #8882; background:none; color:inherit; text-align:left; font:inherit; cursor:pointer; }
 .sugbox button:last-child { border-bottom:0; }
