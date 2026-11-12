@@ -116,7 +116,7 @@
     <div class="fgrid">
       <div class="field"><span class="lab">Hersteller</span><select id="mu-vendor"></select></div>
       <div class="field" id="mu-newv" style="display:none"><span class="lab">Neuer Hersteller</span><input id="mu-vname"></div>
-      <div class="field"><span class="lab">Material</span><input id="mu-mat" list="mats" required placeholder="PETG"></div>
+      <div class="field"><span class="lab">Material</span><input id="mu-mat" required placeholder="PETG" autocomplete="off"></div>
       <div class="field"><span class="lab">Netto je Rolle (g)</span><input id="mu-weight" type="number" min="1" value="1000"></div>
       <div class="field"><span class="lab">Leere Spule (g)</span><input id="mu-sw" type="number" min="0"></div>
       <div class="field"><span class="lab">Preis je Rolle (€)</span><input id="mu-price" type="number" min="0" step="0.01"></div>
@@ -145,7 +145,7 @@
       <div class="field"><span class="lab">Bett (°C)</span><input id="bk-bt" type="number"></div>
       <div class="field"><span class="lab">Leere Spule (g)</span><input id="bk-sw" type="number" min="0"></div>
       <div class="field"><span class="lab">Netto je Rolle (g)</span><input id="bk-weight" type="number" min="1"></div>
-      <div class="field"><span class="lab">Material</span><input id="bk-mat" list="mats"></div>
+      <div class="field"><span class="lab">Material</span><input id="bk-mat" autocomplete="off"></div>
     </div>
     <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Für alle speichern</button></div>
   </form>
@@ -231,7 +231,7 @@
       <div class="field"><span class="lab">Hersteller</span><select id="f-vendor"></select></div>
       <div class="field" id="f-newv" style="display:none"><span class="lab">Neuer Hersteller</span><input id="f-vname" placeholder="z. B. Jayo"></div>
       <div class="field"><span class="lab">Name / Farbe</span><input id="f-name" required placeholder="z. B. Black"></div>
-      <div class="field"><span class="lab">Material</span><input id="f-mat" list="mats" required placeholder="PLA, PETG …"></div>
+      <div class="field"><span class="lab">Material</span><input id="f-mat" required placeholder="PLA, PETG …" autocomplete="off"></div>
       <div class="field"><span class="lab">Farbe</span><div style="display:flex;gap:6px;align-items:center"><input id="f-color" type="color" value="#000000" style="height:40px;padding:3px;flex:0 0 64px">
         <button type="button" class="small-btn" id="f-pip" style="display:none" onclick="pipette(h => { $('f-color').value = '#' + h; colTouched = true; $('f-colhint').textContent = '🎯 Farbe aus Foto'; })">📷 aus Foto</button></div>
         <div id="f-colhint" class="muted small"></div></div>
@@ -242,7 +242,6 @@
       <div class="field"><span class="lab">Bett (°C)</span><input id="f-bt" type="number" min="0" max="130"></div>
       <div class="field" id="f-countbox"><span class="lab">Gleich Rollen anlegen</span><input id="f-count" type="number" min="0" max="50" value="0"></div>
     </div>
-    <datalist id="mats"><option>PLA</option><option>PLA+</option><option>PETG</option><option>ABS</option><option>ASA</option><option>TPU</option><option>PA</option><option>PC</option></datalist>
     <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Speichern</button></div>
   </form>
 </div>
@@ -929,7 +928,7 @@ function comboSelect(sel, {placeholder = "Tippen zum Suchen …", newOpt, newInp
   const box = document.createElement("div"); box.className = "sugbox"; box.hidden = true;
   inp.insertAdjacentElement("afterend", box);
   const label = () => { const o = sel.selectedOptions[0]; return o && o.value !== "" ? o.textContent : ""; };
-  const sync = () => { if (document.activeElement !== inp) inp.value = label(); };
+  const sync = () => { if (document.activeElement !== inp && inp.value !== label()) inp.value = label(); };
   const hide = () => { box.hidden = true; };
   const pick = (val, typed) => {
     sel.value = val; inp.value = label(); hide(); inp.blur();
@@ -1008,6 +1007,31 @@ async function saveFil() {
   closeM(); PH.toast("Sorte gespeichert"); open.add(d.id); load();
 }
 
+// Material: eigene Vorschlagsliste (ersetzt die Browser-Liste, die am Handy sofort wieder zuging)
+function attachList(inp, items) {
+  const box = document.createElement("div"); box.className = "sugbox"; box.hidden = true;
+  inp.insertAdjacentElement("afterend", box);
+  const hide = () => { box.hidden = true; };
+  const show = () => {
+    const q = inp.value.trim().toLowerCase();
+    const all = items(), hits = all.filter(x => !q || x.toLowerCase().startsWith(q)).concat(all.filter(x => q && !x.toLowerCase().startsWith(q) && x.toLowerCase().includes(q)));
+    if (!hits.length || (hits.length === 1 && hits[0].toLowerCase() === q)) return hide();
+    box.innerHTML = hits.slice(0, 30).map(x => `<button type="button"><span>${esc(x)}</span></button>`).join("");
+    box.querySelectorAll("button").forEach((b, i) => { b.onmousedown = e => e.preventDefault();
+      b.onclick = () => { inp.value = hits[i]; hide(); inp.dispatchEvent(new Event("input", {bubbles: true})); inp.dispatchEvent(new Event("change", {bubbles: true})); }; });
+    box.hidden = false;
+  };
+  let inBox = false;
+  box.addEventListener("touchstart", () => { inBox = true; }, {passive: true});
+  box.addEventListener("touchend", () => setTimeout(() => { inBox = false; }, 400), {passive: true});
+  inp.addEventListener("focus", show);
+  inp.addEventListener("input", e => { if (e.isTrusted) show(); });
+  inp.addEventListener("blur", () => setTimeout(() => { if (!inBox && document.activeElement !== inp) hide(); }, 250));
+  document.addEventListener("pointerdown", e => { if (!box.hidden && !box.contains(e.target) && e.target !== inp) hide(); });
+}
+const MATS = ["PLA", "PLA+", "PETG", "ABS", "ASA", "TPU", "PA", "PC", "PVA", "HIPS", "PLA-CF", "PETG-CF", "PA-CF"];
+const matItems = () => [...new Set(MATS.concat((D && D.filaments || []).map(f => (f.material || "").toUpperCase()).filter(Boolean)))];
+["f-mat", "mu-mat", "bk-mat"].forEach(id => $(id) && attachList($(id), matItems));
 // Auswahllisten zum Eintippen
 comboSelect($("f-vendor"), {placeholder: "Hersteller tippen …", newOpt: "new", newInput: "f-vname"});
 comboSelect($("mu-vendor"), {placeholder: "Hersteller tippen …", newOpt: "new", newInput: "mu-vname"});
