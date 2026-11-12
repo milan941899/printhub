@@ -939,17 +939,19 @@ function scanPick(id) {
   $(id).click();
 }
 function scanBusy(t) { $("sc-start").style.display = "none"; $("sc-res").innerHTML = ""; $("sc-busy").style.display = ""; $("sc-busytxt").textContent = t; }
+function scanReset(msg) {
+  scanWait = 0; $("sc-busy").style.display = "none"; $("sc-start").style.display = "";
+  $("sc-res").innerHTML = msg ? `<div class="muted small">${msg}</div>` : "";
+}
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible" || !scanWait || !$("m-scan").classList.contains("open")) return;
   const t0 = scanWait;
   scanBusy("Foto wird übernommen …");
-  setTimeout(() => {
-    if (scanWait !== t0) return;           // inzwischen angekommen
-    scanWait = 0; $("sc-busy").style.display = "none"; $("sc-start").style.display = "";
-    $("sc-res").innerHTML = `<div class="wres small codemsg multi">Es ist kein Foto angekommen – der Browser hat es nach der Kamera verworfen (passiert bei wenig freiem Speicher).
-      Nochmal versuchen, oder das Foto mit der Kamera-App machen und über <b>🖼 Aus Galerie</b> wählen.</div>`;
-  }, 10000);
+  $("sc-busytxt").insertAdjacentHTML("beforeend", ` <a href="#" onclick="event.preventDefault();scanReset()">abbrechen</a>`);
+  // Kamera abgebrochen (Zurück) liefert kein Foto – nach kurzer Zeit wieder zur Auswahl. Kommt das Foto doch noch, geht es normal weiter.
+  setTimeout(() => { if (scanWait === t0) scanReset("Kein Foto erhalten – abgebrochen? Einfach nochmal fotografieren oder <b>🖼 Aus Galerie</b> wählen."); }, 4000);
 });
+["scan-file", "scan-gal"].forEach(id => $(id).addEventListener("cancel", () => scanReset()));   // Auswahl/Kamera abgebrochen
 async function scanFile(f) {
   scanWait = 0;
   if (!f) { $("sc-busy").style.display = "none"; $("sc-start").style.display = ""; return; }
