@@ -858,7 +858,7 @@ function openFil(fid, tplId) {
   $("f-dbbox").style.display = f ? "none" : "";
   $("f-db").value = ""; $("f-dbres").innerHTML = ""; $("f-dbsel").textContent = "";
   $("f-dbman").value = ""; $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; dbPicked = null;
-  if (!f) loadMans();
+  if (!f) { loadMans(); setTimeout(dbManFromVendor, 0); }
   $("f-ext").value = ""; $("f-dens").value = f ? (f.density ?? "") : ""; $("f-diam").value = f ? (f.diameter ?? "") : "";
   $("f-tplhint").style.display = "none"; $("f-colhint").textContent = ""; $("f-pip").style.display = f ? "" : "none";
   $("m-fil").classList.add("open"); $("f-name").focus();
@@ -920,6 +920,52 @@ function attachSuggest(inp, ctx, onPick) {
   document.addEventListener("pointerdown", e => { if (!box.hidden && !box.contains(e.target) && e.target !== inp) hide(); });
   inp.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
 }
+// Auswahlliste zum Eintippen: Feld zeigt die Auswahl, beim Tippen erscheinen passende Einträge (auch mitten im Namen).
+// newOpt: Wert der Option „neu anlegen“ + Eingabefeld, in das der getippte Name übernommen wird.
+function comboSelect(sel, {placeholder = "Tippen zum Suchen …", newOpt, newInput} = {}) {
+  const inp = document.createElement("input");
+  inp.type = "search"; inp.autocomplete = "off"; inp.placeholder = placeholder; inp.className = "combo";
+  sel.insertAdjacentElement("afterend", inp); sel.style.display = "none";
+  const box = document.createElement("div"); box.className = "sugbox"; box.hidden = true;
+  inp.insertAdjacentElement("afterend", box);
+  const label = () => { const o = sel.selectedOptions[0]; return o && o.value !== "" ? o.textContent : ""; };
+  const sync = () => { if (document.activeElement !== inp) inp.value = label(); };
+  const hide = () => { box.hidden = true; };
+  const pick = (val, typed) => {
+    sel.value = val; inp.value = label(); hide(); inp.blur();
+    if (newOpt != null && val === newOpt && newInput) { $(newInput).value = typed; }
+    sel.dispatchEvent(new Event("change"));
+  };
+  const show = () => {
+    const q = inp.value.trim().toLowerCase();
+    const opts = [...sel.options].filter(o => o.value !== "" && o.value !== newOpt);
+    let hits = q ? opts.filter(o => o.textContent.toLowerCase().includes(q)) : opts;
+    hits.sort((a, b) => (!a.textContent.toLowerCase().startsWith(q)) - (!b.textContent.toLowerCase().startsWith(q)));
+    hits = hits.slice(0, 40);
+    let html = hits.map(o => `<button type="button" data-v="${esc(o.value)}"><span>${esc(o.textContent)}</span></button>`).join("");
+    if (newOpt != null && q && !opts.some(o => o.textContent.toLowerCase().replace(/\s*\(\d+\)$/, "") === q))
+      html += `<button type="button" data-v="${esc(newOpt)}" data-new="1"><span>＋ „${esc(inp.value.trim())}“ neu anlegen</span></button>`;
+    if (newOpt == null && sel.value !== "" && [...sel.options].some(o => o.value === ""))
+      html = `<button type="button" data-v=""><span class="muted">✕ Auswahl aufheben (alle)</span></button>` + html;
+    if (!html) html = `<div class="muted small" style="padding:8px 10px">Nichts gefunden</div>`;
+    box.innerHTML = html;
+    box.querySelectorAll("button").forEach(b => { b.onmousedown = e => e.preventDefault(); b.onclick = () => pick(b.dataset.v, inp.value.trim()); });
+    box.hidden = false;
+  };
+  inp.addEventListener("focus", () => { inp.value = ""; show(); });
+  inp.addEventListener("input", show);
+  let inBox = false;
+  box.addEventListener("touchstart", () => { inBox = true; }, {passive: true});
+  box.addEventListener("touchend", () => setTimeout(() => { inBox = false; }, 400), {passive: true});
+  inp.addEventListener("blur", () => setTimeout(() => { if (!inBox && document.activeElement !== inp) { hide(); inp.value = label(); } }, 250));
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Escape") { hide(); inp.blur(); }
+    if (e.key === "Enter") { e.preventDefault(); const b = box.querySelector("button"); if (b) b.click(); }
+  });
+  document.addEventListener("pointerdown", e => { if (!box.hidden && !box.contains(e.target) && e.target !== inp) { hide(); inp.blur(); } });
+  setInterval(sync, 400); sync();
+  return {sync};
+}
 const colT = new Map();
 function colorLookup(name, vendor, material, cb, key = "f") {
   clearTimeout(colT.get(key));
@@ -962,6 +1008,18 @@ async function saveFil() {
   closeM(); PH.toast("Sorte gespeichert"); open.add(d.id); load();
 }
 
+// Auswahllisten zum Eintippen
+comboSelect($("f-vendor"), {placeholder: "Hersteller tippen …", newOpt: "new", newInput: "f-vname"});
+comboSelect($("mu-vendor"), {placeholder: "Hersteller tippen …", newOpt: "new", newInput: "mu-vname"});
+comboSelect($("f-dbman"), {placeholder: "Hersteller in der Datenbank tippen, z. B. jayo"});
+// Datenbank-Hersteller automatisch passend zum gewählten Hersteller vorbelegen
+function dbManFromVendor() {
+  if (!dbMans || $("f-id").value) return;
+  const name = ($("f-vendor").value === "new" ? $("f-vname").value : (D.vendors.find(v => v.id === +$("f-vendor").value) || {}).name || "").trim().toLowerCase();
+  const m = name && dbMans.find(x => x.name.toLowerCase() === name);
+  if (m && $("f-dbman").value !== m.name) { $("f-dbman").value = m.name; $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; if ($("f-db").value.trim()) dbSearch(true); }
+}
+$("f-vendor").addEventListener("change", dbManFromVendor);
 // --- Suche in der SpoolmanDB ---
 let dbT, dbRes = [], dbMans = null, dbPicked = null;
 async function loadMans() {
@@ -971,6 +1029,7 @@ async function loadMans() {
   dbMans = r;
   $("f-dbman").innerHTML = `<option value="">Hersteller wählen … (${r.length})</option>` +
     r.map(m => `<option value="${esc(m.name)}">${esc(m.name)} (${m.count})</option>`).join("");
+  dbManFromVendor();
 }
 $("f-dbman").onchange = () => { $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; dbSearch(true); };
 $("f-dbmat").onchange = () => dbSearch();

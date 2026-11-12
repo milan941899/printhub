@@ -944,3 +944,4 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .sugbox span { flex:1; }
 .sugbox small { opacity:.65; font-size:.78em; white-space:nowrap; }
 .murow .sugbox { grid-column:1 / -1; }
+.combo { width:100%; }
