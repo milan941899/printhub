@@ -1351,7 +1351,8 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 texts += scanmod.band_texts(img, c)
                 # Farbe schon gefunden? Sonst Stufe 2: gedreht, Schatten ausgleichen, ganzes Etikett
                 tj, pv = "\n".join(texts), scanmod.parse_votes(texts)
-                if not ((_own_color(tj, pv.get("material", ""), vendor) or pv.get("color")) and pv.get("material") and pv.get("weight")):
+                # Stufe 2 nur, wenn Farbe oder Material fehlt – das Gewicht allein lohnt die doppelte Zeit nicht (kommt sonst aus der Sorte)
+                if not ((_own_color(tj, pv.get("material", ""), vendor) or pv.get("color")) and pv.get("material")):
                     texts += scanmod.band_texts(img, c, stage=2)
                     texts += scanmod.ocr_texts(scanmod.label_crop(img, c), small=True)
                 break
