@@ -112,3 +112,33 @@
   addEventListener("scroll", later, {passive: true}); addEventListener("resize", later);
   setTimeout(fix, 300); setInterval(fix, 1500);
 })();
+
+// Handy „Zurück“ (Android-Taste/Geste) schließt ein offenes Fenster, statt die Seite zu verlassen.
+// Jedes geöffnete Fenster (.modal.open, Kamera-Großansicht #lightbox.open) bekommt einen Verlaufs-Eintrag;
+// „Zurück“ verbraucht ihn und schließt das oberste Fenster über seinen eigenen Abbrechen/Schließen-Knopf.
+(() => {
+  const SEL = ".modal.open, #lightbox.open";
+  let depth = 0, skip = 0;
+  const openOnes = () => [...document.querySelectorAll(SEL)];
+  const closeTop = el => {
+    const btn = [...el.querySelectorAll(".mact button, button")].find(b => /^(Abbrechen|Schließen|Schliessen|✕|×)$/.test(b.textContent.trim()));
+    if (btn) btn.click(); else el.classList.remove("open");
+    if (el.classList.contains("open")) el.classList.remove("open");
+  };
+  const sync = () => {
+    const n = openOnes().length;
+    while (depth < n) { history.pushState({phModal: depth + 1}, ""); depth++; }
+    if (depth > n) { const k = depth - n; depth = n; skip += k; history.go(-k); }    // per Knopf geschlossen → Einträge wieder abbauen
+  };
+  addEventListener("popstate", () => {
+    if (skip) { skip--; return; }
+    const o = openOnes();
+    if (!o.length) return;
+    depth = Math.max(0, depth - 1);
+    const z = el => parseInt(getComputedStyle(el).zIndex) || 0;
+    closeTop(o.reduce((a, b) => (z(b) >= z(a) ? b : a)));          // oberstes Fenster (z. B. Pipette über „Neue Sorte“)
+    setTimeout(() => { const n = openOnes().length; if (n < depth) { const k = depth - n; depth = n; skip += k; history.go(-k); } }, 0);
+  });
+  let queued = false;
+  new MutationObserver(() => { if (!queued) { queued = true; setTimeout(() => { queued = false; sync(); }, 0); } }).observe(document.documentElement, {subtree: true, attributes: true, attributeFilter: ["class"], childList: true});
+})();
