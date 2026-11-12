@@ -29,11 +29,6 @@
   <div class="sum" id="sum" style="margin-bottom:16px"></div>
 
   <section class="card toolbar">
-    <div class="tb-left">
-      <input type="search" id="q" placeholder="Suche: Hersteller, Farbe, Material …">
-      <select id="mat" title="Material"><option value="">Alle Materialien</option></select>
-      <select id="show" title="Anzeigen"><option value="stock">Mit Bestand</option><option value="all">Alle Sorten</option><option value="low">Nachkaufen</option></select>
-    </div>
     <div class="tb-right" id="tb-lager">
       <a class="btn" href="/lager?ansicht=archiv" id="archlink">📦 Archiv</a>
       <button onclick="scanCtx=null;openFil()">＋ Neue Sorte</button>
@@ -49,6 +44,27 @@
     <div class="tb-right" id="tb-archiv" style="display:none">
       <a class="btn" href="/lager">← Zurück zum Lager</a>
     </div>
+  </section>
+
+  <section class="card findbar" id="findbar">
+    <div class="fb-row">
+      <input type="search" id="q" placeholder="Suche: Hersteller, Farbe, Material …">
+      <div class="vseg" id="vseg">
+        <button type="button" data-v="compact" onclick="setView('compact')" title="Kompakt: eine Zeile je Sorte">☰</button>
+        <button type="button" data-v="full" onclick="setView('full')" title="Ausführlich">▤</button>
+        <button type="button" data-v="tiles" onclick="setView('tiles')" title="Farb-Kacheln">▦</button>
+      </div>
+    </div>
+  </section>
+  <section class="card fbopts">
+    <div class="fb-row fb-opts" id="fb-opts">
+      <select id="show" title="Anzeigen"><option value="stock">Mit Bestand</option><option value="all">Alle Sorten</option><option value="low">Nachkaufen</option></select>
+      <select id="grp" title="Gruppieren nach"><option value="vendor">nach Hersteller</option><option value="material">nach Material</option><option value="color">nach Farbfamilie</option><option value="loc">nach Ort</option></select>
+      <select id="srt" title="Sortieren"><option value="name">Name A–Z</option><option value="hue">Farbton</option><option value="count">Anzahl Rollen</option><option value="used">zuletzt benutzt</option></select>
+    </div>
+    <select id="mat" style="display:none"><option value="">Alle</option></select>
+    <div class="matchips" id="matchips"></div>
+    <div class="statbar" id="statbar"></div>
   </section>
 
   <div class="selbar" id="selbar">
@@ -249,6 +265,7 @@
       <div class="field"><span class="lab">Düse (°C)</span><input id="f-et" type="number" min="150" max="350"></div>
       <div class="field"><span class="lab">Bett (°C)</span><input id="f-bt" type="number" min="0" max="130"></div>
       <div class="field" id="f-countbox"><span class="lab">Gleich Rollen anlegen</span><input id="f-count" type="number" min="0" max="50" value="0"></div>
+      <div class="field" id="f-minbox"><span class="lab">Mindestbestand (volle Rollen)</span><input id="f-min" type="number" min="0" max="99" inputmode="numeric" title="Darunter wird „nachkaufen“ angezeigt"></div>
       <div class="field" id="f-lotbox"><span class="lab">Charge (optional)</span><input id="f-lot" placeholder="z. B. 04260702AJ" autocomplete="off"></div>
       <div class="field" id="f-codes" style="grid-column:1/-1;display:none"></div>
     </div>
@@ -265,7 +282,7 @@ if (ARCH) {
   document.title = "Archiv – PrintHub";
   document.querySelector(".brand .sub").firstChild.textContent = "Archivierte Rollen · Daten aus Spoolman ";
   $("tb-lager").style.display = "none"; $("tb-archiv").style.display = "";
-  $("show").style.display = "none";
+  $("show").style.display = "none"; $("fb-opts").style.display = "none"; $("vseg").style.display = "none";
 }
 
 async function load() {
@@ -300,9 +317,175 @@ function barColor(hex) {
 }
 function isLow(f) { return f.min > 0 && f.full < f.min; }
 
+// ---------- Ansicht: Kompakt / Ausführlich / Kacheln, Gruppieren, Sortieren, Status ----------
+const PREF = (() => { try { return JSON.parse(localStorage.getItem("ph_lager_view") || "{}"); } catch { return {}; } })();
+const V = {view: PREF.view || (matchMedia("(max-width:700px)").matches ? "compact" : "full"), group: PREF.group || "vendor",
+  sort: PREF.sort || "name", closed: new Set(PREF.closed || []), status: ""};
+function savePref() { try { localStorage.setItem("ph_lager_view", JSON.stringify({view: V.view, group: V.group, sort: V.sort, closed: [...V.closed]})); } catch {} }
+function setView(v) { V.view = v; savePref(); render(); }
+function setStatus(s) { V.status = V.status === s ? "" : s; render(); }
+function toggleGroup(k) { V.closed.has(k) ? V.closed.delete(k) : V.closed.add(k); savePref(); render(); }
+$("grp").value = V.group; $("srt").value = V.sort;
+$("grp").onchange = () => { V.group = $("grp").value; savePref(); render(); };
+$("srt").onchange = () => { V.sort = $("srt").value; savePref(); render(); };
+
+// Farbe → Farbton/Familie
+function hsl(hex) {
+  const h = (hex || "").replace("#", ""); if (h.length < 6) return null;
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16) / 255);
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (!d) return {h: 0, s: 0, l};
+  const s = d / (1 - Math.abs(2 * l - 1));
+  let hh = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return {h: (hh * 60 + 360) % 360, s, l};
+}
+const FAMS = ["Schwarz & Grau", "Weiß & Natur", "Rot", "Orange", "Gelb", "Grün", "Türkis", "Blau", "Lila", "Pink", "Braun & Beige", "Ohne Farbe"];
+function family(hex) {
+  const c = hsl(hex); if (!c) return "Ohne Farbe";
+  if (c.l > 0.88 && c.s < 0.5) return "Weiß & Natur";
+  if (c.s < 0.15 || c.l < 0.12) return c.l > 0.8 ? "Weiß & Natur" : "Schwarz & Grau";
+  const h = c.h;
+  if ((h < 45 && c.l < 0.45 && c.s < 0.7) || (h >= 20 && h < 50 && c.s < 0.45)) return "Braun & Beige";
+  if (h < 12 || h >= 345) return "Rot";
+  if (h < 40) return "Orange";
+  if (h < 68) return "Gelb";
+  if (h < 160) return "Grün";
+  if (h < 195) return "Türkis";
+  if (h < 255) return "Blau";
+  if (h < 295) return "Lila";
+  return h < 345 && c.l > 0.55 ? "Pink" : "Pink";
+}
+const hueKey = f => { const c = hsl(f.color); if (!c) return 999; return c.s < 0.15 ? -1 + c.l : c.h; };
+const lastUsed = f => Math.max(0, ...f.spools.map(s => s.last_used ? Date.parse(s.last_used) : 0));
+function sortFils(fs) {
+  const by = {name: (a, b) => (a.name || "").localeCompare(b.name || "", "de"), hue: (a, b) => hueKey(a) - hueKey(b),
+    count: (a, b) => b.spools.length - a.spools.length || (a.name || "").localeCompare(b.name || "", "de"), used: (a, b) => lastUsed(b) - lastUsed(a)};
+  return fs.sort(by[V.sort] || by.name);
+}
+// Status je Rolle
+const nearEmpty = (f, s) => s.opened && s.remaining != null && s.remaining <= Math.max(100, 0.1 * (s.initial || f.weight || 1000));
+const STATUS = {
+  low: {t: "unter Minimum", f: f => isLow(f)},
+  dry: {t: "Trocknen fällig", s: (f, s) => s.dry && s.dry.due},
+  empty: {t: "fast leer", s: nearEmpty},
+  printer: {t: "im Drucker", s: (f, s) => s.in_printer},
+};
+function statusBar() {
+  const all = D.filaments;
+  const n = k => STATUS[k].f ? all.filter(STATUS[k].f).length : all.reduce((a, f) => a + f.spools.filter(s => STATUS[k].s(f, s)).length, 0);
+  $("statbar").innerHTML = Object.keys(STATUS).map(k => { const c = n(k);
+    return c || V.status === k ? `<button type="button" class="stchip ${k} has ${V.status === k ? "on" : ""}" onclick="setStatus('${k}')">
+      <b>${c}</b> ${STATUS[k].t}</button>` : ""; }).join("") + (V.status ? `<button type="button" class="link small" onclick="setStatus('')">✕ Filter aus</button>` : "");
+}
+const statusMatch = (f, sp) => !V.status || (STATUS[V.status].f ? STATUS[V.status].f(f) : sp.some(s => STATUS[V.status].s(f, s)));
+function matChips() {
+  const mats = [...new Set(D.filaments.filter(f => f.spools.length || $("show").value === "all").map(f => f.material).filter(Boolean))].sort();
+  const cur = $("mat").value;
+  $("matchips").innerHTML = [["", "Alle"], ...mats.map(m => [m, m])].map(([v, t]) =>
+    `<button type="button" class="mchip ${cur === v ? "on" : ""}" onclick="$('mat').value='${esc(v)}';render()">${esc(t)}</button>`).join("");
+}
+// Gruppen bauen: [{key, title, items:[{f, sp}]}]
+function buildGroups(fl) {
+  const G = new Map(), add = (k, f, sp) => { if (!G.has(k)) G.set(k, []); G.get(k).push({f, sp}); };
+  for (const f of fl) {
+    if (V.group === "loc") {
+      const by = {};
+      for (const s of f.spools) (by[s.in_printer ? "🖨 " + (s.location || "Drucker") : (s.location || "ohne Ort")] ||= []).push(s);
+      if (!f.spools.length) add("ohne Rollen", f, []);
+      for (const [k, sp] of Object.entries(by)) add(k, f, sp);
+    } else add(V.group === "material" ? (f.material || "ohne Material") : V.group === "color" ? family(f.color) : (f.vendor || "Ohne Hersteller"), f, f.spools);
+  }
+  let keys = [...G.keys()];
+  keys.sort(V.group === "color" ? (a, b) => FAMS.indexOf(a) - FAMS.indexOf(b) : (a, b) => a.localeCompare(b, "de"));
+  return keys.map(k => { const items = G.get(k); const order = sortFils(items.map(x => x.f)); return {key: V.group + ":" + k, title: k,
+    items: order.map(f => items.find(x => x.f === f))}; });
+}
+function infoLine(f, sp) {
+  const opened = sp.filter(s => s.opened).length, rem = sp.reduce((a, s) => a + (s.remaining || 0), 0);
+  return `${sp.length - opened} voll · ${opened} angebrochen · ${g(rem)}${f.price ? ` · ${eur(f.price)}/Rolle` : ""}${f.extruder_temp ? ` · ${f.extruder_temp} °C` : ""}${f.min ? ` · min ${f.min}` : ""}`;
+}
+function badges(f, sp) {
+  const dry = sp.filter(s => s.dry && s.dry.due).length, inp = sp.filter(s => s.in_printer).length, ne = sp.filter(s => nearEmpty(f, s)).length;
+  return (isLow(f) ? ` <span class="lowtag">nachkaufen</span>` : "") + (inp ? ` <span class="btag inp" title="im Drucker">🖨${inp > 1 ? inp : ""}</span>` : "") +
+    (dry ? ` <span class="btag dry" title="Trocknen fällig">💧${dry > 1 ? dry : ""}</span>` : "") + (ne ? ` <span class="btag ne" title="fast leer">◔${ne > 1 ? ne : ""}</span>` : "");
+}
+function actBtns(f) {
+  return `<button class="small-btn" onclick="openAdd(${f.id})">＋ Rollen</button>
+    <button class="small-btn" onclick="openFil(${f.id})" title="Sorte bearbeiten (auch Mindestbestand)">✎</button>
+    <button class="small-btn" onclick="scanCtx=null;openFil(null, ${f.id})" title="Ähnliche Sorte: alle Werte übernehmen, nur Name und Farbe neu">⧉</button>`;
+}
+function spoolList(f, sp) {
+  const allSel = sp.length && sp.every(s => sel.has(s.id));
+  return `<div class="spools">
+    ${sp.length ? `<label class="chk small" style="margin:4px 0 6px"><input type="checkbox" ${allSel ? "checked" : ""} onchange="selList([${sp.map(s => s.id)}], this.checked)"> alle für Etiketten auswählen</label>` : `<div class="muted small">Keine Rollen vorhanden.</div>`}
+    ${sp.map(s => spoolRow(f, s)).join("")}
+  </div>`;
+}
+function selList(ids, on) { ids.forEach(i => on ? sel.add(i) : sel.delete(i)); render(); }
+function compactRow(f, sp) {
+  const isOpen = open.has(f.id) || !!V.status;
+  const rem = sp.reduce((a, s) => a + (s.remaining || 0), 0);
+  return `<div class="crow ${isLow(f) ? "low" : ""} ${isOpen ? "open" : ""}">
+    <div class="crow-top" onclick="toggle(${f.id})">
+      ${bulkMode ? `<input type="checkbox" class="fselbox" ${fsel.has(f.id) ? "checked" : ""} onclick="event.stopPropagation();fselToggle(${f.id}, this.checked)">` : ""}
+      <span class="csw" style="background:${f.color || "transparent"}"></span>
+      <span class="cname">${esc(f.name)} <span class="mtag">${esc(f.material)}</span>${V.group !== "vendor" ? ` <span class="muted small">${esc(f.vendor || "")}</span>` : ""}${badges(f, sp)}</span>
+      <span class="ccount"><b>${sp.length}</b> <span class="muted">· ${g(rem)}</span></span>
+      <span class="chev">${isOpen ? "▾" : "▸"}</span>
+    </div>
+    ${isOpen ? `<div class="crow-body"><div class="muted small">${infoLine(f, sp)}</div><div class="fil-act">${actBtns(f)}</div>${spoolList(f, sp)}</div>` : ""}
+  </div>`;
+}
+function filRow(f, sp = f.spools) {
+  const isOpen = open.has(f.id) || !!V.status;
+  return `<div class="fil ${isLow(f) ? "low" : ""}">
+    <div class="fil-top" onclick="toggle(${f.id})">
+      ${bulkMode ? `<input type="checkbox" class="fselbox" ${fsel.has(f.id) ? "checked" : ""} onclick="event.stopPropagation();fselToggle(${f.id}, this.checked)">` : ""}
+      <span class="sw" style="background:${f.color || "transparent"}"></span>
+      <div class="fil-main">
+        <div class="fil-name">${esc(f.name)} <span class="mtag">${esc(f.material)}</span>${V.group !== "vendor" ? ` <span class="muted small">${esc(f.vendor || "")}</span>` : ""}${badges(f, sp)}</div>
+        <div class="muted small">${infoLine(f, sp)}</div>
+      </div>
+      <div class="fil-act" onclick="event.stopPropagation()">${actBtns(f)}
+        <button class="small-btn chevbtn" onclick="toggle(${f.id})" title="Rollen anzeigen">${isOpen ? "▾" : "▸"} ${sp.length}</button>
+      </div>
+    </div>
+    ${isOpen ? spoolList(f, sp) : ""}
+  </div>`;
+}
+function tileCard(f, sp) {
+  const c = hsl(f.color), dark = c ? c.l < 0.55 : false;
+  return `<button type="button" class="ftile ${isLow(f) ? "low" : ""}" onclick="tileOpen(${f.id})" title="${esc(f.vendor)} ${esc(f.name)} ${esc(f.material)}">
+    <span class="fsw" style="background:${f.color || "transparent"};color:${dark ? "#fff" : "#111"}"><b>${sp.length}</b></span>
+    <span class="fname">${esc(f.name)}</span><span class="muted small">${esc(f.material)}${V.group !== "vendor" ? " · " + esc(f.vendor || "") : ""}</span>${badges(f, sp)}
+  </button>`;
+}
+function tileOpen(id) {
+  open.add(id); setView("compact");
+  setTimeout(() => { const el = [...document.querySelectorAll(".crow")].find(x => x.querySelector(`[onclick="toggle(${id})"]`)); if (el) el.scrollIntoView({block: "center", behavior: "smooth"}); }, 50);
+}
+function listHtml(fl) {
+  const groups = buildGroups(fl);
+  if (!groups.length) return `<section class="card muted">Keine Sorten für diese Auswahl.</section>`;
+  return groups.map(gr => {
+    const closed = V.closed.has(gr.key) && !$("q").value.trim() && !V.status;
+    const nR = gr.items.reduce((a, x) => a + x.sp.length, 0), kg = gr.items.reduce((a, x) => a + x.sp.reduce((b, s) => b + (s.remaining || 0), 0), 0);
+    const body = V.view === "tiles" ? `<div class="ftiles">${gr.items.map(x => tileCard(x.f, x.sp)).join("")}</div>`
+      : gr.items.map(x => (V.view === "compact" ? compactRow : filRow)(x.f, x.sp)).join("");
+    return `<section class="card lgroup ${closed ? "closed" : ""}">
+      <div class="section-h ghead" data-k="${esc(gr.key)}" onclick="toggleGroup(this.dataset.k)">
+        <span class="label">${closed ? "▸" : "▾"} ${esc(gr.title)}</span>
+        <span class="muted small">${gr.items.length} ${gr.items.length === 1 ? "Sorte" : "Sorten"} · ${nR} Rollen · ${g(kg)}</span></div>
+      ${closed ? "" : body}
+    </section>`;
+  }).join("");
+}
+
 function render() {
   const q = $("q").value.trim().toLowerCase(), mat = $("mat").value, show = $("show").value;
-  const match = f => (!mat || f.material === mat) && (!q || `${f.vendor} ${f.name} ${f.material}`.toLowerCase().includes(q));
+  const match = f => (!mat || f.material === mat) && (!q || `${f.vendor} ${f.name} ${f.material} ${f.color || ""}`.toLowerCase().includes(q));
+  if (!ARCH) { matChips(); statusBar(); }
+  document.querySelectorAll("#vseg button").forEach(b => b.classList.toggle("on", b.dataset.v === V.view));
   const tile = (l, v, s = "", c = "") => `<div class="etile"><div class="label">${l}</div><div class="v ${c}">${v}</div><div class="s">${s}</div></div>`;
   let fl;
   if (ARCH) {
@@ -311,8 +494,8 @@ function render() {
     $("sum").innerHTML = tile("Archivierte Rollen", all.length, `${D.filaments.filter(f => f.archived.length).length} Sorten`) +
       tile("Restfilament darauf", g(all.reduce((a, s) => a + (s.remaining || 0), 0)), "meist leere Rollen");
   } else {
-    fl = D.filaments.filter(f => match(f) &&
-      (show === "all" || (show === "low" ? isLow(f) : f.spools.length > 0 || isLow(f))));
+    fl = D.filaments.filter(f => match(f) && statusMatch(f, f.spools) &&
+      (show === "all" || V.status || (show === "low" ? isLow(f) : f.spools.length > 0 || isLow(f))));
     const all = D.filaments, spools = all.flatMap(f => f.spools);
     const value = all.reduce((a, f) => a + f.spools.reduce((b, s) => {
       const pr = s.price ?? f.price, init = s.initial || f.weight;
@@ -327,13 +510,19 @@ function render() {
       tile("Nachkaufen", low, low ? "unter Mindestbestand" : "alles da", low ? "y" : "");
     $("archlink").textContent = narch ? `📦 Archiv (${narch})` : "📦 Archiv";
   }
+  if (!ARCH) {
+    // Status-Filter: nur passende Rollen zeigen
+    const st = V.status && STATUS[V.status].s;
+    $("list").innerHTML = listHtml(st ? fl.map(f => ({...f, spools: f.spools.filter(s => st(f, s))})).filter(f => f.spools.length) : fl);
+  } else {
   const groups = {};
   for (const f of fl) (groups[f.vendor || "Ohne Hersteller"] ||= []).push(f);
   $("list").innerHTML = Object.entries(groups).map(([v, fs]) => `
     <section class="card">
       <div class="section-h"><span class="label">${esc(v)}</span><span class="muted small">${fs.reduce((a, f) => a + (ARCH ? f.archived : f.spools).length, 0)} Rollen</span></div>
-      ${fs.map(ARCH ? archFil : filRow).join("")}
-    </section>`).join("") || `<section class="card muted">${ARCH ? "Keine archivierten Rollen." : "Keine Sorten für diese Auswahl."}</section>`;
+      ${fs.map(archFil).join("")}
+    </section>`).join("") || `<section class="card muted">Keine archivierten Rollen.</section>`;
+  }
   // Auswahlleiste
   $("selbar").classList.toggle("show", sel.size > 0);
   $("selcount").textContent = `${sel.size} ${sel.size === 1 ? "Rolle" : "Rollen"} ausgewählt`;
@@ -375,35 +564,6 @@ async function restoreSel() {
   const ids = [...sel];
   for (const id of ids) await api(`/api/lager/spools/${id}/unarchive`, "POST");
   sel.clear(); PH.toast(`${ids.length} Rolle(n) zurück im Lager`); load();
-}
-
-function filRow(f) {
-  const opened = f.spools.filter(s => s.opened).length;
-  const isOpen = open.has(f.id);
-  const allSel = f.spools.length && f.spools.every(s => sel.has(s.id));
-  return `<div class="fil ${isLow(f) ? "low" : ""}">
-    <div class="fil-top" onclick="toggle(${f.id})">
-      ${bulkMode ? `<input type="checkbox" class="fselbox" ${fsel.has(f.id) ? "checked" : ""} onclick="event.stopPropagation();fselToggle(${f.id}, this.checked)">` : ""}
-      <span class="sw" style="background:${f.color || "transparent"}"></span>
-      <div class="fil-main">
-        <div class="fil-name">${esc(f.name)} <span class="mtag">${esc(f.material)}</span>${isLow(f) ? ` <span class="lowtag">nachkaufen</span>` : ""}</div>
-        <div class="muted small">${f.full} voll · ${opened} angebrochen · ${g(f.remaining)}${f.price ? ` · ${eur(f.price)}/Rolle` : ""}${f.extruder_temp ? ` · ${f.extruder_temp} °C` : ""}</div>
-      </div>
-      <div class="fil-act" onclick="event.stopPropagation()">
-        <span class="minbox" title="Mindestbestand an vollen Rollen – darunter wird 'nachkaufen' angezeigt">
-          min <button type="button" onclick="setMin(${f.id}, ${f.min - 1})">−</button><b>${f.min}</b><button type="button" onclick="setMin(${f.id}, ${f.min + 1})">＋</button>
-        </span>
-        <button class="small-btn" onclick="openAdd(${f.id})">＋ Rollen</button>
-        <button class="small-btn" onclick="openFil(${f.id})" title="Sorte bearbeiten">✎</button>
-        <button class="small-btn" onclick="scanCtx=null;openFil(null, ${f.id})" title="Ähnliche Sorte: alle Werte übernehmen, nur Name und Farbe neu">⧉</button>
-      </div>
-      <span class="chev">${isOpen ? "▾" : "▸"}</span>
-    </div>
-    ${isOpen ? `<div class="spools">
-      ${f.spools.length ? `<label class="chk small" style="margin:4px 0 6px"><input type="checkbox" ${allSel ? "checked" : ""} onchange="selAll(${f.id}, this.checked)"> alle für Etiketten auswählen</label>` : `<div class="muted small">Keine Rollen vorhanden.</div>`}
-      ${f.spools.map(s => spoolRow(f, s)).join("")}
-    </div>` : ""}
-  </div>`;
 }
 
 function spoolRow(f, s) {
@@ -989,6 +1149,7 @@ function openFil(fid, tplId) {
   $("f-tplhint").style.display = "none"; $("f-colhint").textContent = ""; $("f-pip").style.display = f ? "" : "none";
   srcReset(F_MAP, f ? [] : ["f-weight"]); scanExtra = [];
   $("f-lot").value = ""; $("f-lotbox").style.display = f ? "none" : ""; loadCodes(f ? f.id : null);
+  $("f-min").value = f ? (f.min || 0) : 0; $("f-min").dataset.was = f ? (f.min || 0) : 0;
   $("m-fil").classList.add("open"); $("f-name").focus();
   if (tplId) applyTpl(D.filaments.find(x => x.id === tplId), true);
 }
@@ -1275,6 +1436,8 @@ async function saveFil() {
     density: $("f-dens").value, diameter: $("f-diam").value,
     ean: scanCtx && !$("f-id").value ? (scanCtx.ean || "") : ""};
   const d = await api("/api/lager/filament", "POST", body);
+  const mn = Math.max(0, +$("f-min").value || 0);
+  if (mn !== +($("f-min").dataset.was || 0)) await api("/api/lager/min", "PUT", {filament_id: d.id, min: mn});
   scanCtx = null;
   closeM(); PH.toast("Sorte gespeichert"); open.add(d.id); load();
 }
