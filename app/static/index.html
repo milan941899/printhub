@@ -879,7 +879,6 @@ function qPlan(id) {
   let m = document.getElementById("m-plan");
   if (!m) {
     m = document.createElement("div"); m.className = "modal"; m.id = "m-plan";
-    m.onclick = e => { if (e.target === m) m.classList.remove("open"); };
     m.innerHTML = `<form class="mbox card" onsubmit="event.preventDefault();qPlanSave()">
       <h2>🕘 Startzeit planen</h2><div id="pl-name" class="muted"></div>
       <div class="plseg" id="pl-mode"><label><input type="radio" name="plm" value="start" checked> Start um</label><label><input type="radio" name="plm" value="end"> Fertig um</label></div>

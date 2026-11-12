@@ -65,7 +65,7 @@
 </div>
 
 <!-- Dialog: Neue Rollen -->
-<div class="modal" id="m-add" onclick="if(event.target===this)closeM()">
+<div class="modal" id="m-add">
   <form class="mbox card" onsubmit="event.preventDefault();saveAdd()">
     <h2>Neue Rollen anlegen</h2>
     <div class="field"><span class="lab">Sorte</span><select id="a-fil" required></select></div>
@@ -87,7 +87,7 @@
 
 <input type="file" id="scan-file" accept="image/*" capture="environment" style="display:none">
 <!-- Dialog: Rolle scannen -->
-<div class="modal" id="m-scan" onclick="if(event.target===this)scanClose()">
+<div class="modal" id="m-scan">
   <div class="mbox card">
     <h2>📷 Rolle scannen</h2>
     <div id="sc-live" style="display:none"><video id="sc-video" playsinline muted style="width:100%;border-radius:10px;background:#000"></video>
@@ -108,7 +108,7 @@
 </div>
 
 <!-- Dialog: Mehrere Farben -->
-<div class="modal" id="m-multi" onclick="if(event.target===this)closeM()">
+<div class="modal" id="m-multi">
   <form class="mbox card" onsubmit="event.preventDefault();saveMulti()">
     <h2>🎨 Mehrere Farben anlegen</h2>
     <div class="muted small">Gemeinsame Werte einmal eintragen, dann pro Farbe eine Zeile. Werte einer vorhandenen Sorte werden automatisch übernommen.</div>
@@ -134,7 +134,7 @@
 </div>
 
 <!-- Dialog: Gemeinsam bearbeiten -->
-<div class="modal" id="m-bulk" onclick="if(event.target===this)closeM()">
+<div class="modal" id="m-bulk">
   <form class="mbox card" onsubmit="event.preventDefault();saveBulk()">
     <h2 id="bk-title">Sorten gemeinsam bearbeiten</h2>
     <div class="muted small">Nur ausgefüllte Felder werden geändert – leere bleiben, wie sie sind.</div>
@@ -152,7 +152,7 @@
 </div>
 
 <!-- Dialog: Namen vereinheitlichen -->
-<div class="modal" id="m-names" onclick="if(event.target===this)closeM()">
+<div class="modal" id="m-names">
   <form class="mbox card" onsubmit="event.preventDefault();saveNames()">
     <h2>Aa Namen vereinheitlichen</h2>
     <div class="muted small">Sorten mit deutschem Farbnamen – Vorschlag ist der Originalname (aus der Filament-Datenbank, sonst übersetzt). Vorschlag lässt sich ändern.</div>
@@ -175,7 +175,7 @@
 </div>
 
 <!-- Dialog: Rolle wiegen -->
-<div class="modal" id="m-weigh" onclick="if(event.target===this)closeM()">
+<div class="modal" id="m-weigh">
   <form class="mbox card" onsubmit="event.preventDefault();saveWeigh()">
     <h2>⚖ Rolle wiegen</h2>
     <div id="w-name" class="muted"></div>
@@ -193,7 +193,7 @@
 </div>
 
 <!-- Dialog: Rolle bearbeiten -->
-<div class="modal" id="m-spool" onclick="if(event.target===this)closeM()">
+<div class="modal" id="m-spool">
   <form class="mbox card" onsubmit="event.preventDefault();saveSpool()">
     <h2 id="e-title">Rolle bearbeiten</h2>
     <div class="fgrid">
@@ -212,7 +212,7 @@
 </div>
 
 <!-- Dialog: Sorte anlegen / bearbeiten -->
-<div class="modal" id="m-fil" onclick="if(event.target===this)closeM()">
+<div class="modal" id="m-fil">
   <form class="mbox card" onsubmit="event.preventDefault();saveFil()">
     <h2 id="f-title">Neue Sorte</h2>
     <input type="hidden" id="f-id"><input type="hidden" id="f-ext"><input type="hidden" id="f-dens"><input type="hidden" id="f-diam">
@@ -812,7 +812,7 @@ document.addEventListener("input", e => {
   if (["a-gross", "a-empty"].includes(e.target.id)) addCalc();
 });
 function closeM() { document.querySelectorAll(".modal").forEach(m => m.classList.remove("open")); }
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeM(); });
+// Fenster schließen nur über „Abbrechen“/„Schließen“ – nicht per Klick daneben oder Esc (sonst gehen Eingaben verloren)
 function openAdd(fid) {
   $("a-fil").innerHTML = D.filaments.map(f => `<option value="${f.id}" ${f.id === fid ? "selected" : ""}>${esc(f.vendor)} · ${esc(f.name)} ${esc(f.material)}</option>`).join("");
   $("a-count").value = 1; $("a-weight").value = ""; $("a-price").value = ""; $("a-loc").value = D.storage;
