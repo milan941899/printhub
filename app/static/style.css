@@ -1010,3 +1010,5 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 @media (max-width:640px) { .findbar { top:0; border-radius:0 0 12px 12px; margin-left:-2px; margin-right:-2px; } .ftiles { grid-template-columns:repeat(3, 1fr); } }
 .codemsg { padding:6px 10px; border-radius:8px; background:var(--tile); border:1px solid var(--line); }
 .codemsg.known { border-color:#22c55e66; } .codemsg.similar { border-color:var(--acc); } .codemsg.multi { border-color:var(--warn); }
+/* Ort/Slot der Rolle am Handy vollständig zeigen (umbrechen statt „…“) */
+@media (max-width:640px) { .srow .sloc { white-space:normal; overflow:visible; text-overflow:clip; line-height:1.35; } }
