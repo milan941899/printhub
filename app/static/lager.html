@@ -857,6 +857,7 @@ function openFil(fid, tplId) {
   $("f-countbox").style.display = f ? "none" : "";
   $("f-dbbox").style.display = f ? "none" : "";
   $("f-db").value = ""; $("f-dbres").innerHTML = ""; $("f-dbsel").textContent = "";
+  dbNameSynced = ""; $("f-db").value = "";
   $("f-dbman").value = ""; $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; dbPicked = null;
   if (!f) { loadMans(); setTimeout(dbManFromVendor, 0); }
   $("f-ext").value = ""; $("f-dens").value = f ? (f.density ?? "") : ""; $("f-diam").value = f ? (f.diameter ?? "") : "";
@@ -1040,7 +1041,7 @@ function filColor() {
 }
 $("f-name").addEventListener("input", filColor);
 attachSuggest($("f-name"), () => ({vendor: $("f-vendor").value === "new" ? $("f-vname").value : (D.vendors.find(v => v.id === +$("f-vendor").value) || {}).name || "", material: $("f-mat").value, dbman: $("f-dbman").value}),
-  i => { clearTimeout(colT.get("f")); $("f-color").value = "#" + i.hex.toLowerCase(); colTouched = false; $("f-colhint").textContent = i.other ? `≈ Farbton von ${i.source.replace("≈ ", "")} – bitte prüfen` : "✓ " + i.source + ": " + i.name; $("f-pip").style.display = i.other ? "" : "none"; });
+  i => { clearTimeout(colT.get("f")); setTimeout(syncDbName, 0); $("f-color").value = "#" + i.hex.toLowerCase(); colTouched = false; $("f-colhint").textContent = i.other ? `≈ Farbton von ${i.source.replace("≈ ", "")} – bitte prüfen` : "✓ " + i.source + ": " + i.name; $("f-pip").style.display = i.other ? "" : "none"; });
 $("f-color").addEventListener("input", () => { colTouched = true; $("f-colhint").textContent = ""; });
 $("f-mat").addEventListener("input", autoTpl);
 $("f-vendor").addEventListener("change", autoTpl);
@@ -1126,11 +1127,25 @@ function syncDbMat() {
   if ($("f-id").value || dbPicked || !$("f-dbman").value) return false;
   const m = $("f-mat").value.trim().toUpperCase();
   if (!m) return false;
-  const o = [...$("f-dbmat").options].find(o => o.value && o.value.toUpperCase() === m);
+  // genau gleich → sonst „ABS+“ zu „ABS“ → sonst kürzestes, das damit beginnt (z. B. „PLA Silk“)
+  const opts = [...$("f-dbmat").options].filter(o => o.value), U = o => o.value.toUpperCase();
+  const o = opts.find(o => U(o) === m) || opts.find(o => U(o) === m + "+") ||
+    opts.filter(o => U(o).startsWith(m)).sort((a, b) => a.value.length - b.value.length)[0];
   if (!o || $("f-dbmat").value === o.value) return false;
   $("f-dbmat").value = o.value; dbSearch();
   return true;
 }
+// Farbe/Name unten → Suchfeld oben übernehmen (solange oben nichts Eigenes eingetippt wurde)
+let dbNameT, dbNameSynced = "";
+function syncDbName() {
+  if ($("f-id").value || dbPicked) return;
+  const v = $("f-name").value.trim(), cur = $("f-db").value.trim();
+  if (cur && cur !== dbNameSynced) return;          // oben selbst etwas eingetippt → nicht überschreiben
+  if (v === cur) return;
+  $("f-db").value = v; dbNameSynced = v; dbSearch();
+}
+$("f-name").addEventListener("input", () => { clearTimeout(dbNameT); dbNameT = setTimeout(syncDbName, 500); });
+$("f-name").addEventListener("change", syncDbName);
 let dbMatT;
 $("f-mat").addEventListener("input", () => { clearTimeout(dbMatT); dbMatT = setTimeout(syncDbMat, 400); });
 $("f-mat").addEventListener("change", syncDbMat);
