@@ -1443,9 +1443,12 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
     for c in cands:
         if _code_norm(c) in known:
             res["learned"] = known[_code_norm(c)]
-            res["code_info"] = {"code": _code_norm(c), "status": "known", "fids": [known[_code_norm(c)]]}
+            res["code_info"] = {"code": _code_norm(c), "status": "known", "fids": [known[_code_norm(c)]],
+                                "kind": "sku" if res.get("sku") and _code_norm(c) == _code_norm(res["sku"]) else ""}
             break
-    if not res["learned"] and res["lot"]:
+    if not res["learned"] and res.get("sku"):
+        res["code_info"] = {"code": _code_norm(res["sku"]), "status": "unknown", "fids": [], "kind": "sku"}
+    elif not res["learned"] and res["lot"]:
         lot = _code_norm(res["lot"])
         multi = (store.data.get("code_multi") or {}).get(lot)
         sim = _similar_codes(lot)

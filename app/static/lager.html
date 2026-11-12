@@ -1016,6 +1016,10 @@ async function scanLive() {
 function codeMsg(d) {
   const ci = d.code_info; if (!ci) return "";
   const L = (ci.labels || []).filter(Boolean).map(esc).join(", ");
+  if (ci.kind === "sku") return `<div class="wres small codemsg ${ci.status}">${ci.status === "known"
+    ? `✓ Artikelnummer (SKU) <b>${esc(ci.code)}</b> ist bekannt – Sorte steht oben.`
+    : `Artikelnummer (SKU) <b>${esc(ci.code)}</b> ist noch unbekannt – wird der Sorte zugeordnet, die du unten wählst oder neu anlegst. Beim nächsten Scan wird sie dann sofort erkannt.`}
+    ${d.lot ? `<div class="muted small">Charge ${esc(d.lot)} wird an der Rolle gespeichert.</div>` : ""}</div>`;
   const t = {known: `✓ Nummer <b>${esc(ci.code)}</b> ist bekannt – Sorte steht oben.`,
     similar: `≈ Nummer <b>${esc(ci.code)}</b> ist neu, aber ähnlich wie <b>${esc((ci.near || []).join(", "))}</b> (${L}). Bitte unten bestätigen – dann wird sie gelernt.`,
     multi: `⚠ Nummer <b>${esc(ci.code)}</b> kommt bei mehreren Sorten vor (${L}) – bitte die richtige wählen.`,

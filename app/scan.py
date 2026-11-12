@@ -93,11 +93,11 @@ def barcodes(img):
     Jeder Treffer bekommt 'crop': den Bereich ums Etikett (im gedrehten Originalbild) für die Texterkennung."""
     seen, out = set(), []
     base = ImageOps.exif_transpose(img)
-    for maxw in (1600, 2400, 1000):
+    for maxw, rots in ((1600, (0, 90)), (1000, (0,))):    # kein Strichcode? nach 3 statt 6 Versuchen aufgeben
         im = base.copy()
         im.thumbnail((maxw, maxw))
         f = base.width / im.width
-        for rot in (0, 90):
+        for rot in rots:
             for r in _zbar_scan(im.rotate(rot, expand=True) if rot else im):
                 if r["data"] not in seen:
                     seen.add(r["data"])
@@ -258,7 +258,7 @@ def ocr_texts(img, small=False):
     if im.width < 800:                       # nur sehr kleine Ausschnitte vergrößern (sonst wird schmale Schrift schlechter)
         f = 1000 / im.width
         im = im.resize((1600, int(im.height * f)), Image.LANCZOS)
-    im.thumbnail((2400, 2400))
+    im.thumbnail((2400, 2400) if small else (1700, 1700))   # ganzes Foto: Schrift auf Rolle/Karton ist groß genug, halb so viele Pixel
     im = ImageOps.autocontrast(im)
     sharp = im.filter(ImageFilter.SHARPEN)
     if small:
