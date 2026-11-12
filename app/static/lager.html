@@ -1121,6 +1121,19 @@ $("f-dbman").onchange = () => {
 };
 $("f-dbmat").onchange = () => dbSearch();
 $("f-db").oninput = () => dbSearch();
+// Material unten → oben in der Datenbank-Suche auswählen (wenn es dort für den Hersteller vorkommt)
+function syncDbMat() {
+  if ($("f-id").value || dbPicked || !$("f-dbman").value) return false;
+  const m = $("f-mat").value.trim().toUpperCase();
+  if (!m) return false;
+  const o = [...$("f-dbmat").options].find(o => o.value && o.value.toUpperCase() === m);
+  if (!o || $("f-dbmat").value === o.value) return false;
+  $("f-dbmat").value = o.value; dbSearch();
+  return true;
+}
+let dbMatT;
+$("f-mat").addEventListener("input", () => { clearTimeout(dbMatT); dbMatT = setTimeout(syncDbMat, 400); });
+$("f-mat").addEventListener("change", syncDbMat);
 function dbSearch(fillMats, matsOnly) {
   clearTimeout(dbT);
   const q = $("f-db").value.trim(), man = $("f-dbman").value, mat = $("f-dbmat").value;
@@ -1136,6 +1149,7 @@ function dbSearch(fillMats, matsOnly) {
       $("f-dbmat").innerHTML = `<option value="">Alle Materialien (${resp.materials.length})</option>` +
         resp.materials.map(m => `<option ${m === keep ? "selected" : ""}>${esc(m)}</option>`).join("");
     }
+    if (syncDbMat()) return;        // Material von unten übernommen → neue Suche läuft
     if (matsOnly) return;           // nur Materialliste füllen (Hersteller wurde automatisch vorbelegt)
     dbRes = r;
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
