@@ -110,10 +110,16 @@
     cur = d;
     nav.style.transform = d ? `translateY(${d}px)` : "";
   };
-  const later = () => { clearTimeout(timer); timer = setTimeout(fix, 180); };
+  // bei jeder Bewegung sofort frisch messen (folgt dem Ein-/Ausblenden der Browser-Leisten), danach noch einmal in Ruhe
+  let raf = 0;
+  const later = () => {
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; fix(); });
+    clearTimeout(timer); timer = setTimeout(fix, 200);
+  };
   vv.addEventListener("resize", later); vv.addEventListener("scroll", later);
   addEventListener("scroll", later, {passive: true}); addEventListener("resize", later);
-  setTimeout(fix, 300); setInterval(fix, 2000);
+  addEventListener("touchend", () => setTimeout(fix, 350), {passive: true});      // nach dem Loslassen (Zoom/Scroll) nachziehen
+  setTimeout(fix, 300); setInterval(fix, 1000);
 })();
 
 // Handy „Zurück“ (Android-Taste/Geste) schließt ein offenes Fenster, statt die Seite zu verlassen.
