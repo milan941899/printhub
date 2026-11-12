@@ -885,6 +885,16 @@ function autoTpl() {
     if (r.template) applyTpl(r.template, false);
   }, 300);
 }
+// Vorschlagslisten passen sich dem sichtbaren Bereich an (Handy-Tastatur verdeckt sonst den unteren Teil)
+function fitSug(box, inp) {
+  if (box.hidden) return;
+  const vv = window.visualViewport, bottom = vv ? vv.offsetTop + vv.height : innerHeight;
+  let avail = bottom - inp.getBoundingClientRect().bottom - 14;
+  if (avail < 150) { inp.scrollIntoView({block: "start"}); avail = bottom - inp.getBoundingClientRect().bottom - 14; }
+  box.style.maxHeight = Math.max(110, Math.min(260, avail)) + "px";
+}
+const fitAll = () => document.querySelectorAll(".sugbox:not([hidden])").forEach(b => { const i = b.__inp; if (i) fitSug(b, i); });
+if (window.visualViewport) { visualViewport.addEventListener("resize", fitAll); }
 // Vorschlagsliste beim Tippen (eigene Sorten, Filament-Datenbank, Farbliste) – antippen übernimmt Name + Farbe
 function attachSuggest(inp, ctx, onPick) {
   const box = document.createElement("div"); box.className = "sugbox"; box.hidden = true;
@@ -909,7 +919,7 @@ function attachSuggest(inp, ctx, onPick) {
         b.onmousedown = e => e.preventDefault();
         b.onclick = () => { const i = items[+b.dataset.n]; inp.value = i.name; hide(); onPick(i); };
       });
-      box.hidden = false;
+      box.hidden = false; box.__inp = inp; fitSug(box, inp);
     }, 200);
   });
   let inBox = false;
@@ -949,7 +959,8 @@ function comboSelect(sel, {placeholder = "Tippen zum Suchen …", newOpt, newInp
     if (!html) html = `<div class="muted small" style="padding:8px 10px">Nichts gefunden</div>`;
     box.innerHTML = html;
     box.querySelectorAll("button").forEach(b => { b.onmousedown = e => e.preventDefault(); b.onclick = () => pick(b.dataset.v, inp.value.trim()); });
-    box.hidden = false;
+    box.hidden = false; box.__inp = inp; fitSug(box, inp);
+    setTimeout(() => fitSug(box, inp), 350);   // nach dem Aufklappen der Tastatur noch einmal
   };
   inp.addEventListener("focus", () => { inp.value = ""; show(); });
   inp.addEventListener("input", show);
@@ -1019,7 +1030,8 @@ function attachList(inp, items) {
     box.innerHTML = hits.slice(0, 30).map(x => `<button type="button"><span>${esc(x)}</span></button>`).join("");
     box.querySelectorAll("button").forEach((b, i) => { b.onmousedown = e => e.preventDefault();
       b.onclick = () => { inp.value = hits[i]; hide(); inp.dispatchEvent(new Event("input", {bubbles: true})); inp.dispatchEvent(new Event("change", {bubbles: true})); }; });
-    box.hidden = false;
+    box.hidden = false; box.__inp = inp; fitSug(box, inp);
+    setTimeout(() => fitSug(box, inp), 350);   // nach dem Aufklappen der Tastatur noch einmal
   };
   let inBox = false;
   box.addEventListener("touchstart", () => { inBox = true; }, {passive: true});
@@ -1041,7 +1053,7 @@ function dbManFromVendor() {
   if (!dbMans || $("f-id").value) return;
   const name = ($("f-vendor").value === "new" ? $("f-vname").value : (D.vendors.find(v => v.id === +$("f-vendor").value) || {}).name || "").trim().toLowerCase();
   const m = name && dbMans.find(x => x.name.toLowerCase() === name);
-  if (m && $("f-dbman").value !== m.name) { $("f-dbman").value = m.name; $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; if ($("f-db").value.trim()) dbSearch(true); }
+  if (m && $("f-dbman").value !== m.name) { $("f-dbman").value = m.name; $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; dbSearch(true, !$("f-db").value.trim()); }
 }
 $("f-vendor").addEventListener("change", dbManFromVendor);
 // --- Suche in der SpoolmanDB ---
@@ -1058,12 +1070,12 @@ async function loadMans() {
 $("f-dbman").onchange = () => { $("f-dbmat").innerHTML = `<option value="">Alle Materialien</option>`; dbSearch(true); };
 $("f-dbmat").onchange = () => dbSearch();
 $("f-db").oninput = () => dbSearch();
-function dbSearch(fillMats) {
+function dbSearch(fillMats, matsOnly) {
   clearTimeout(dbT);
   const q = $("f-db").value.trim(), man = $("f-dbman").value, mat = $("f-dbmat").value;
   if (q.length < 2 && !man) { $("f-dbres").innerHTML = ""; return; }
   dbT = setTimeout(async () => {
-    $("f-dbres").innerHTML = `<div class="muted small dbitem">Suche …</div>`;
+    if (!matsOnly) $("f-dbres").innerHTML = `<div class="muted small dbitem">Suche …</div>`;
     const p = new URLSearchParams({q, manufacturer: man, material: mat});
     const resp = await (await fetch("/api/lager/external?" + p)).json();
     if (resp.error) { $("f-dbres").innerHTML = `<div class="err small dbitem">${esc(resp.error)}</div>`; return; }
@@ -1073,6 +1085,7 @@ function dbSearch(fillMats) {
       $("f-dbmat").innerHTML = `<option value="">Alle Materialien (${resp.materials.length})</option>` +
         resp.materials.map(m => `<option ${m === keep ? "selected" : ""}>${esc(m)}</option>`).join("");
     }
+    if (matsOnly) return;           // nur Materialliste füllen (Hersteller wurde automatisch vorbelegt)
     dbRes = r;
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     const own = D.filaments.filter(f => {
