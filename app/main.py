@@ -1267,9 +1267,15 @@ def _color_line(text, base, vendor=""):
         if not re.search(r"\b(" + "|".join(alts) + r")\b", line, flags=re.I):
             continue
         words = [w for w in re.findall(r"[A-Za-zÄÖÜäöüß]+", line) if w.lower() not in skip]
-        if not 2 <= len(words) <= 4 or any(len(w) < 3 for w in words):
+        # Name endet beim Grundton (OCR-Reste dahinter wie „Smer“ weg), höchstens „Matte“/„Silk“ danach
+        idx = max((i for i, w in enumerate(words) if w.lower() in alts), default=-1)
+        if idx < 0:
             continue
-        if not any(w.lower() in alts for w in words[-2:]):
+        end = idx + 1
+        while end < len(words) and words[end].lower() in ("matte", "silk"):
+            end += 1
+        words = words[max(0, idx - 3):end]
+        if not 2 <= len(words) <= 4 or any(len(w) < 3 for w in words):
             continue
         cand = " ".join(w.capitalize() for w in words)
         if not best or len(cand) > len(best):
@@ -1403,7 +1409,9 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         def enough():
             # fertig, sobald Material und eine richtige Farbe (nicht nur „Grey“) da sind – das Gewicht kommt sonst aus der Sorte
             tj, pv = "\n".join(texts), scanmod.parse_votes(texts)
-            col = (_own_color(tj, pv.get("material", ""), vendor) or (pv.get("color") and pv["color"].lower() not in _BASE)
+            base = (pv.get("color") or "").lower()
+            col = (_own_color(tj, pv.get("material", ""), vendor) or (pv.get("color") and base not in _BASE)
+                   or (base in _BASE and _color_line(tj, _SYN.get(base, base), vendor))
                    or _db_color(tj, vendor or pv.get("brand") or _detect_vendor(tj), pv.get("material", "")))
             return bool(col and pv.get("material"))
         for c in codes:
@@ -1542,8 +1550,10 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             f = fils[fid]
             res["matches"].append({"id": fid, "label": label(f), "color": "#" + (f.get("color_hex") or "999999")[:6], "score": pts, "why": why})
     ci = res.get("code_info") or {}
-    if res["learned"] and res.get("sku") and (res.get("code_info") or {}).get("code") == _code_norm(res["sku"]):
-        boost(res["learned"], 15, "Artikelnummer bekannt")      # SKU ist pro Farbe eindeutig
+    lf = fils.get(res["learned"]) if res["learned"] else None
+    if (res["learned"] and res.get("sku") and (res.get("code_info") or {}).get("code") == _code_norm(res["sku"])
+            and lf and (not pmn or _mat_norm(lf.get("material")) == pmn)):
+        boost(res["learned"], 15, "Artikelnummer bekannt")      # SKU ist pro Farbe eindeutig (Material muss passen)
     elif res["learned"]:
         if agrees(res["learned"]):
             boost(res["learned"], 4, "Charge bekannt")
