@@ -973,6 +973,15 @@ async function scanLive() {
   };
   tick();
 }
+function codeMsg(d) {
+  const ci = d.code_info; if (!ci) return "";
+  const L = (ci.labels || []).filter(Boolean).map(esc).join(", ");
+  const t = {known: `✓ Nummer <b>${esc(ci.code)}</b> ist bekannt – Sorte steht oben.`,
+    similar: `≈ Nummer <b>${esc(ci.code)}</b> ist neu, aber ähnlich wie <b>${esc((ci.near || []).join(", "))}</b> (${L}). Bitte unten bestätigen – dann wird sie gelernt.`,
+    multi: `⚠ Nummer <b>${esc(ci.code)}</b> kommt bei mehreren Sorten vor (${L}) – bitte die richtige wählen.`,
+    unknown: `Nummer <b>${esc(ci.code)}</b> ist noch unbekannt – wird gelernt, sobald du unten eine Sorte wählst.`}[ci.status];
+  return t ? `<div class="wres small codemsg ${ci.status}">${t}</div>` : "";
+}
 function scanShow(d) {
   scanCtx = d;
   const p = d.parsed || {}, chips = [];
@@ -994,6 +1003,7 @@ function scanShow(d) {
     ${codes ? `<div class="small">Code: ${codes}</div>` : `<div class="muted small">Kein Strichcode erkannt.</div>`}
     ${chips.length ? `<div class="scchips">${chips.map(c => `<span>${c}</span>`).join("")}</div>` : `<div class="muted small">Kein Text erkannt – Foto näher und gerade aufnehmen.</div>`}
     ${online}
+    ${codeMsg(d)}
     <div class="label" style="margin-top:10px">Welche Sorte?</div>
     ${opts || `<div class="muted small">Keine passende Sorte im Lager.</div>`}
     ${d.template ? `<label class="scopt"><input type="radio" name="scf" value="tpl" ${opts ? "" : "checked"}> ＋ Neue Sorte wie <b>${esc(d.template.label)}</b> – Farbe <b>${esc(p.color || "?")}</b></label>` : ""}
@@ -1035,6 +1045,8 @@ function scanNext() {
     fDefaults(); setTimeout(syncDbName, 700);
     return;
   }
+  if (v !== "other" && scanCtx.lot && !(scanCtx.code_info && scanCtx.code_info.status === "known" && scanCtx.learned === +v))
+    api("/api/lager/codes", "POST", {code: scanCtx.lot, fid: +v}).catch(() => {});      // Nummer gleich bei dieser Sorte merken
   openAdd(v === "other" ? undefined : +v);
   if (p.weight && v !== "other") { const f = D.filaments.find(x => x.id === +v); if (f && f.weight && Math.abs(f.weight - p.weight) > 20) $("a-weight").value = p.weight; }
   $("a-res").innerHTML = scanCtx.lot ? `Charge <b>${esc(scanCtx.lot)}</b> wird bei den Rollen gespeichert.` : "";

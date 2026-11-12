@@ -1008,3 +1008,5 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .ftile .fsw { width:100%; aspect-ratio:1.6; border-radius:9px; display:grid; place-items:center; font-size:18px; box-shadow:inset 0 0 0 1px #0002; }
 .ftile .fname { font-weight:700; font-size:13px; line-height:1.2; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
 @media (max-width:640px) { .findbar { top:0; border-radius:0 0 12px 12px; margin-left:-2px; margin-right:-2px; } .ftiles { grid-template-columns:repeat(3, 1fr); } }
+.codemsg { padding:6px 10px; border-radius:8px; background:var(--tile); border:1px solid var(--line); }
+.codemsg.known { border-color:#22c55e66; } .codemsg.similar { border-color:var(--acc); } .codemsg.multi { border-color:var(--warn); }

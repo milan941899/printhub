@@ -1051,6 +1051,10 @@ def _learn_code(code, fid, quiet=False):
         m = store.data.setdefault("ean_map", {})
         bad = store.data.setdefault("code_conflict", [])
         if code in bad or m.get(code) == fid:
+            if code in bad:
+                ml = store.data.setdefault("code_multi", {}).setdefault(code, [])
+                if fid not in ml:
+                    ml.append(fid); store._save()
             return
         old = m.get(code)
         if old and old != fid:
@@ -1061,6 +1065,7 @@ def _learn_code(code, fid, quiet=False):
             if exists:
                 m.pop(code, None)
                 bad.append(code)
+                store.data.setdefault("code_multi", {})[code] = [old, fid]
                 store._save()
                 log.info("Lager: Nummer %s gehört zu mehreren Sorten (#%s, #%s) – wird nicht mehr zur Erkennung genutzt", code, old, fid)
                 return
@@ -1068,6 +1073,27 @@ def _learn_code(code, fid, quiet=False):
         store._save()
     if not quiet:
         log.info("Lager: Nummer %s gehört jetzt zu Sorte #%s", code, fid)
+
+
+def _similar_codes(code):
+    """Bekannte Nummern, die sich nur in 1–2 Ziffern unterscheiden (gleiche Länge, gleiche Buchstaben) – z. B. Chargen
+    04360703AJ ↔ 04360705AJ. Liefert [(nummer, sorte)], nächste zuerst, jede Sorte einmal."""
+    code = _code_norm(code)
+    if len(code) < 6:
+        return []
+    out = []
+    for c, fid in (store.data.get("ean_map") or {}).items():
+        if len(c) != len(code) or c == code or re.sub(r"\d", "", c) != re.sub(r"\d", "", code):
+            continue
+        diff = [i for i, (a, b) in enumerate(zip(c, code)) if a != b]
+        if len(diff) <= 2 and all(c[i].isdigit() and code[i].isdigit() for i in diff) and min(diff) >= len(code) // 2 - 1:
+            out.append((len(diff), sum(abs(int(c[i]) - int(code[i])) for i in diff), c, fid))
+    out.sort()
+    seen, res = set(), []
+    for _, _, c, fid in out:
+        if fid not in seen:
+            seen.add(fid); res.append((c, fid))
+    return res[:3]
 
 
 def _codes_for(fid):
@@ -1214,7 +1240,7 @@ def _db_color(text, vendor, material=""):
         if (f.get("manufacturer") or "").strip().lower() != vend or not f.get("color_hex"):
             continue
         core = " ".join(w for w in _tnorm(f.get("name")).split() if w not in _MAT_WORDS)
-        if len(core) < 3 or f" {core} " not in tn:
+        if len(core) < 3 or not (f" {core} " in tn or (core not in _BASE and _fuzzy_in(core, tn))):
             continue
         key = (len(core), _mat_norm(f.get("material")) == mat)
         if not best or key > best[0]:
@@ -1223,6 +1249,59 @@ def _db_color(text, vendor, material=""):
         return None
     f = best[1]
     return {"name": f["name"].strip(), "hex": f["color_hex"][:6].upper(), "material": f.get("material"), "external_id": f.get("id")}
+
+
+def _fuzzy_in(core, tn):
+    """Alle Wörter von core kommen (in Reihenfolge, mit kleinen Lesefehlern) im normalisierten Text vor."""
+    words, toks = core.split(), tn.split()
+    for i in range(len(toks) - len(words) + 1):
+        ok = True
+        for j, w in enumerate(words):
+            t = toks[i + j]
+            if t == w:
+                continue
+            if len(w) >= 4 and abs(len(t) - len(w)) <= 1 and _dl(w, t) <= 1:
+                continue
+            ok = False
+            break
+        if ok:
+            return True
+    return False
+
+
+def _base_ok(word, text):
+    """Grundfarbe („White“) zählt nur, wenn davor kein weiteres Farbwort steht („Mystic Red“ ≠ „Red“)."""
+    for line in (text or "").splitlines():
+        for m in re.finditer(r"([^\s]*)\s*\b(" + re.escape(word) + r")\b", line, flags=re.I):
+            prev = re.sub(r"[^a-zäöü+]", "", m.group(1).lower())
+            if not prev or prev in _MAT_WORDS or len(prev) <= 2:
+                return True
+    return False
+
+
+def _own_color(text, material="", vendor=""):
+    """Eigene Sorte, deren Farbname auf dem Etikett steht. Bei mehreren Treffern: längster Name, gleiches Material,
+    gleicher Hersteller bevorzugt."""
+    tn, mat, vend = _tnorm(text), _mat_norm(material), (vendor or "").strip().lower()
+    best = None
+    for f in _own_filaments():
+        core = " ".join(w for w in _tnorm(f.get("name")).split() if w not in _MAT_WORDS)
+        if len(core) < 3 or (core in _BASE and not _base_ok(core, text)):
+            continue
+        if mat and _mat_norm(f.get("material")) != mat:
+            continue
+        fv = ((f.get("vendor") or {}).get("name") or "").strip()
+        if vend and fv.lower() != vend:
+            continue
+        if not (f" {core} " in tn or _fuzzy_in(core, tn)):
+            continue
+        key = (len(core), f" {core} " in tn)
+        if not best or key > best[0]:
+            best = (key, f, fv)
+    if not best:
+        return None
+    f, fv = best[1], best[2]
+    return {"id": f["id"], "name": f["name"], "hex": (f.get("color_hex") or "999999")[:6].upper(), "vendor": fv}
 
 
 def _scan(img_bytes=None, code=None, vendor="", material=""):
@@ -1248,11 +1327,12 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         texts = []
         for c in codes:
             if c.get("box"):
+                texts += scanmod.band_texts(img, c)
                 texts += scanmod.ocr_texts(scanmod.label_crop(img, c), small=True)
                 break
         p = scanmod.parse_votes(texts)
         alltexts += texts
-        if not all(k in p for k in ("material", "color", "weight")) or not codes:
+        if not texts or not all(k in p for k in ("material", "color", "weight")):
             ft = scanmod.ocr_texts(img, small=not texts)
             alltexts += ft
             full = scanmod.parse_votes(ft)
@@ -1262,10 +1342,22 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
     res["ocr_codes"] = scanmod.find_codes(alltexts)[:3]
     if not res["lot"] and res["ocr_codes"]:
         res["lot"] = res["ocr_codes"][0]
-    for c in [res["ean"]] + others + res["ocr_codes"]:
-        if c and _code_norm(c) in known:
+    cands = [c for c in [res["ean"]] + others + res["ocr_codes"] if c]
+    for c in cands:
+        if _code_norm(c) in known:
             res["learned"] = known[_code_norm(c)]
+            res["code_info"] = {"code": _code_norm(c), "status": "known", "fids": [known[_code_norm(c)]]}
             break
+    if not res["learned"] and res["lot"]:
+        lot = _code_norm(res["lot"])
+        multi = (store.data.get("code_multi") or {}).get(lot)
+        sim = _similar_codes(lot)
+        if multi:
+            res["code_info"] = {"code": lot, "status": "multi", "fids": multi}
+        elif sim:
+            res["code_info"] = {"code": lot, "status": "similar", "fids": [f for _, f in sim], "near": [c for c, _ in sim]}
+        else:
+            res["code_info"] = {"code": lot, "status": "unknown", "fids": []}
     # Hersteller + Farbe: SpoolmanDB zuerst, dann eingebaute Farbliste, sonst nur Grundton („Red“) → Vorschläge
     p = res["parsed"]
     text = "\n".join(alltexts)
@@ -1274,12 +1366,21 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         p.setdefault("brand", vend)
     if material and not p.get("material"):
         p["material"] = material
-    dbc = _db_color(text, vend, p.get("material") or material) if text.strip() else None
+    # 1. eigene Sorte, deren Name auf dem Etikett steht (z. B. „PETG White“ → JAYO PETG White) – auch ohne Hersteller
+    own = _own_color(text, p.get("material") or material, vend) if text.strip() else None
+    if own:
+        p["color"], p["color_hex"], p["color_src"] = own["name"], own["hex"], "own"
+        if not vend and own.get("vendor"):
+            vend = own["vendor"]; p["brand"] = vend
+        res["own_fid"] = own["id"]
+    dbc = None if own else (_db_color(text, vend, p.get("material") or material) if text.strip() else None)
     if dbc and dbc["name"].strip().lower() in _BASE:
         dbc = None          # nur „Red“ o. ä. getroffen – könnte „Mystic Red“ sein → Grundton + Vorschläge
     if dbc:
         p["color"], p["color_hex"], p["color_src"] = dbc["name"], dbc["hex"], "db"
         p["external_id"] = dbc["external_id"]
+    elif own:
+        pass
     elif p.get("color") and p["color"].strip().lower() not in _BASE:
         p["color_src"] = "list"
     else:
@@ -1323,8 +1424,23 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             if m["id"] == res["learned"]:
                 m["score"], m["why"] = 99, "Code gelernt"
         res["matches"].sort(key=lambda x: -x["score"])
+    # Kandidaten aus der Nummer: ähnliche Charge oder Nummer, die bei mehreren Sorten vorkommt
+    ci = res.get("code_info") or {}
+    if ci.get("status") in ("similar", "multi"):
+        fils = {f["id"]: f for f in spoolman.inventory()["filaments"]}
+        why = "ähnliche Charge" if ci["status"] == "similar" else "gleiche Nummer"
+        for fid in reversed(ci["fids"]):
+            m = next((x for x in res["matches"] if x["id"] == fid), None)
+            if m:
+                m["why"] = (m.get("why") + ", " if m.get("why") else "") + why; m["score"] += 5
+            elif fid in fils:
+                f = fils[fid]
+                res["matches"].append({"id": fid, "label": " ".join(x for x in [(f.get("vendor") or {}).get("name", ""), f.get("name") or "",
+                                       f.get("material") or ""] if x), "color": "#" + (f.get("color_hex") or "999999")[:6], "score": 5, "why": why})
+        res["matches"].sort(key=lambda x: -x["score"])
+        ci["labels"] = [next((m["label"] for m in res["matches"] if m["id"] == fid), "") for fid in ci["fids"]]
     # genau diese Sorte schon im Lager? (gelernte Nummer, sonst Hersteller + Material + Name gleich)
-    res["exact_fid"] = res["learned"]
+    res["exact_fid"] = res["learned"] or res.get("own_fid")
     if not res["exact_fid"] and res["parsed"].get("color") and res["parsed"].get("color_src") != "base":
         pn, pmn, br = res["parsed"]["color"].strip().lower(), _mat_norm(res["parsed"].get("material")), brand.lower()
         for f in spoolman.inventory()["filaments"]:

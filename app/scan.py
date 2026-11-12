@@ -121,6 +121,32 @@ def label_crop(img, code):
     return base.crop(box)
 
 
+def band_texts(img, code):
+    """Text in Streifen über und unter dem Strichcode lesen – in Originalgröße (Vergrößern verschlechtert schmale
+    Etikettenschrift). Oben steht meist Material/Farbe, unten Nummer, Gewicht, Temperaturen."""
+    base = ImageOps.exif_transpose(img).convert("L")
+    if code.get("rot"):
+        base = base.rotate(code["rot"], expand=True)
+    x0, y0, x1, y1 = code["box"]
+    w = max(x1 - x0, 80)
+    top = base.crop((max(0, x0 - int(w * .15)), max(0, y0 - int(w * .17)), min(base.width, x1 + int(w * .15)), y0))
+    bot = base.crop((max(0, x0 - int(w * .15)), y1, min(base.width, x1 + int(w * .25)), min(base.height, y1 + int(w * .45))))
+    out = []
+    def go(band, sc, sharp, psm):
+        if band.width < 20 or band.height < 10:
+            return
+        b = band.resize((max(1, int(band.width * sc)), max(1, int(band.height * sc))), Image.LANCZOS) if sc != 1 else band
+        b = ImageOps.autocontrast(b)
+        if sharp:
+            b = b.filter(ImageFilter.SHARPEN)
+        out.append(_tess(b, psm))
+    for sc, sh, psm in ((0.7, False, "6"), (0.7, True, "11"), (1.0, True, "6"), (1.0, False, "7")):
+        go(top, sc, sh, psm)
+    for sc, sh, psm in ((1.0, False, "6"), (1.0, True, "6"), (1.5, False, "6")):
+        go(bot, sc, sh, psm)
+    return out
+
+
 def is_ean(code):
     """EAN-13 / UPC-A / EAN-8 mit gültiger Prüfziffer."""
     if not re.fullmatch(r"\d{8}|\d{12,13}", code or ""):
@@ -147,14 +173,13 @@ def _tess(im, psm, timeout=25):
 def ocr_texts(img, small=False):
     """Mehrere Varianten (normal, schwarz/weiß, Seitenmodi) → Liste von Texten; parse_votes() wählt aus."""
     im = ImageOps.exif_transpose(img).convert("L")
-    if im.width < 1600:                      # kleiner Ausschnitt → vergrößern, Tesseract mag ~30 px hohe Schrift
-        f = 1600 / im.width
+    if im.width < 800:                       # nur sehr kleine Ausschnitte vergrößern (sonst wird schmale Schrift schlechter)
+        f = 1000 / im.width
         im = im.resize((1600, int(im.height * f)), Image.LANCZOS)
     im.thumbnail((2400, 2400))
     im = ImageOps.autocontrast(im)
     sharp = im.filter(ImageFilter.SHARPEN)
-    bw = im.point(lambda v: 255 if v > 140 else 0)
-    variants = [(sharp, "6"), (sharp, "11"), (bw, "6")] if small else [(sharp, "11")]
+    variants = [(sharp, "6"), (im, "6")] if small else [(sharp, "11")]
     return [_tess(i, psm) for i, psm in variants]
 
 
@@ -181,7 +206,7 @@ def parse_votes(texts):
 
 MATERIALS = ["PLA-CF", "PETG-CF", "PA-CF", "PA6-CF", "PA12-CF", "PET-CF", "PETG-HF", "PETG HF", "PLA+", "PLA PLUS", "PLA PRO",
              "SILK PLA", "PLA SILK", "PLA MATTE", "MATTE PLA", "PETG", "PCTG", "PLA", "ABS", "ASA", "TPU", "TPE", "PVA",
-             "PA6", "PA12", "PA", "NYLON", "PC", "HIPS", "PET", "PP"]
+             "PA6", "PA12", "PA", "NYLON", "PC", "HIPS", "PP"]
 # Farbname (englisch/deutsch/italienisch) → (Anzeige, Hex)
 COLORS = {
     "black": ("Schwarz", "000000"), "schwarz": ("Schwarz", "000000"), "nero": ("Schwarz", "000000"),
@@ -203,7 +228,8 @@ COLORS = {
 _MOD = ["light", "dark", "sky", "navy", "olive", "grass", "army", "mint", "matte", "silk", "hell", "dunkel"]
 
 
-_OCR_FIX = [(r"(?<![A-Z0-9])PET[C6](?![A-Z0-9])", "PETG"), (r"(?<![A-Z0-9])P[1I|]A(?![A-Z0-9])", "PLA"),
+_OCR_FIX = [(r"(\d)\s?k[9gq](?![a-z])", r"\1kg"), (r"(?<![A-Za-z])Whi[l1I]e(?![a-z])", "White"), (r"(?<![A-Za-z])Whte(?![a-z])", "White"),
+            (r"(?<![A-Z0-9])PET[C6](?![A-Z0-9])", "PETG"), (r"(?<![A-Z0-9])P[1I|]A(?![A-Z0-9])", "PLA"),
             (r"(?<![A-Z0-9])A8S(?![A-Z0-9])", "ABS"), (r"(?<![A-Z0-9])TP[UV](?![A-Z0-9])", "TPU")]
 
 
