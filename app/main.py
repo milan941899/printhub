@@ -803,21 +803,15 @@ async def api_lager_colorsuggest(request):
 
 
 def _color_lookup(name, vendor="", material=""):
-    """Farbname → {hex, source, exact}: 1. Filament-Datenbank (gleicher Hersteller+Material), 2. andere Hersteller,
-    3. eingebaute Farbliste. Nichts gefunden → hex None (dann Pipette anbieten)."""
+    """Farbname → {hex, source, exact}. Reihenfolge: 1. SpoolmanDB (gleicher Hersteller + Material + Name),
+    2. deine Sorte mit genau diesem Namen (selbst gewählte Farben), 3. SpoolmanDB gleicher Hersteller anderes Material,
+    4. eingebaute Farbliste, 5. andere Hersteller. Nichts gefunden → hex None (dann Pipette anbieten)."""
     n = (name or "").strip()
     if not n:
         return {"hex": None}
     en = colormod.to_english(n)
     words = [w for w in re.split(r"\s+", en.lower()) if w]
     vend, mat = (vendor or "").strip().lower(), (material or "").strip().upper()
-    # 0. eigene, schon angelegte Sorte mit genau diesem Namen (so „lernt“ PrintHub selbst gewählte Farben)
-    own = [f for f in _own_filaments() if (f.get("name") or "").strip().lower() == n.lower() and f.get("color_hex")]
-    own.sort(key=lambda f: ((f.get("vendor") or {}).get("name") or "").lower() != vend)
-    if own:
-        f = own[0]
-        return {"hex": f["color_hex"][:6].upper(), "exact": True,
-                "source": f"eigene Sorte: {((f.get('vendor') or {}).get('name') or '').strip()} {f.get('material') or ''} {f.get('name')}".replace("  ", " ")}
     try:
         ext = spoolman.external_filaments()
     except Exception:
@@ -825,23 +819,27 @@ def _color_lookup(name, vendor="", material=""):
     def hit(f):
         nm = (f.get("name") or "").lower()
         return f.get("color_hex") and all(re.search(r"(?<![a-z])" + re.escape(w) + r"(?![a-z])", nm) for w in words)
-    tiers = [
-        [f for f in ext if hit(f) and (f.get("manufacturer") or "").lower() == vend and (not mat or (f.get("material") or "").upper() == mat)],
-        [f for f in ext if hit(f) and (f.get("manufacturer") or "").lower() == vend],
-    ]
-    for t in tiers:
-        if t:
-            f = min(t, key=lambda f: len(f.get("name") or ""))
-            return {"hex": f["color_hex"][:6].upper(), "exact": True,
-                    "source": f"Filament-Datenbank: {f.get('manufacturer')} {f.get('material')} {f.get('name')}"}
+    def db(f, exact=True, prefix="SpoolmanDB"):
+        return {"hex": f["color_hex"][:6].upper(), "exact": exact, "source": f"{prefix}: {f.get('manufacturer')} {f.get('material')} {f.get('name')}"}
+    t1 = [f for f in ext if hit(f) and (f.get("manufacturer") or "").lower() == vend and (not mat or (f.get("material") or "").upper() == mat)]
+    if t1:
+        return db(min(t1, key=lambda f: len(f.get("name") or "")))
+    own = [f for f in _own_filaments() if (f.get("name") or "").strip().lower() == n.lower() and f.get("color_hex")]
+    own.sort(key=lambda f: ((f.get("vendor") or {}).get("name") or "").lower() != vend)
+    if own:
+        f = own[0]
+        return {"hex": f["color_hex"][:6].upper(), "exact": True,
+                "source": f"eigene Sorte: {((f.get('vendor') or {}).get('name') or '').strip()} {f.get('material') or ''} {f.get('name')}".replace("  ", " ")}
+    t2 = [f for f in ext if hit(f) and (f.get("manufacturer") or "").lower() == vend]
+    if t2:
+        return db(min(t2, key=lambda f: len(f.get("name") or "")))
     hx, k = colormod.from_list(en)
     if hx:
         return {"hex": hx, "exact": False, "source": f"Farbliste („{k}“) – ungefähr"}
     others = [f for f in ext if hit(f)]
     if others:
-        f = min(others, key=lambda f: len(f.get("name") or ""))
-        return {"hex": f["color_hex"][:6].upper(), "exact": False,
-                "source": f"Filament-Datenbank, anderer Hersteller: {f.get('manufacturer')} {f.get('name')} – ungefähr"}
+        return db(min(others, key=lambda f: len(f.get("name") or "")), False, "SpoolmanDB, anderer Hersteller") | {
+            "source": db(min(others, key=lambda f: len(f.get("name") or "")))["source"].replace("SpoolmanDB:", "SpoolmanDB, anderer Hersteller:") + " – ungefähr"}
     sug = _color_suggest(n, vendor, material, limit=1, others=0)
     if sug:
         g = sug[0]
@@ -874,28 +872,86 @@ def _template(vendor_id=None, material="", fid=None):
             "density": f.get("density"), "diameter": f.get("diameter")}
 
 
+def _defaults(vendor_id=None, vendor_name="", material="", color=""):
+    """Werte für eine neue Sorte mit Herkunft. Reihenfolge: deine Sorte (Hersteller + Material) → SpoolmanDB
+    (gleicher Hersteller + Material, gleiche Farbe bevorzugt). Farbton: SpoolmanDB → deine Sorte gleichen Namens."""
+    out, src = {}, {}
+    vname = (vendor_name or "").strip()
+    if vendor_id and not vname:
+        vname = next((v.get("name") for v in spoolman._get("/vendor") if v["id"] == int(vendor_id)), "") or ""
+    tpl = _template(vendor_id, material) if vendor_id and material else None
+    if tpl:
+        for k in ("extruder_temp", "bed_temp", "spool_weight", "density", "diameter", "weight", "price"):
+            if tpl.get(k) not in (None, ""):
+                out[k], src[k] = tpl[k], ("own", tpl["label"])
+    db, dbc = None, None
+    try:
+        ext = [f for f in spoolman.external_filaments() if (f.get("manufacturer") or "").strip().lower() == vname.lower()] if vname else []
+    except Exception:
+        ext = []
+    if ext and material:
+        mat = _mat_norm(material)
+        same = [f for f in ext if _mat_norm(f.get("material")) == mat]
+        cl = (color or "").strip().lower()
+        dbc = next((f for f in same if (f.get("name") or "").strip().lower() == cl), None) if cl else None
+        db = dbc or (same[0] if same else None)
+    if db:
+        lab = f"{db.get('manufacturer')} {db.get('material')}" + (f" {db.get('name')}" if dbc else "")
+        for k, dk in (("extruder_temp", "extruder_temp"), ("bed_temp", "bed_temp"), ("spool_weight", "spool_weight"),
+                      ("density", "density"), ("diameter", "diameter"), ("weight", "weight")):
+            if k not in out and db.get(dk) not in (None, ""):
+                out[k], src[k] = db[dk], ("db", lab)
+    if color:
+        if dbc and dbc.get("color_hex"):
+            out["color"], src["color"] = dbc["color_hex"][:6].upper(), ("db", f"{dbc.get('manufacturer')} {dbc.get('material')} {dbc.get('name')}")
+            out["external_id"] = dbc.get("id")
+        else:
+            r = _color_lookup(color, vname, material)
+            if r.get("hex"):
+                out["color"], src["color"] = r["hex"], ("own" if (r.get("source") or "").startswith("eigene") else
+                                                        "db" if r.get("exact") else "approx", r.get("source"))
+    return {"values": out, "src": {k: {"kind": a, "label": b} for k, (a, b) in src.items()}}
+
+
+async def api_lager_defaults(request):
+    q = request.query_params
+    return JSONResponse(await run_in_threadpool(_defaults, q.get("vendor_id") or None, q.get("vendor", ""),
+                                                q.get("material", ""), q.get("color", "")))
+
+
 async def api_lager_template(request):
     q = request.query_params
     return JSONResponse({"template": await run_in_threadpool(_template, q.get("vendor_id"), q.get("material", ""), q.get("id"))})
 
 
 def _multi(b):
+    """Mehrere Farben auf einmal. Zeile: {name, hex, count, lots:[{lot, n}], fid (vorhandene Sorte → nur Rollen)}."""
     vendor_id = b.get("vendor_id")
-    if not vendor_id and (b.get("vendor_name") or "").strip():
+    rows = [r for r in (b.get("colors") or []) if (r.get("name") or "").strip() or r.get("fid")]
+    if not vendor_id and (b.get("vendor_name") or "").strip() and any(not r.get("fid") for r in rows):
         vendor_id = spoolman.create_vendor(b["vendor_name"].strip(), _num(b.get("spool_weight")))["id"]
-    made, rolls = [], 0
-    for row in b.get("colors") or []:
-        if not (row.get("name") or "").strip():
-            continue
-        data = _fil_data({**b, "name": row["name"], "color": row.get("hex") or "", "external_id": row.get("external_id")}, vendor_id)
-        f = spoolman.create_filament(data)
-        n = int(row.get("count") or 0)
-        if n > 0:
-            spoolman.create_spools(f["id"], n, b.get("location") or settings["storage_location"])
-            rolls += n
-        made.append(f["id"])
-    log.info("Lager: %s Sorten mit %s Rollen auf einmal angelegt", len(made), rolls)
-    return {"ok": True, "ids": made, "rolls": rolls}
+    made, added, rolls = [], [], 0
+    loc = b.get("location") or settings["storage_location"]
+    for row in rows:
+        if row.get("fid"):
+            fid = int(row["fid"])
+            added.append(fid)
+        else:
+            data = _fil_data({**b, "name": row["name"], "color": row.get("hex") or "", "external_id": row.get("external_id")}, vendor_id)
+            fid = spoolman.create_filament(data)["id"]
+            made.append(fid)
+        lots = [(str(x.get("lot") or "").strip(), int(x.get("n") or 0)) for x in (row.get("lots") or [])]
+        lots = [(l, n) for l, n in lots if l and n > 0]
+        total = max(int(row.get("count") or 0), sum(n for _, n in lots))
+        for lot, n in lots:
+            spoolman.create_spools(fid, n, loc, None, None, lot)
+            _learn_code(lot, fid)
+        rest = total - sum(n for _, n in lots)
+        if rest > 0:
+            spoolman.create_spools(fid, rest, loc)
+        rolls += total
+    log.info("Lager: %s Sorten neu, %s vorhandene ergänzt, %s Rollen", len(made), len(added), rolls)
+    return {"ok": True, "ids": made + added, "new": len(made), "existing": len(added), "rolls": rolls}
 
 
 async def api_lager_multi(request):
@@ -980,14 +1036,78 @@ async def api_lager_names(request):
 from . import scan as scanmod
 
 
-def _learn_code(code, fid):
-    code = str(code).strip()
-    if not code:
+def _code_norm(code):
+    return re.sub(r"\s+", "", str(code or "")).upper()
+
+
+def _learn_code(code, fid, quiet=False):
+    """Nummer (EAN, Strichcode, Charge vom Etikett) → Sorte merken. Taucht dieselbe Nummer bei einer anderen,
+    noch vorhandenen Sorte auf, ist sie keine Sortennummer → nicht mehr zur Erkennung verwenden."""
+    code = _code_norm(code)
+    if len(code) < 4 or not fid:
         return
+    fid = int(fid)
     with store.lock:
-        store.data.setdefault("ean_map", {})[code] = int(fid)
+        m = store.data.setdefault("ean_map", {})
+        bad = store.data.setdefault("code_conflict", [])
+        if code in bad or m.get(code) == fid:
+            return
+        old = m.get(code)
+        if old and old != fid:
+            try:
+                exists = any(f["id"] == old for f in spoolman._get("/filament"))
+            except Exception:
+                exists = True
+            if exists:
+                m.pop(code, None)
+                bad.append(code)
+                store._save()
+                log.info("Lager: Nummer %s gehört zu mehreren Sorten (#%s, #%s) – wird nicht mehr zur Erkennung genutzt", code, old, fid)
+                return
+        m[code] = fid
         store._save()
-    log.info("Lager: Code %s gehört jetzt zu Sorte #%s", code, fid)
+    if not quiet:
+        log.info("Lager: Nummer %s gehört jetzt zu Sorte #%s", code, fid)
+
+
+def _codes_for(fid):
+    return sorted(c for c, f in (store.data.get("ean_map") or {}).items() if f == int(fid))
+
+
+def _backfill_codes():
+    """Einmalig: Chargen vorhandener Rollen ihren Sorten zuordnen."""
+    if store.data.get("codes_backfilled"):
+        return
+    try:
+        spools = spoolman._get("/spool", allow_archived="true")
+    except Exception as e:
+        log.info("Lager: Nummern rückwirkend lernen – Spoolman nicht erreichbar (%s), später nochmal", e)
+        return
+    n = 0
+    for sp in spools:
+        lot, fid = sp.get("lot_nr"), (sp.get("filament") or {}).get("id")
+        if lot and fid:
+            _learn_code(lot, fid, quiet=True)
+            n += 1
+    with store.lock:
+        store.data["codes_backfilled"] = 1
+        store._save()
+    log.info("Lager: %s Chargen vorhandener Rollen gelernt (%s Nummern bekannt)", n, len(store.data.get("ean_map") or {}))
+
+
+async def api_lager_codes(request):
+    """GET ?fid= → Nummern einer Sorte; POST {code, remove:true} → Zuordnung löschen."""
+    if request.method == "GET":
+        return JSONResponse({"codes": _codes_for(request.query_params.get("fid") or 0)})
+    b = await request.json()
+    code = _code_norm(b.get("code"))
+    with store.lock:
+        (store.data.get("ean_map") or {}).pop(code, None)
+        if b.get("block") and code not in store.data.setdefault("code_conflict", []):
+            store.data["code_conflict"].append(code)
+        store._save()
+    log.info("Lager: Nummer %s von Hand entfernt", code)
+    return JSONResponse({"ok": True})
 
 
 def _hexdist(a, b):
@@ -1025,6 +1145,8 @@ def _scan_match(parsed, brand=""):
                 sc += 1
             else:
                 sc -= 2
+        if parsed.get("color") and (f.get("name") or "").strip().lower() == parsed["color"].strip().lower():
+            sc += 6; why.append("Name")
         vend = ((f.get("vendor") or {}).get("name") or "")
         if brand and vend and (brand.lower() in vend.lower() or vend.lower() in brand.lower()):
             sc += 3; why.append("Hersteller")
@@ -1037,9 +1159,60 @@ def _scan_match(parsed, brand=""):
     return out[:6]
 
 
-def _scan(img_bytes=None, code=None):
+_MAT_WORDS = {"pla", "pla+", "petg", "abs", "asa", "tpu", "pa", "pc", "pva", "hips", "pctg", "silk", "matte", "plus", "pro",
+              "hf", "cf", "high", "speed", "basic", "1.75mm", "175", "1kg"}
+_BASE = ["black", "white", "grey", "gray", "silver", "red", "blue", "green", "yellow", "orange", "purple", "violet",
+         "pink", "brown", "beige", "gold", "bronze", "transparent", "clear", "natural", "cyan"]
+
+
+def _tnorm(t):
+    return " " + re.sub(r"[^a-z0-9äöüß+]+", " ", (t or "").lower()) + " "
+
+
+def _detect_vendor(text):
+    """Herstellername im Etikett-Text (aus der SpoolmanDB-Herstellerliste), längster Treffer."""
+    tn = _tnorm(text)
+    try:
+        mans = {(f.get("manufacturer") or "").strip() for f in spoolman.external_filaments()}
+    except Exception:
+        mans = set()
+    try:
+        mans |= {v.get("name") for v in spoolman._get("/vendor") if v.get("name")}
+    except Exception:
+        pass
+    hits = [m for m in mans if m and len(m) >= 3 and _tnorm(m) in tn]
+    return max(hits, key=len) if hits else ""
+
+
+def _db_color(text, vendor, material=""):
+    """Farbname aus dem Etikett-Text gegen die SpoolmanDB-Namen dieses Herstellers – längster Treffer gewinnt."""
+    vend, mat, tn = (vendor or "").strip().lower(), _mat_norm(material), _tnorm(text)
+    if not vend:
+        return None
+    try:
+        ext = spoolman.external_filaments()
+    except Exception:
+        return None
+    best = None
+    for f in ext:
+        if (f.get("manufacturer") or "").strip().lower() != vend or not f.get("color_hex"):
+            continue
+        core = " ".join(w for w in _tnorm(f.get("name")).split() if w not in _MAT_WORDS)
+        if len(core) < 3 or f" {core} " not in tn:
+            continue
+        key = (len(core), _mat_norm(f.get("material")) == mat)
+        if not best or key > best[0]:
+            best = (key, f)
+    if not best:
+        return None
+    f = best[1]
+    return {"name": f["name"].strip(), "hex": f["color_hex"][:6].upper(), "material": f.get("material"), "external_id": f.get("id")}
+
+
+def _scan(img_bytes=None, code=None, vendor="", material=""):
     from PIL import Image
     res = {"codes": [], "parsed": {}, "matches": [], "learned": None, "online": None}
+    alltexts = []
     img = None
     if img_bytes:
         img = Image.open(io.BytesIO(img_bytes))
@@ -1054,10 +1227,6 @@ def _scan(img_bytes=None, code=None):
     res["ean"] = eans[0] if eans else None
     res["lot"] = others[0] if others and not eans else (others[0] if others else None)
     known = store.data.get("ean_map") or {}
-    for c in [res["ean"]] + others:
-        if c and c in known:
-            res["learned"] = known[c]
-            break
     # Text auf dem Etikett: erst der Bereich um den Strichcode, dann das ganze Foto
     if img is not None:
         texts = []
@@ -1066,11 +1235,45 @@ def _scan(img_bytes=None, code=None):
                 texts += scanmod.ocr_texts(scanmod.label_crop(img, c), small=True)
                 break
         p = scanmod.parse_votes(texts)
-        if not all(k in p for k in ("material", "color", "weight")):
-            full = scanmod.parse_votes(scanmod.ocr_texts(img, small=not texts))
+        alltexts += texts
+        if not all(k in p for k in ("material", "color", "weight")) or not codes:
+            ft = scanmod.ocr_texts(img, small=not texts)
+            alltexts += ft
+            full = scanmod.parse_votes(ft)
             p = {**full, **p}
         res["parsed"] = p
-    brand = ""
+    # Nummern vom Etikett (Charge/Artikel, z. B. „04260702AJ“) – auch ohne Strichcode
+    res["ocr_codes"] = scanmod.find_codes(alltexts)[:3]
+    if not res["lot"] and res["ocr_codes"]:
+        res["lot"] = res["ocr_codes"][0]
+    for c in [res["ean"]] + others + res["ocr_codes"]:
+        if c and _code_norm(c) in known:
+            res["learned"] = known[_code_norm(c)]
+            break
+    # Hersteller + Farbe: SpoolmanDB zuerst, dann eingebaute Farbliste, sonst nur Grundton („Red“) → Vorschläge
+    p = res["parsed"]
+    text = "\n".join(alltexts)
+    vend = (vendor or "").strip() or p.get("brand") or _detect_vendor(text)
+    if vend:
+        p.setdefault("brand", vend)
+    if material and not p.get("material"):
+        p["material"] = material
+    dbc = _db_color(text, vend, p.get("material") or material) if text.strip() else None
+    if dbc and dbc["name"].strip().lower() in _BASE:
+        dbc = None          # nur „Red“ o. ä. getroffen – könnte „Mystic Red“ sein → Grundton + Vorschläge
+    if dbc:
+        p["color"], p["color_hex"], p["color_src"] = dbc["name"], dbc["hex"], "db"
+        p["external_id"] = dbc["external_id"]
+    elif p.get("color") and p["color"].strip().lower() not in _BASE:
+        p["color_src"] = "list"
+    else:
+        tn = _tnorm(text)
+        base = (p.get("color") or "").strip().lower() or next((w for w in _BASE if f" {w} " in tn), None)
+        if base not in _BASE:
+            base = next((w for w in _BASE if f" {w} " in tn), None)
+        if base:
+            p["color"], p["color_src"] = base.title(), "base"
+    brand = res["parsed"].get("brand") or ""
     if res["ean"] and not res["learned"]:
         on = scanmod.online_lookup(requests, res["ean"])
         res["online"] = on
@@ -1104,6 +1307,15 @@ def _scan(img_bytes=None, code=None):
             if m["id"] == res["learned"]:
                 m["score"], m["why"] = 99, "Code gelernt"
         res["matches"].sort(key=lambda x: -x["score"])
+    # genau diese Sorte schon im Lager? (gelernte Nummer, sonst Hersteller + Material + Name gleich)
+    res["exact_fid"] = res["learned"]
+    if not res["exact_fid"] and res["parsed"].get("color") and res["parsed"].get("color_src") != "base":
+        pn, pmn, br = res["parsed"]["color"].strip().lower(), _mat_norm(res["parsed"].get("material")), brand.lower()
+        for f in spoolman.inventory()["filaments"]:
+            if ((f.get("name") or "").strip().lower() == pn and (not pmn or _mat_norm(f.get("material")) == pmn)
+                    and (not br or ((f.get("vendor") or {}).get("name") or "").lower() == br)):
+                res["exact_fid"] = f["id"]
+                break
     log.info("Scan: Codes %s, Text %s, Treffer %s", [c["data"] for c in res["codes"]], res["parsed"],
              [(m["id"], m["score"]) for m in res["matches"][:3]])
     return res
@@ -1116,12 +1328,13 @@ async def api_lager_scan(request):
             body = await request.body()
             if len(body) > 15_000_000:
                 return JSONResponse({"error": "Foto zu groß"}, status_code=400)
-            res = await run_in_threadpool(_scan, body, request.query_params.get("code"))
+            q = request.query_params
+            res = await run_in_threadpool(_scan, body, q.get("code"), q.get("vendor", ""), q.get("material", ""))
         else:
             b = await request.json()
             if not (b.get("code") or "").strip():
                 return JSONResponse({"error": "Kein Code"}, status_code=400)
-            res = await run_in_threadpool(_scan, None, b["code"])
+            res = await run_in_threadpool(_scan, None, b["code"], b.get("vendor", ""), b.get("material", ""))
     except Exception as e:
         log.warning("Scan fehlgeschlagen: %s", e)
         return JSONResponse({"error": f"Foto konnte nicht gelesen werden: {e}"}, status_code=400)
@@ -1361,8 +1574,9 @@ async def api_lager_spools(request):
         ids = await run_in_threadpool(spoolman.create_spools, b["filament_id"], count,
                                       b.get("location") or settings["storage_location"],
                                       initial, _num(b.get("price")), b.get("lot") or None)
-        if b.get("ean"):
-            _learn_code(b["ean"], int(b["filament_id"]))
+        for c in (b.get("ean"), b.get("lot")):
+            if c:
+                _learn_code(c, int(b["filament_id"]))
         if empty and not b.get("empty_for_filament"):
             for i in ids:
                 await run_in_threadpool(spoolman.update_spool, i, {"spool_weight": empty})
@@ -1405,8 +1619,9 @@ async def api_lager_filament(request):
         if b.get("count"):
             await run_in_threadpool(spoolman.create_spools, f["id"], int(b["count"]), settings["storage_location"], None, None,
                                     b.get("lot") or None)
-        if b.get("ean"):
-            _learn_code(b["ean"], f["id"])
+        for c in (b.get("ean"), b.get("lot")):
+            if c:
+                _learn_code(c, f["id"])
     except (ValueError, KeyError, RuntimeError, TypeError) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     return JSONResponse({"ok": True, "id": f["id"]})
@@ -1462,6 +1677,9 @@ async def api_lager_spool_edit(request):
             await run_in_threadpool(spoolman.update_spool, sid, data)
         if b.get("remaining") not in (None, ""):
             await run_in_threadpool(spoolman.update_spool, sid, {"remaining_weight": max(0.0, _num(b["remaining"]) or 0.0)})
+        if (b.get("lot") or "").strip():
+            raw = await run_in_threadpool(spoolman.spool_raw, sid)
+            _learn_code(b["lot"], (raw.get("filament") or {}).get("id"))
         if b.get("for_filament") and _num(b.get("empty")):
             raw = await run_in_threadpool(spoolman.spool_raw, sid)
             await run_in_threadpool(spoolman.update_filament, raw["filament"]["id"], {"spool_weight": _num(b["empty"])})
@@ -3322,6 +3540,7 @@ async def lifespan(app):
             log.error("Drucker %s konnte nicht starten: %s", p.id, e)
             p.last_error = str(e)
     import threading
+    threading.Thread(target=lambda: (time.sleep(20), _backfill_codes()), daemon=True).start()
     threading.Thread(target=_sampler, daemon=True).start()
     threading.Thread(target=autobackup.loop, daemon=True).start()
     threading.Thread(target=telegram.loop, daemon=True).start()
@@ -3362,6 +3581,8 @@ app = Starlette(
         Route("/api/lager/scan", api_lager_scan, methods=["POST"]),
         Route("/api/lager/colorhex", api_lager_colorhex),
         Route("/api/lager/colorsuggest", api_lager_colorsuggest),
+        Route("/api/lager/defaults", api_lager_defaults),
+        Route("/api/lager/codes", api_lager_codes, methods=["GET", "POST"]),
         Route("/api/lager/template", api_lager_template),
         Route("/api/lager/multi", api_lager_multi, methods=["POST"]),
         Route("/api/lager/bulk", api_lager_bulk, methods=["POST"]),

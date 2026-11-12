@@ -125,6 +125,14 @@
       <div class="field"><span class="lab">Durchmesser (mm)</span><input id="mu-diam" type="number" step="0.01" value="1.75"></div>
     </div>
     <div class="label">Farben</div>
+    <div class="muscan">
+      <button type="button" class="primary" onclick="muScanPick()">📷 Etikett scannen</button>
+      <button type="button" onclick="$('mu-gal').click()">🖼 Fotos aus Galerie</button>
+      <div class="muted small">Ein Etikett nach dem anderen fotografieren – gleiche Farbe zählt hoch, die Charge wird pro Rolle gemerkt.</div>
+      <div id="mu-scanst" class="small"></div>
+    </div>
+    <input type="file" id="mu-cam" accept="image/*" capture="environment" style="display:none">
+    <input type="file" id="mu-gal" accept="image/*" multiple style="display:none">
     <div id="mu-rows"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" onclick="muRow()">＋ Farbe</button>
       <button type="button" onclick="muFromDb()">📚 Farben aus der Datenbank wählen</button></div>
@@ -241,6 +249,8 @@
       <div class="field"><span class="lab">Düse (°C)</span><input id="f-et" type="number" min="150" max="350"></div>
       <div class="field"><span class="lab">Bett (°C)</span><input id="f-bt" type="number" min="0" max="130"></div>
       <div class="field" id="f-countbox"><span class="lab">Gleich Rollen anlegen</span><input id="f-count" type="number" min="0" max="50" value="0"></div>
+      <div class="field" id="f-lotbox"><span class="lab">Charge (optional)</span><input id="f-lot" placeholder="z. B. 04260702AJ" autocomplete="off"></div>
+      <div class="field" id="f-codes" style="grid-column:1/-1;display:none"></div>
     </div>
     <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Speichern</button></div>
   </form>
@@ -494,7 +504,8 @@ function openMulti() {
   $("mu-newv").style.display = $("mu-vendor").value === "new" ? "" : "none";
   ["mu-mat", "mu-sw", "mu-price", "mu-et", "mu-bt", "mu-vname"].forEach(id => $(id).value = "");
   $("mu-weight").value = 1000; $("mu-diam").value = 1.75; $("mu-rows").innerHTML = ""; $("mu-db").innerHTML = "";
-  $("mu-tplhint").style.display = "none";
+  $("mu-tplhint").style.display = "none"; $("mu-scanst").innerHTML = ""; $("mu-scanst").dataset.last = "";
+  srcReset(MU_MAP, ["mu-weight", "mu-diam"]);
   muRow(); muRow(); muRow();
   $("m-multi").classList.add("open");
 }
@@ -504,40 +515,125 @@ function muRow(name = "", hex = "", ext = "") {
   d.innerHTML = `<input class="mu-n" placeholder="Farbname, z. B. Sky Blue" value="${esc(name)}">
     <input class="mu-c" type="color" value="#${hex || "999999"}" title="Farbe">
     <input class="mu-k" type="number" min="0" value="1" title="Anzahl Rollen" inputmode="numeric">
-    <button type="button" class="small-btn mu-p" title="Farbe aus Foto" style="${hex ? "display:none" : ""}">📷</button>
+    <button type="button" class="small-btn mu-s" title="Etikett dieser Farbe fotografieren">📷</button>
     <button type="button" class="small-btn" title="Zeile entfernen" onclick="this.parentNode.remove()">✕</button>
-    <div class="mu-h muted small">${ext ? "✓ aus der Datenbank" : ""}</div>`;
-  d.dataset.ext = ext; d.dataset.touched = hex ? "1" : "";
-  d.querySelector(".mu-c").oninput = () => { d.dataset.touched = "1"; d.querySelector(".mu-h").textContent = ""; };
-  d.querySelector(".mu-p").onclick = () => pipette(h => { d.querySelector(".mu-c").value = "#" + h; d.dataset.touched = "1"; d.querySelector(".mu-h").textContent = "🎯 aus Foto"; });
+    <div class="mu-h muted small">${ext ? "✓ aus der SpoolmanDB" : ""}</div>
+    <div class="mu-l"></div>`;
+  d.dataset.ext = ext; d.dataset.touched = hex ? "1" : ""; d.dataset.lots = "{}";
+  const h = d.querySelector(".mu-h");
+  const pipLink = () => { const a = document.createElement("a"); a.href = "#"; a.textContent = " 🎯 Farbe aus Foto"; a.onclick = e => { e.preventDefault();
+    pipette(x => { d.querySelector(".mu-c").value = "#" + x; d.dataset.touched = "1"; h.textContent = "🎯 aus Foto"; }); }; h.appendChild(a); };
+  d.querySelector(".mu-c").oninput = () => { d.dataset.touched = "1"; h.textContent = ""; };
+  d.querySelector(".mu-s").onclick = () => muScanPick(d);
   attachSuggest(d.querySelector(".mu-n"), () => ({vendor: muVendorName(), material: $("mu-mat").value}), i => {
     clearTimeout(colT.get(d)); d.querySelector(".mu-c").value = "#" + i.hex.toLowerCase(); d.dataset.touched = "";
-    d.querySelector(".mu-h").textContent = i.other ? `≈ ${i.source.replace("≈ ", "")} – bitte prüfen` : "✓ " + i.source; d.querySelector(".mu-p").style.display = i.other ? "" : "none";
+    muUnlink(d); h.textContent = i.other ? `≈ ${i.source.replace("≈ ", "")} – bitte prüfen` : "✓ " + i.source; if (i.other) pipLink();
   });
   d.querySelector(".mu-n").oninput = e => {
+    if (e.isTrusted) muUnlink(d);
     if (d.dataset.touched) return;
     colorLookup(e.target.value, muVendorName(), $("mu-mat").value, r => {
-      const h = d.querySelector(".mu-h"), pb = d.querySelector(".mu-p");
-      if (r.hex) { d.querySelector(".mu-c").value = "#" + r.hex.toLowerCase(); h.textContent = (r.exact ? "✓ " : "≈ ") + r.source; pb.style.display = r.exact ? "none" : "";
+      if (r.hex) { d.querySelector(".mu-c").value = "#" + r.hex.toLowerCase(); h.textContent = (r.exact ? "✓ " : "≈ ") + r.source;
         if (r.suggest) { const b = document.createElement("button"); b.type = "button"; b.className = "small-btn"; b.textContent = "übernehmen"; b.style.marginLeft = "6px";
-          b.onclick = () => { d.querySelector(".mu-n").value = r.suggest; h.textContent = "✓ " + r.suggest; }; h.appendChild(b); } }
-      else { h.textContent = e.target.value.trim() ? "nicht gefunden – Farbe wählen oder 📷" : ""; pb.style.display = ""; }
+          b.onclick = () => { d.querySelector(".mu-n").value = r.suggest; h.textContent = "✓ " + r.suggest; }; h.appendChild(b); }
+        if (!r.exact) pipLink(); }
+      else { h.textContent = e.target.value.trim() ? "nicht gefunden – Farbe wählen oder" : ""; if (e.target.value.trim()) pipLink(); }
     }, d);
   };
   $("mu-rows").appendChild(d);
+  muLots(d);
   return d;
+}
+// Zeile gehört zu einer vorhandenen Sorte → nur Rollen hinzufügen; Name ändern löst die Verbindung
+function muLink(d, f) {
+  d.dataset.fid = f.id; d.dataset.touched = "1";
+  d.querySelector(".mu-n").value = f.name; if (f.color) d.querySelector(".mu-c").value = f.color.slice(0, 7);
+  d.querySelector(".mu-h").innerHTML = `✓ <b>schon im Lager</b> (${esc(f.vendor)} ${esc(f.material)} ${esc(f.name)}) – es werden nur Rollen hinzugefügt`;
+  d.classList.add("mu-exist");
+}
+function muUnlink(d) { if (!d.dataset.fid) return; delete d.dataset.fid; d.dataset.touched = ""; d.classList.remove("mu-exist"); d.querySelector(".mu-h").textContent = ""; }
+// Chargen einer Zeile: {"04260702AJ": 3, …}
+function muAddLot(d, lot, n = 1) {
+  lot = (lot || "").trim().toUpperCase(); if (!lot) return;
+  const l = JSON.parse(d.dataset.lots || "{}"); l[lot] = (l[lot] || 0) + n; d.dataset.lots = JSON.stringify(l); muLots(d);
+}
+function muLots(d) {
+  const l = JSON.parse(d.dataset.lots || "{}"), k = d.querySelector(".mu-k"), sum = Object.values(l).reduce((a, b) => a + b, 0);
+  if ((+k.value || 0) < sum) k.value = sum;
+  const box = d.querySelector(".mu-l");
+  box.innerHTML = Object.entries(l).map(([lot, n]) => `<span class="chip">${esc(lot)} ×${n} <button type="button" data-l="${esc(lot)}" title="Charge entfernen">✕</button></span>`).join("") +
+    `<input class="mu-li" placeholder="＋ Charge" autocomplete="off">`;
+  box.querySelectorAll("button[data-l]").forEach(b => b.onclick = () => { const x = JSON.parse(d.dataset.lots); delete x[b.dataset.l]; d.dataset.lots = JSON.stringify(x); muLots(d); });
+  const li = box.querySelector(".mu-li");
+  const add = () => { if (li.value.trim()) { muAddLot(d, li.value); } };
+  li.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); add(); } };
+  li.onblur = add;
+}
+// ---------- Serien-Scan: ein Etikett nach dem anderen ----------
+let muTarget = null, muQueue = Promise.resolve(), muBusyN = 0;
+function muScanPick(row) { muTarget = row || null; $("mu-cam").click(); }
+async function photoBlob(f) {
+  const img = await createImageBitmap(f).catch(() => null);
+  if (!img) return f;
+  const k = Math.min(1, 2600 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+  c.width = img.width * k; c.height = img.height * k; c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return await new Promise(r => c.toBlob(r, "image/jpeg", 0.9));
+}
+function muBusy(n) {
+  muBusyN += n;
+  $("mu-scanst").innerHTML = muBusyN > 0 ? `<span class="spin"></span> ${muBusyN} Etikett${muBusyN > 1 ? "en werden" : " wird"} gelesen … du kannst schon das nächste fotografieren` : $("mu-scanst").dataset.last || "";
+}
+$("mu-cam").onchange = e => { const f = e.target.files[0]; e.target.value = ""; const r = muTarget; muTarget = null; if (f) muScanFile(f, r); };
+$("mu-gal").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; fs.forEach(f => muScanFile(f, null)); };
+function muScanFile(f, row) { muBusy(+1); muQueue = muQueue.then(() => muScanOne(f, row)).catch(() => {}).finally(() => muBusy(-1)); }
+async function muScanOne(f, row) {
+  const blob = await photoBlob(f);
+  const qs = new URLSearchParams({vendor: muVendorName(), material: $("mu-mat").value.trim()});
+  let d; try { d = await (await fetch("/api/lager/scan?" + qs, {method: "POST", headers: {"Content-Type": "image/jpeg"}, body: blob})).json(); }
+  catch { d = {error: "keine Verbindung"}; }
+  if (d.error) { PH.toast("Etikett: " + d.error, true); return; }
+  const p = d.parsed || {}, rows = [...$("mu-rows").children];
+  // gemeinsame Felder einmal aus dem ersten Etikett
+  if (p.brand && !rows.some(x => x.querySelector(".mu-n").value.trim())) {
+    const vd = D.vendors.find(x => x.name.toLowerCase() === p.brand.toLowerCase());
+    if (vd) $("mu-vendor").value = vd.id; else { $("mu-vendor").value = "new"; $("mu-vname").value = p.brand; }
+    $("mu-newv").style.display = vd ? "none" : ""; muTpl();
+  }
+  if (!$("mu-mat").value.trim() && p.material) { $("mu-mat").value = p.material; muTpl(); }
+  if (p.weight) autoSet("mu-weight", p.weight, "photo", "", "weight");
+  const f0 = d.exact_fid ? D.filaments.find(x => x.id === d.exact_fid) : null;
+  const name = f0 ? f0.name : (p.color || "");
+  // passende Zeile: gleiche Sorte oder gleicher Name → Anzahl +1, sonst freie/neue Zeile
+  let r = row, fresh = false;
+  if (!r) r = rows.find(x => (f0 && +x.dataset.fid === f0.id) || (name && x.querySelector(".mu-n").value.trim().toLowerCase() === name.toLowerCase()));
+  if (!r) { r = rows.find(x => !x.querySelector(".mu-n").value.trim() && !x.dataset.fid) || muRow(); fresh = true; }
+  else if (!r.querySelector(".mu-n").value.trim()) fresh = true;
+  const k = r.querySelector(".mu-k");
+  if (fresh) {
+    k.value = 1;
+    if (f0) muLink(r, f0);
+    else if (name) {
+      const n = r.querySelector(".mu-n"); n.value = name;
+      if (p.color_src === "db" && p.color_hex) { r.querySelector(".mu-c").value = "#" + p.color_hex.toLowerCase(); r.dataset.touched = "1"; r.dataset.ext = p.external_id || "";
+        r.querySelector(".mu-h").textContent = "🗄 Farbe aus der SpoolmanDB"; }
+      else { r.dataset.touched = ""; n.dispatchEvent(new Event("input")); }
+      if (p.color_src === "base") setTimeout(() => { r.querySelector(".mu-h").innerHTML = `⚠ nur Grundton <b>${esc(name)}</b> erkannt – Feld antippen und genaue Farbe aus den Vorschlägen wählen`; }, 700);
+    } else r.querySelector(".mu-h").textContent = "⚠ Farbe nicht erkannt – bitte Namen eintragen";
+  } else k.value = (+k.value || 0) + 1;
+  if (d.lot) muAddLot(r, d.lot); else muLots(r);
+  const msg = `📷 ${name || "Etikett"}${d.lot ? " · Charge " + d.lot : ""} → ${fresh ? "neue Zeile" : "Anzahl " + k.value}${f0 ? " (schon im Lager)" : ""}`;
+  $("mu-scanst").dataset.last = esc(msg); PH.toast(msg);
 }
 let muT;
 function muTpl() {
   clearTimeout(muT);
   muT = setTimeout(async () => {
-    const vid = $("mu-vendor").value, mat = $("mu-mat").value.trim();
-    if (!vid || vid === "new" || !mat) return;
-    const r = await (await fetch(`/api/lager/template?vendor_id=${vid}&material=${encodeURIComponent(mat)}`)).json();
-    const t = r.template; if (!t) return;
-    const set = (id, v) => { if (v != null && v !== "") $(id).value = v; };
-    set("mu-weight", t.weight); set("mu-sw", t.spool_weight); set("mu-price", t.price); set("mu-et", t.extruder_temp); set("mu-bt", t.bed_temp); set("mu-diam", t.diameter);
-    $("mu-tplhint").style.display = ""; $("mu-tplhint").innerHTML = `⧉ Werte von <b>${esc(t.label)}</b> übernommen.`;
+    const newV = $("mu-vendor").value === "new", mat = $("mu-mat").value.trim();
+    if (!mat) return;
+    const qs = new URLSearchParams({vendor_id: newV ? "" : $("mu-vendor").value, vendor: newV ? $("mu-vname").value : "", material: mat});
+    let r; try { r = await (await fetch("/api/lager/defaults?" + qs)).json(); } catch { return; }
+    for (const [k, id] of Object.entries(MU_MAP)) { const sr = r.src[k]; if (sr) autoSet(id, r.values[k], sr.kind, sr.label, k); }
+    srcSummary(MU_MAP, "mu-tplhint");
   }, 300);
 }
 $("mu-vendor").onchange = () => { $("mu-newv").style.display = $("mu-vendor").value === "new" ? "" : "none"; muTpl(); };
@@ -569,7 +665,9 @@ function muDbTake() {
 }
 async function saveMulti() {
   const rows = [...$("mu-rows").children].map(r => ({name: r.querySelector(".mu-n").value.trim(), hex: r.querySelector(".mu-c").value,
-    count: +r.querySelector(".mu-k").value || 0, external_id: r.dataset.ext && r.dataset.ext !== "x" ? r.dataset.ext : ""})).filter(r => r.name);
+    count: +r.querySelector(".mu-k").value || 0, external_id: r.dataset.ext && r.dataset.ext !== "x" ? r.dataset.ext : "",
+    fid: r.dataset.fid ? +r.dataset.fid : null,
+    lots: Object.entries(JSON.parse(r.dataset.lots || "{}")).map(([lot, n]) => ({lot, n}))})).filter(r => r.name || r.fid);
   if (!rows.length) return PH.toast("Mindestens eine Farbe eintragen", true);
   const newV = $("mu-vendor").value === "new";
   $("mu-save").disabled = true;
@@ -577,7 +675,7 @@ async function saveMulti() {
     const d = await api("/api/lager/multi", "POST", {vendor_id: newV ? null : +$("mu-vendor").value, vendor_name: newV ? $("mu-vname").value : "",
       material: $("mu-mat").value, weight: $("mu-weight").value, spool_weight: $("mu-sw").value, price: $("mu-price").value,
       extruder_temp: $("mu-et").value, bed_temp: $("mu-bt").value, diameter: $("mu-diam").value, colors: rows});
-    closeM(); PH.toast(`${d.ids.length} Sorten mit ${d.rolls} Rollen angelegt`); d.ids.forEach(i => open.add(i)); load();
+    closeM(); PH.toast(`${d.new} neue Sorten${d.existing ? `, ${d.existing} vorhandene ergänzt` : ""} – ${d.rolls} Rollen angelegt`); d.ids.forEach(i => open.add(i)); load();
   } finally { $("mu-save").disabled = false; }
 }
 
@@ -729,23 +827,35 @@ function scanShow(d) {
 function scanNext() {
   const v = (document.querySelector("input[name=scf]:checked") || {}).value, p = scanCtx.parsed || {};
   scanClose();
-  if (v === "tpl") {
-    openFil(null, scanCtx.template.id);
-    if (p.color) { $("f-name").value = p.color; filColor(); }
+  if (v === "tpl" || v === "new") {
+    openFil(null, v === "tpl" ? scanCtx.template.id : undefined);
+    if (v === "new") {
+      if (p.brand) {
+        const vd = D.vendors.find(x => x.name.toLowerCase() === p.brand.toLowerCase());
+        if (vd) $("f-vendor").value = vd.id; else { $("f-vendor").value = "new"; $("f-vname").value = p.brand; }
+        $("f-newv").style.display = vd ? "none" : ""; $("f-vendor").dispatchEvent(new Event("change"));
+      }
+      if (p.material) $("f-mat").value = p.material;
+    }
+    // Werte vom Foto (niedrigste Priorität – außer Netto, das steht ja auf der Rolle)
+    if (p.weight) autoSet("f-weight", p.weight, "photo", "", "weight");
+    if (p.extruder_temp) autoSet("f-et", p.extruder_temp, "photo", "", "extruder_temp");
+    if (p.bed_temp) autoSet("f-bt", p.bed_temp, "photo", "", "bed_temp");
+    if (p.diameter) autoSet("f-diam", p.diameter, "photo", "", "diameter");
+    scanExtra = [];
+    if (p.color) {
+      $("f-name").value = p.color;
+      if (p.color_src === "db" && p.color_hex) { $("f-color").value = "#" + p.color_hex.toLowerCase(); scanExtra.push(`🗄 Farbe <b>${esc(p.color)}</b> aus der SpoolmanDB`); }
+      else if (p.color_src === "list") scanExtra.push(`📷 Farbname <b>${esc(p.color)}</b> vom Foto`);
+      if (p.color_src === "base") {
+        scanExtra.push(`📷 nur Grundton <b>${esc(p.color)}</b> erkannt – genaue Farbe unten aus den Vorschlägen wählen`);
+        setTimeout(() => { $("f-name").focus(); $("f-name").dispatchEvent(new Event("input")); }, 300);
+      } else filColor();
+    }
+    if (scanCtx.lot) { $("f-lot").value = scanCtx.lot; scanExtra.push(`📷 Charge <b>${esc(scanCtx.lot)}</b>`); }
     $("f-count").value = 1;
-    return;
-  }
-  if (v === "new") {
-    openFil();
-    if (p.material) $("f-mat").value = p.material;
-    if (p.color) { $("f-name").value = p.color; filColor(); }
-    if (p.color_hex) $("f-color").value = "#" + p.color_hex.toLowerCase();
-    if (p.weight) $("f-weight").value = p.weight;
-    if (p.extruder_temp) $("f-et").value = p.extruder_temp;
-    if (p.bed_temp) $("f-bt").value = p.bed_temp;
-    if (p.diameter) $("f-diam").value = p.diameter;
-    if (p.brand) { const vd = D.vendors.find(x => x.name.toLowerCase() === p.brand.toLowerCase()); if (vd) $("f-vendor").value = vd.id; }
-    $("f-count").value = 1;
+    srcSummary(F_MAP, "f-tplhint", scanExtra);
+    fDefaults(); setTimeout(syncDbName, 700);
     return;
   }
   openAdd(v === "other" ? undefined : +v);
@@ -834,7 +944,7 @@ async function saveAdd() {
   const d = await api("/api/lager/spools", "POST", {filament_id: +$("a-fil").value, count: +$("a-count").value,
     initial_weight: $("a-weight").value, price: $("a-price").value, location: $("a-loc").value,
     gross: $("a-gross").value, empty: $("a-empty").value, empty_for_filament: $("a-forfil").checked,
-    lot: scanCtx ? scanCtx.lot : "", ean: scanCtx ? (scanCtx.ean || scanCtx.lot) : ""});
+    lot: scanCtx ? scanCtx.lot : "", ean: scanCtx ? (scanCtx.ean || "") : ""});
   scanCtx = null;
   closeM(); PH.toast(`${d.ids.length} Rolle(n) angelegt: #${d.ids.join(", #")}`);
   if ($("a-labels").checked) return printLabels(d.ids);
@@ -862,31 +972,95 @@ function openFil(fid, tplId) {
   if (!f) { loadMans(); setTimeout(dbManFromVendor, 0); }
   $("f-ext").value = ""; $("f-dens").value = f ? (f.density ?? "") : ""; $("f-diam").value = f ? (f.diameter ?? "") : "";
   $("f-tplhint").style.display = "none"; $("f-colhint").textContent = ""; $("f-pip").style.display = f ? "" : "none";
+  srcReset(F_MAP, f ? [] : ["f-weight"]); scanExtra = [];
+  $("f-lot").value = ""; $("f-lotbox").style.display = f ? "none" : ""; loadCodes(f ? f.id : null);
   $("m-fil").classList.add("open"); $("f-name").focus();
   if (tplId) applyTpl(D.filaments.find(x => x.id === tplId), true);
 }
 // Werte einer vorhandenen Sorte übernehmen (A: automatisch bei Hersteller+Material, B: ⧉ Ähnliche Sorte)
 function applyTpl(t, all) {
   if (!t) return;
-  const set = (id, v) => { if (v != null && v !== "" && (all || !$(id).value || tplApplied)) $(id).value = v; };
+  const lab = t.label || `${t.vendor} ${t.material} ${t.name}`;
+  const set = (id, v) => { if (v != null && v !== "" && (all || !$(id).value || tplApplied || $(id).dataset.src || $(id).dataset.dflt)) {
+    const k = Object.keys(F_MAP).find(k => F_MAP[k] === id); autoSet(id, v, "own", lab, k, true); } };
   if (all) { $("f-vendor").value = t.vendor_id ?? "new"; $("f-newv").style.display = t.vendor_id ? "none" : ""; $("f-mat").value = t.material || ""; }
   set("f-weight", t.weight); set("f-sw", t.spool_weight ?? t.empty); set("f-price", t.price);
   set("f-et", t.extruder_temp); set("f-bt", t.bed_temp); set("f-dens", t.density); set("f-diam", t.diameter);
   tplApplied = true;
-  $("f-tplhint").style.display = "";
-  $("f-tplhint").innerHTML = `⧉ Werte von <b>${esc(t.label || `${t.vendor} ${t.material} ${t.name}`)}</b> übernommen – nur Name und Farbe eintragen.`;
+  srcSummary(F_MAP, "f-tplhint", scanExtra);
 }
-let tplT;
-function autoTpl() {
-  clearTimeout(tplT);
-  if ($("f-id").value || dbPicked) return;
-  tplT = setTimeout(async () => {
-    const vid = $("f-vendor").value, mat = $("f-mat").value.trim();
-    if (!vid || vid === "new" || !mat) return;
-    const r = await (await fetch(`/api/lager/template?vendor_id=${vid}&material=${encodeURIComponent(mat)}`)).json();
-    if (r.template) applyTpl(r.template, false);
-  }, 300);
+// ---------- Herkunft automatisch gefüllter Werte: ★ deine Sorte · 🗄 SpoolmanDB · 📷 Foto ----------
+const SRC_ICON = {own: "★", db: "🗄", photo: "📷"}, SRC_TXT = {own: "deine Sorte", db: "SpoolmanDB", photo: "Foto"};
+const FIELD_TXT = {extruder_temp: "Düse", bed_temp: "Bett", spool_weight: "Leerspule", density: "Dichte", diameter: "Durchmesser",
+  weight: "Netto", price: "Preis"};
+// Netto: Foto vor deiner Sorte vor SpoolmanDB – alles andere: deine Sorte vor SpoolmanDB vor Foto
+const srcRank = (field, kind) => { const o = field === "weight" ? ["photo", "own", "db"] : ["own", "db", "photo"]; const i = o.indexOf(kind); return i < 0 ? 9 : i; };
+function srcTag(el, kind, label) {
+  const lab = el.closest(".field")?.querySelector(".lab"); if (!lab) return;
+  let t = lab.querySelector(".srctag");
+  if (!kind) { if (t) t.remove(); return; }
+  if (!t) { t = document.createElement("span"); t.className = "srctag"; lab.appendChild(t); }
+  t.textContent = SRC_ICON[kind] || ""; t.title = (SRC_TXT[kind] || "") + (label ? ": " + label : ""); t.dataset.kind = kind;
 }
+function autoSet(id, val, kind, label, field, force) {
+  const el = $(id); if (!el || val == null || val === "") return false;
+  if (!force) {
+    if (el.dataset.src === "user") return false;
+    if (el.value !== "" && !el.dataset.src && !el.dataset.dflt) return false;       // schon von Hand ausgefüllt
+    if (el.dataset.src && srcRank(field, kind) > srcRank(field, el.dataset.src)) return false;
+  }
+  el.value = val; el.dataset.src = kind; el.dataset.srclabel = label || ""; delete el.dataset.dflt;
+  srcTag(el, kind, label); return true;
+}
+function srcReset(map, dflts = []) {
+  Object.values(map).forEach(id => { const el = $(id); if (!el) return; delete el.dataset.src; delete el.dataset.srclabel; delete el.dataset.dflt; srcTag(el); });
+  dflts.forEach(id => { if ($(id)) $(id).dataset.dflt = "1"; });
+}
+function srcWatch(map) {
+  Object.values(map).forEach(id => $(id) && $(id).addEventListener("input", e => { if (!e.isTrusted) return; e.target.dataset.src = "user"; srcTag(e.target); }));
+}
+function srcSummary(map, boxId, extra = []) {
+  const groups = new Map();
+  for (const [k, id] of Object.entries(map)) {
+    const el = $(id); if (!el || !el.dataset.src || el.dataset.src === "user") continue;
+    const key = el.dataset.src + "|" + (el.dataset.srclabel || "");
+    if (!groups.has(key)) groups.set(key, []); groups.get(key).push(FIELD_TXT[k] || k);
+  }
+  const parts = [...groups].map(([key, fs]) => { const [kind, label] = key.split("|");
+    return `${SRC_ICON[kind]} ${SRC_TXT[kind]}${label && kind !== "photo" ? " <b>" + esc(label) + "</b>" : ""}: ${fs.join(", ")}`; }).concat(extra);
+  $(boxId).style.display = parts.length ? "" : "none";
+  $(boxId).innerHTML = parts.length ? "Übernommen – " + parts.join(" · ") + `<div class="muted small">Ändern geht jederzeit; ein geändertes Feld verliert seine Markierung.</div>` : "";
+}
+const F_MAP = {weight: "f-weight", spool_weight: "f-sw", price: "f-price", extruder_temp: "f-et", bed_temp: "f-bt", density: "f-dens", diameter: "f-diam"};
+const MU_MAP = {weight: "mu-weight", spool_weight: "mu-sw", price: "mu-price", extruder_temp: "mu-et", bed_temp: "mu-bt", diameter: "mu-diam"};
+let fDefT, scanExtra = [];
+function fDefaults() {
+  clearTimeout(fDefT);
+  fDefT = setTimeout(async () => {
+    if ($("f-id").value || dbPicked) return;
+    const newV = $("f-vendor").value === "new", mat = $("f-mat").value.trim();
+    if (!mat) return;
+    const qs = new URLSearchParams({vendor_id: newV ? "" : $("f-vendor").value, vendor: newV ? $("f-vname").value : "", material: mat, color: $("f-name").value.trim()});
+    let r; try { r = await (await fetch("/api/lager/defaults?" + qs)).json(); } catch { return; }
+    for (const [k, id] of Object.entries(F_MAP)) { const sr = r.src[k]; if (sr) autoSet(id, r.values[k], sr.kind, sr.label, k); }
+    srcSummary(F_MAP, "f-tplhint", scanExtra);
+  }, 350);
+}
+async function loadCodes(fid) {
+  const box = $("f-codes");
+  if (!fid) { box.style.display = "none"; return; }
+  let r; try { r = await (await fetch(`/api/lager/codes?fid=${fid}`)).json(); } catch { return; }
+  box.style.display = "";
+  box.innerHTML = `<span class="lab">Erkennungs-Nummern</span>` + (r.codes.length
+    ? `<div class="chips">${r.codes.map(c => `<span class="chip">${esc(c)} <button type="button" title="Nummer entfernen" data-c="${esc(c)}">✕</button></span>`).join("")}</div>`
+    : `<div class="muted small">Noch keine – wird beim nächsten Scan oder beim Eintragen einer Charge gelernt.</div>`);
+  box.querySelectorAll("button[data-c]").forEach(b => b.onclick = async () => {
+    await api("/api/lager/codes", "POST", {code: b.dataset.c}); PH.toast(`Nummer ${b.dataset.c} entfernt`); loadCodes(fid);
+  });
+}
+function autoTpl() { fDefaults(); }      // Werte: deine Sorte → SpoolmanDB (mit Herkunft)
+srcWatch(F_MAP); srcWatch(MU_MAP);
+$("f-name").addEventListener("input", fDefaults);
 // Vorschlagslisten passen sich dem sichtbaren Bereich an (Handy-Tastatur verdeckt sonst den unteren Teil)
 function fitSug(box, inp) {
   if (box.hidden) return;
@@ -1051,10 +1225,10 @@ async function saveFil() {
   const body = {id: $("f-id").value || null, vendor_id: newV ? null : +$("f-vendor").value, vendor_name: newV ? $("f-vname").value : "",
     vendor_spool_weight: newV ? $("f-sw").value : "", name: $("f-name").value, material: $("f-mat").value, color: $("f-color").value,
     weight: $("f-weight").value, spool_weight: $("f-sw").value, price: $("f-price").value, extruder_temp: $("f-et").value,
-    bed_temp: $("f-bt").value, count: +$("f-count").value || 0,
+    bed_temp: $("f-bt").value, count: +$("f-count").value || 0, lot: $("f-lot").value.trim(),
     external_id: dbPicked && dbPicked.name === $("f-name").value && dbPicked.color === $("f-color").value ? $("f-ext").value : "",
     density: $("f-dens").value, diameter: $("f-diam").value,
-    lot: scanCtx && !$("f-id").value ? scanCtx.lot : "", ean: scanCtx && !$("f-id").value ? (scanCtx.ean || scanCtx.lot) : ""};
+    ean: scanCtx && !$("f-id").value ? (scanCtx.ean || "") : ""};
   const d = await api("/api/lager/filament", "POST", body);
   scanCtx = null;
   closeM(); PH.toast("Sorte gespeichert"); open.add(d.id); load();

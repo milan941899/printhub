@@ -242,6 +242,22 @@ def parse_text(text):
     return out
 
 
+_CODE_RE = re.compile(r"(?<![A-Z0-9])(\d{6,12}[A-Z]{1,3}|[A-Z]{1,3}\d{6,12})(?![A-Z0-9])")
+
+
+def find_codes(texts):
+    """Artikel-/Chargennummern im Etikett-Text (z. B. „04260702AJ“) – häufigste zuerst."""
+    from collections import Counter
+    c = Counter()
+    for t in texts:
+        u = (t or "").upper()
+        u = re.sub(r"(\d{6,12}[A-Z]{0,2})[)\]]", r"\1J", u)      # „J“ wird gern als „)“ oder „]“ gelesen
+        u = re.sub(r"(\d{6,12}[A-Z]{0,2})[|!]", r"\1I", u)
+        for m in _CODE_RE.findall(u):
+            c[m] += 1
+    return [k for k, _ in c.most_common()]
+
+
 # ---------------------------------------------------------------- Online (EAN)
 _lookups = []
 

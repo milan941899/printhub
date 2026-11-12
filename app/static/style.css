@@ -946,3 +946,14 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .murow .sugbox { grid-column:1 / -1; }
 .combo { width:100%; }
 .sugbox .sughead { padding:6px 10px 4px; font-size:.75em; text-transform:uppercase; letter-spacing:.04em; opacity:.6; border-bottom:1px solid #8882; }
+/* Herkunft automatisch gefüllter Werte */
+.lab .srctag { margin-left:6px; font-size:.95em; text-transform:none; letter-spacing:0; cursor:help; opacity:.9; }
+/* Chargen / Erkennungs-Nummern */
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+.chips .chip button, .mu-l .chip button { background:none; border:0; color:inherit; padding:0 0 0 4px; cursor:pointer; font:inherit; opacity:.7; }
+.murow .mu-l { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.murow .mu-l .mu-li { width:120px; padding:4px 8px; font-size:.85em; }
+.murow.mu-exist .mu-n { border-color:var(--acc); }
+.muscan { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:4px 0 8px; }
+.muscan > div { flex-basis:100%; }
+#mu-scanst .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--acc); border-right-color:transparent; border-radius:50%; vertical-align:-2px; }
