@@ -56,9 +56,19 @@
     const el = e.target.closest && e.target.closest("[data-tip]");
     if (el) show(el, e.clientX, e.clientY); else if (cur) hide();
   });
+  // Touch: Info erst beim Antippen (Finger ohne Wischen wieder weg) – Wischen über ein Diagramm scrollt nur die Seite
+  let tStart = null;
   document.addEventListener("pointerdown", e => {
     if (e.pointerType !== "touch") return;
     touch = true;
+    tStart = {x: e.clientX, y: e.clientY, t: Date.now()};
+  });
+  document.addEventListener("pointercancel", () => { tStart = null; });      // Browser hat aufs Scrollen umgeschaltet
+  document.addEventListener("pointerup", e => {
+    if (e.pointerType !== "touch" || !tStart) return;
+    const moved = Math.hypot(e.clientX - tStart.x, e.clientY - tStart.y), long = Date.now() - tStart.t;
+    tStart = null;
+    if (moved > 10 || long > 600) return;
     if (e.target.closest(".ph-tip")) return;
     const el = e.target.closest && e.target.closest("[data-tip]");
     if (el) show(el, e.clientX, e.clientY); else hide();
@@ -69,7 +79,7 @@
     if (!el) return;
     try { const d = JSON.parse(el.dataset.tip); if (d.h) location.href = d.h; } catch {}
   });
-  addEventListener("scroll", () => { if (!touch) hide(); }, {passive: true});
+  addEventListener("scroll", () => hide(), {passive: true});
 
   // ---------------- Drag & Drop (Maus und Touch) ----------------
   // Delegiert: funktioniert auch, wenn der Inhalt neu gezeichnet wird.
