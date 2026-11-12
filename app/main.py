@@ -1325,9 +1325,14 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
     img = None
     if img_bytes:
         from PIL import ImageOps
-        img = ImageOps.exif_transpose(Image.open(io.BytesIO(img_bytes)))
+        t0 = time.time()
+        img = Image.open(io.BytesIO(img_bytes))
+        img.draft("RGB", (2600, 2600))       # JPEG gleich verkleinert dekodieren (40-MP-Handyfotos sonst sehr langsam)
+        img = ImageOps.exif_transpose(img)
         img.thumbnail((2600, 2600))          # Handy schickt das Original (schneller als dort zu verkleinern)
+        t1 = time.time()
         codes = scanmod.barcodes(img)
+        res["timing"] = {"bytes": len(img_bytes), "decode": round(t1 - t0, 2), "barcode": round(time.time() - t1, 2)}
         res["codes"] = [{"type": c["type"], "data": c["data"]} for c in codes]
     else:
         codes = []
@@ -1354,6 +1359,8 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             full = scanmod.parse_votes(ft)
             p = {**full, **p}
         res["parsed"] = p
+    if res.get("timing"):
+        res["timing"]["total_ocr"] = round(time.time() - t1, 2)
     # Nummern vom Etikett (Charge/Artikel, z. B. „04260702AJ“) – auch ohne Strichcode
     res["ocr_codes"] = scanmod.find_codes(alltexts)[:3]
     if not res["lot"] and res["ocr_codes"]:
@@ -1477,6 +1484,9 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                     and (not br or ((f.get("vendor") or {}).get("name") or "").lower() == br)):
                 res["exact_fid"] = f["id"]
                 break
+    if res.get("timing"):
+        log.info("Scan: Foto %.1f MB, dekodiert %.1fs, Strichcode %.1fs, bis Text fertig %.1fs", res["timing"]["bytes"] / 1e6,
+                 res["timing"]["decode"], res["timing"]["barcode"], res["timing"].get("total_ocr", 0))
     log.info("Scan: Codes %s, Text %s, Treffer %s", [c["data"] for c in res["codes"]], res["parsed"],
              [(m["id"], m["score"]) for m in res["matches"][:3]])
     return res

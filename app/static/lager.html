@@ -956,6 +956,19 @@ async function scanFile(f) {
   scanBusy(`Foto wird hochgeladen (${(f.size / 1e6).toFixed(1)} MB) …`);
   scanSend(await uploadBlob(f));
 }
+// Foto hochladen mit Fortschritt (zeigt, ob das WLAN oder der Tower bremst) und Zeitlimit
+function postPhoto(url, blob, onProg) {
+  return new Promise((ok, bad) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", url); x.setRequestHeader("Content-Type", "image/jpeg"); x.timeout = 90000;
+    x.upload.onprogress = e => { if (e.lengthComputable) onProg(Math.round(e.loaded / e.total * 100), "up"); };
+    x.upload.onload = () => onProg(100, "work");
+    x.onload = () => { try { ok(JSON.parse(x.responseText)); } catch { ok({error: `Antwort vom Tower unlesbar (${x.status})`}); } };
+    x.onerror = () => ok({error: "Keine Verbindung zum Tower"});
+    x.ontimeout = () => ok({error: "Zeitüberschreitung – Foto zu groß oder WLAN zu langsam. Nochmal versuchen oder kleineres Foto (Kamera auf 10–12 MP stellen)."});
+    x.send(blob);
+  });
+}
 // JPEG bis 10 MB direkt schicken, sonst (oder bei HEIC usw.) am Handy verkleinern
 async function uploadBlob(f) {
   if (f.size <= 10e6 && /jpe?g/i.test(f.type || "jpeg")) return f;
@@ -967,9 +980,9 @@ async function scanSend(blob, code) {
   $("sc-start").style.display = "none"; $("sc-live").style.display = "none"; $("sc-busy").style.display = ""; $("sc-res").innerHTML = "";
   $("sc-busytxt").textContent = "Erkenne Strichcode und Text … (ca. 3–5 Sekunden)";
   try {
-    const r = blob ? await fetch("/api/lager/scan" + (code ? `?code=${encodeURIComponent(code)}` : ""), {method: "POST", headers: {"Content-Type": "image/jpeg"}, body: blob})
-                   : await fetch("/api/lager/scan", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({code})});
-    const d = await r.json();
+    const d = blob ? await postPhoto("/api/lager/scan" + (code ? `?code=${encodeURIComponent(code)}` : ""), blob,
+                       (pct, phase) => { $("sc-busytxt").textContent = phase === "up" ? `Foto wird hochgeladen … ${pct} %` : "Tower erkennt Strichcode und Text … (ca. 3–5 Sekunden)"; })
+                   : await (await fetch("/api/lager/scan", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({code})})).json();
     $("sc-busy").style.display = "none";
     if (d.error) { $("sc-res").innerHTML = `<div class="err">${esc(d.error)}</div>`; $("sc-start").style.display = ""; return; }
     scanShow(d);
@@ -1029,6 +1042,7 @@ function scanShow(d) {
     ${codes ? `<div class="small">Code: ${codes}</div>` : `<div class="muted small">Kein Strichcode erkannt.</div>`}
     ${chips.length ? `<div class="scchips">${chips.map(c => `<span>${c}</span>`).join("")}</div>` : `<div class="muted small">Kein Text erkannt – Foto näher und gerade aufnehmen.</div>`}
     ${online}
+    ${d.timing ? `<div class="muted small">⏱ Foto ${(d.timing.bytes / 1e6).toFixed(1)} MB · Tower ${(d.timing.decode + (d.timing.total_ocr || d.timing.barcode)).toFixed(1)} s</div>` : ""}
     ${codeMsg(d)}
     ${!p.color ? `<div class="wres small codemsg multi">⚠ Farbe auf dem Foto nicht erkannt – bitte unten die Sorte wählen oder <a href="#" onclick="event.preventDefault();scanStart()">nochmal fotografieren</a> (gerade, ohne Schatten, Etikett groß im Bild).</div>` : ""}
     <div class="label" style="margin-top:10px">Welche Sorte?</div>

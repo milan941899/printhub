@@ -6,6 +6,7 @@ Beides läuft lokal auf dem Server – nur das optionale Nachschlagen eines EAN 
 import ctypes
 import ctypes.util
 import io
+import os
 import logging
 import re
 import subprocess
@@ -196,8 +197,10 @@ def _tess(im, psm, timeout=25):
     b = io.BytesIO()
     im.save(b, "PNG")
     try:
+        # OMP_THREAD_LIMIT=1: mehrere Tesseract-Läufe parallel, jeder mit einem Kern (sonst bremsen sie sich gegenseitig aus)
         p = subprocess.run(["tesseract", "stdin", "stdout", "-l", "eng", "--psm", psm],
-                           input=b.getvalue(), capture_output=True, timeout=timeout)
+                           input=b.getvalue(), capture_output=True, timeout=timeout,
+                           env={**os.environ, "OMP_THREAD_LIMIT": "1"})
         return p.stdout.decode("utf-8", "ignore")
     except (OSError, subprocess.TimeoutExpired) as e:
         log.info("Texterkennung nicht verfügbar: %s", e)
