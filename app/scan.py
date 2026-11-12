@@ -129,8 +129,26 @@ def band_texts(img, code):
         base = base.rotate(code["rot"], expand=True)
     x0, y0, x1, y1 = code["box"]
     w = max(x1 - x0, 80)
-    top = base.crop((max(0, x0 - int(w * .15)), max(0, y0 - int(w * .17)), min(base.width, x1 + int(w * .15)), y0))
-    bot = base.crop((max(0, x0 - int(w * .15)), y1, min(base.width, x1 + int(w * .25)), min(base.height, y1 + int(w * .45))))
+    # zbar liefert oft nur die Lese-Linie → echte Ober-/Unterkante der Balken suchen (viele Hell/Dunkel-Wechsel)
+    px = base.load()
+    def trans(y):
+        if not 0 <= y < base.height:
+            return 0
+        row = [px[x, y] for x in range(max(0, x0), min(base.width, x1), 2)]
+        if not row:
+            return 0
+        m = sum(row) / len(row)
+        return sum((a < m) != (b < m) for a, b in zip(row, row[1:]))
+    ref = max(trans((y0 + y1) // 2), 8)
+    top_y = y0
+    while top_y > y0 - w * 0.3 and trans(top_y - 2) > ref * 0.45:
+        top_y -= 2
+    bot_y = y1
+    while bot_y < y1 + w * 0.3 and trans(bot_y + 2) > ref * 0.45:
+        bot_y += 2
+    top_y, bot_y = top_y - int(w * .01), bot_y + int(w * .01)
+    top = base.crop((max(0, x0 - int(w * .15)), max(0, top_y - int(w * .13)), min(base.width, x1 + int(w * .15)), max(1, top_y)))
+    bot = base.crop((max(0, x0 - int(w * .15)), bot_y, min(base.width, x1 + int(w * .25)), min(base.height, bot_y + int(w * .42))))
     out = []
     def go(band, sc, sharp, psm):
         if band.width < 20 or band.height < 10:

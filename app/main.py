@@ -1127,6 +1127,9 @@ async def api_lager_codes(request):
         return JSONResponse({"codes": _codes_for(request.query_params.get("fid") or 0)})
     b = await request.json()
     code = _code_norm(b.get("code"))
+    if b.get("fid") and b.get("soft"):
+        _learn_code(code, int(b["fid"]))          # wie beim Anlegen: gleiche Nummer bei anderer Sorte → mehrdeutig, nicht umhängen
+        return JSONResponse({"ok": True})
     if b.get("fid") and not b.get("remove"):
         # von Hand zuordnen (neu oder geändert) – gilt auch für vorher gesperrte Nummern
         new = code
@@ -1174,11 +1177,11 @@ def _scan_match(parsed, brand=""):
         sc, why = 0, []
         if pm and fm:
             if pm == fm:
-                sc += 4; why.append("Material")
+                sc += 5; why.append("Material")
             elif pm.rstrip("+") == fm.rstrip("+") or fm.startswith(pm) or pm.startswith(fm):
                 sc += 2; why.append("Material ähnlich")
             else:
-                sc -= 4
+                sc -= 8
         if pc and f.get("color_hex"):
             d = _hexdist(pc, f["color_hex"])
             if d < 70:
@@ -1187,13 +1190,18 @@ def _scan_match(parsed, brand=""):
                 sc += 1
             else:
                 sc -= 2
-        if parsed.get("color") and (f.get("name") or "").strip().lower() == parsed["color"].strip().lower():
-            sc += 6; why.append("Name")
+        if parsed.get("color"):
+            fn, pn = _tnorm(f.get("name")).strip(), _tnorm(parsed["color"]).strip()
+            if fn == pn:
+                sc += 12; why.append("Farbname")
+            elif parsed.get("color_src") != "base" and fn and pn and fn not in pn and pn not in fn:
+                sc -= 6                          # Etikett nennt eine andere Farbe
+        
         vend = ((f.get("vendor") or {}).get("name") or "")
         if brand and vend and (brand.lower() in vend.lower() or vend.lower() in brand.lower()):
             sc += 3; why.append("Hersteller")
-        if parsed.get("weight") and f.get("weight") and abs(parsed["weight"] - f["weight"]) <= 20:
-            sc += 1
+        if parsed.get("weight") and f.get("weight"):
+            sc += 2 if abs(parsed["weight"] - f["weight"]) <= 20 else -2
         if sc >= 4:
             out.append({"id": f["id"], "label": " ".join(x for x in [vend, f.get("name") or "", f.get("material") or ""] if x),
                         "color": "#" + (f.get("color_hex") or "999999")[:6], "score": sc, "why": ", ".join(why)})
@@ -1207,8 +1215,13 @@ _BASE = ["black", "white", "grey", "gray", "silver", "red", "blue", "green", "ye
          "pink", "brown", "beige", "gold", "bronze", "transparent", "clear", "natural", "cyan"]
 
 
+_SYN = {"grey": "gray", "colour": "color", "transparant": "transparent"}
+
+
 def _tnorm(t):
-    return " " + re.sub(r"[^a-z0-9äöüß+]+", " ", (t or "").lower()) + " "
+    """Klein, nur Wörter, Schreibvarianten vereinheitlicht (Grey = Gray)."""
+    w = re.sub(r"[^a-z0-9äöüß+]+", " ", (t or "").lower()).split()
+    return " " + " ".join(_SYN.get(x, x) for x in w) + " "
 
 
 def _detect_vendor(text):
@@ -1272,7 +1285,8 @@ def _fuzzy_in(core, tn):
 def _base_ok(word, text):
     """Grundfarbe („White“) zählt nur, wenn davor kein weiteres Farbwort steht („Mystic Red“ ≠ „Red“)."""
     for line in (text or "").splitlines():
-        for m in re.finditer(r"([^\s]*)\s*\b(" + re.escape(word) + r")\b", line, flags=re.I):
+        alts = [word] + [k for k, v in _SYN.items() if v == word]
+        for m in re.finditer(r"([^\s]*)\s*\b(" + "|".join(map(re.escape, alts)) + r")\b", line, flags=re.I):
             prev = re.sub(r"[^a-zäöü+]", "", m.group(1).lower())
             if not prev or prev in _MAT_WORDS or len(prev) <= 2:
                 return True
@@ -1413,38 +1427,51 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             tpl = _template(fid=max(same, key=lambda f: f["id"])["id"])
             if tpl:
                 res["template"] = tpl
-    if res["learned"] and not any(m["id"] == res["learned"] for m in res["matches"]):
-        f = next((x for x in spoolman.inventory()["filaments"] if x["id"] == res["learned"]), None)
-        if f:
-            res["matches"].insert(0, {"id": f["id"], "label": " ".join(x for x in [(f.get("vendor") or {}).get("name", ""),
-                                      f.get("name") or "", f.get("material") or ""] if x),
-                                      "color": "#" + (f.get("color_hex") or "999999")[:6], "score": 99, "why": "Code gelernt"})
-    elif res["learned"]:
-        for m in res["matches"]:
-            if m["id"] == res["learned"]:
-                m["score"], m["why"] = 99, "Code gelernt"
-        res["matches"].sort(key=lambda x: -x["score"])
-    # Kandidaten aus der Nummer: ähnliche Charge oder Nummer, die bei mehreren Sorten vorkommt
+    # Nummer (Charge) ist nur ein schwacher Hinweis: sie zählt nur, wenn Material und Farbe vom Etikett nicht widersprechen
+    fils = {f["id"]: f for f in spoolman.inventory()["filaments"]}
+    pt, pmn = res["parsed"], _mat_norm(res["parsed"].get("material"))
+    tc = _tnorm(pt.get("color")).strip() if pt.get("color") else ""
+    def agrees(fid):
+        f = fils.get(fid)
+        if not f:
+            return False
+        if pmn and _mat_norm(f.get("material")) != pmn:
+            return False
+        fn = _tnorm(f.get("name")).strip()
+        if tc and fn != tc and not (pt.get("color_src") == "base" and tc in fn.split()):
+            return False
+        return True
+    def label(f):
+        return " ".join(x for x in [(f.get("vendor") or {}).get("name", ""), f.get("name") or "", f.get("material") or ""] if x)
+    def boost(fid, pts, why):
+        m = next((x for x in res["matches"] if x["id"] == fid), None)
+        if m:
+            m["score"] += pts; m["why"] = (m.get("why") + ", " if m.get("why") else "") + why
+        elif fid in fils:
+            f = fils[fid]
+            res["matches"].append({"id": fid, "label": label(f), "color": "#" + (f.get("color_hex") or "999999")[:6], "score": pts, "why": why})
     ci = res.get("code_info") or {}
-    if ci.get("status") in ("similar", "multi"):
-        fils = {f["id"]: f for f in spoolman.inventory()["filaments"]}
-        why = "ähnliche Charge" if ci["status"] == "similar" else "gleiche Nummer"
-        for fid in reversed(ci["fids"]):
-            m = next((x for x in res["matches"] if x["id"] == fid), None)
-            if m:
-                m["why"] = (m.get("why") + ", " if m.get("why") else "") + why; m["score"] += 5
-            elif fid in fils:
-                f = fils[fid]
-                res["matches"].append({"id": fid, "label": " ".join(x for x in [(f.get("vendor") or {}).get("name", ""), f.get("name") or "",
-                                       f.get("material") or ""] if x), "color": "#" + (f.get("color_hex") or "999999")[:6], "score": 5, "why": why})
-        res["matches"].sort(key=lambda x: -x["score"])
-        ci["labels"] = [next((m["label"] for m in res["matches"] if m["id"] == fid), "") for fid in ci["fids"]]
+    if res["learned"]:
+        if agrees(res["learned"]):
+            boost(res["learned"], 4, "Charge bekannt")
+        else:
+            f = fils.get(res["learned"])
+            ci.update(status="text", labels=[label(f)] if f else [])
+            res["learned"] = None
+    elif ci.get("status") in ("similar", "multi"):
+        ok = [fid for fid in ci["fids"] if agrees(fid)]
+        for fid in ok:
+            boost(fid, 2, "ähnliche Charge" if ci["status"] == "similar" else "gleiche Charge")
+        ci["labels"] = [label(fils[fid]) for fid in ok if fid in fils]
+        if not ok:
+            ci["status"] = "unknown"
+    res["matches"].sort(key=lambda x: -x["score"])
     # genau diese Sorte schon im Lager? (gelernte Nummer, sonst Hersteller + Material + Name gleich)
-    res["exact_fid"] = res["learned"] or res.get("own_fid")
+    res["exact_fid"] = res.get("own_fid") or res["learned"]
     if not res["exact_fid"] and res["parsed"].get("color") and res["parsed"].get("color_src") != "base":
-        pn, pmn, br = res["parsed"]["color"].strip().lower(), _mat_norm(res["parsed"].get("material")), brand.lower()
+        pn, pmn, br = _tnorm(res["parsed"]["color"]).strip(), _mat_norm(res["parsed"].get("material")), brand.lower()
         for f in spoolman.inventory()["filaments"]:
-            if ((f.get("name") or "").strip().lower() == pn and (not pmn or _mat_norm(f.get("material")) == pmn)
+            if (_tnorm(f.get("name")).strip() == pn and (not pmn or _mat_norm(f.get("material")) == pmn)
                     and (not br or ((f.get("vendor") or {}).get("name") or "").lower() == br)):
                 res["exact_fid"] = f["id"]
                 break

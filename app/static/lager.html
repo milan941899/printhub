@@ -711,9 +711,10 @@ function muRow(name = "", hex = "", ext = "") {
 }
 // Gibt es diese Sorte (Hersteller + Material + Name) schon im Lager?
 const _mn = m => (m || "").toUpperCase().replace(/[\s_]+/g, "");
+const _cn = n => (n || "").toLowerCase().replace(/\bgrey\b/g, "gray").replace(/\bcolour\b/g, "color").replace(/\s+/g, " ").trim();
 function ownSort(vendorName, mat, name) {
-  name = (name || "").trim().toLowerCase(); if (!name) return null;
-  return D.filaments.find(f => (f.name || "").trim().toLowerCase() === name && (!mat || _mn(f.material) === _mn(mat)) &&
+  name = _cn(name); if (!name) return null;
+  return D.filaments.find(f => _cn(f.name) === name && (!mat || _mn(f.material) === _mn(mat)) &&
     (!vendorName || (f.vendor || "").toLowerCase() === vendorName.trim().toLowerCase())) || null;
 }
 // Zeile gehört zu einer vorhandenen Sorte → nur Rollen hinzufügen; Name ändern löst die Verbindung
@@ -979,6 +980,7 @@ function codeMsg(d) {
   const t = {known: `✓ Nummer <b>${esc(ci.code)}</b> ist bekannt – Sorte steht oben.`,
     similar: `≈ Nummer <b>${esc(ci.code)}</b> ist neu, aber ähnlich wie <b>${esc((ci.near || []).join(", "))}</b> (${L}). Bitte unten bestätigen – dann wird sie gelernt.`,
     multi: `⚠ Nummer <b>${esc(ci.code)}</b> kommt bei mehreren Sorten vor (${L}) – bitte die richtige wählen.`,
+    text: `ℹ Charge <b>${esc(ci.code)}</b> war bei <b>${L}</b> gespeichert – das Etikett nennt aber eine andere Farbe/Material, deshalb zählt der Text.`,
     unknown: `Nummer <b>${esc(ci.code)}</b> ist noch unbekannt – wird gelernt, sobald du unten eine Sorte wählst.`}[ci.status];
   return t ? `<div class="wres small codemsg ${ci.status}">${t}</div>` : "";
 }
@@ -1046,7 +1048,7 @@ function scanNext() {
     return;
   }
   if (v !== "other" && scanCtx.lot && !(scanCtx.code_info && scanCtx.code_info.status === "known" && scanCtx.learned === +v))
-    api("/api/lager/codes", "POST", {code: scanCtx.lot, fid: +v}).catch(() => {});      // Nummer gleich bei dieser Sorte merken
+    api("/api/lager/codes", "POST", {code: scanCtx.lot, fid: +v, soft: true}).catch(() => {});      // Nummer gleich bei dieser Sorte merken
   openAdd(v === "other" ? undefined : +v);
   if (p.weight && v !== "other") { const f = D.filaments.find(x => x.id === +v); if (f && f.weight && Math.abs(f.weight - p.weight) > 20) $("a-weight").value = p.weight; }
   $("a-res").innerHTML = scanCtx.lot ? `Charge <b>${esc(scanCtx.lot)}</b> wird bei den Rollen gespeichert.` : "";
