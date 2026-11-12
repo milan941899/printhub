@@ -957,3 +957,9 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .muscan { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:4px 0 8px; }
 .muscan > div { flex-basis:100%; }
 #mu-scanst .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--acc); border-right-color:transparent; border-radius:50%; vertical-align:-2px; }
+/* Inhalte im Dialog nicht zusammenquetschen (sonst überlappen Hinweis und Felder) */
+.mbox > * { flex-shrink:0; }
+.chip .codeedit { width:130px; padding:2px 6px; font-size:12px; text-transform:uppercase; }
+.chip.codewrap { display:inline-flex; gap:4px; align-items:center; }
+.chips > .small-btn { padding:3px 9px; font-size:12px; }
+.wres.exists { color:var(--acc); }

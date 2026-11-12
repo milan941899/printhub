@@ -528,9 +528,12 @@ function muRow(name = "", hex = "", ext = "") {
   attachSuggest(d.querySelector(".mu-n"), () => ({vendor: muVendorName(), material: $("mu-mat").value}), i => {
     clearTimeout(colT.get(d)); d.querySelector(".mu-c").value = "#" + i.hex.toLowerCase(); d.dataset.touched = "";
     muUnlink(d); h.textContent = i.other ? `≈ ${i.source.replace("≈ ", "")} – bitte prüfen` : "✓ " + i.source; if (i.other) pipLink();
+    const ex = ownSort(muVendorName(), $("mu-mat").value, i.name); if (ex) muLink(d, ex);
   });
   d.querySelector(".mu-n").oninput = e => {
     if (e.isTrusted) muUnlink(d);
+    const ex = ownSort(muVendorName(), $("mu-mat").value, e.target.value);
+    if (ex) { clearTimeout(colT.get(d)); const pos = e.target.selectionStart; muLink(d, ex); try { e.target.setSelectionRange(pos, pos); } catch {} return; }
     if (d.dataset.touched) return;
     colorLookup(e.target.value, muVendorName(), $("mu-mat").value, r => {
       if (r.hex) { d.querySelector(".mu-c").value = "#" + r.hex.toLowerCase(); h.textContent = (r.exact ? "✓ " : "≈ ") + r.source;
@@ -543,6 +546,13 @@ function muRow(name = "", hex = "", ext = "") {
   $("mu-rows").appendChild(d);
   muLots(d);
   return d;
+}
+// Gibt es diese Sorte (Hersteller + Material + Name) schon im Lager?
+const _mn = m => (m || "").toUpperCase().replace(/[\s_]+/g, "");
+function ownSort(vendorName, mat, name) {
+  name = (name || "").trim().toLowerCase(); if (!name) return null;
+  return D.filaments.find(f => (f.name || "").trim().toLowerCase() === name && (!mat || _mn(f.material) === _mn(mat)) &&
+    (!vendorName || (f.vendor || "").toLowerCase() === vendorName.trim().toLowerCase())) || null;
 }
 // Zeile gehört zu einer vorhandenen Sorte → nur Rollen hinzufügen; Name ändern löst die Verbindung
 function muLink(d, f) {
@@ -636,6 +646,11 @@ function muTpl() {
     srcSummary(MU_MAP, "mu-tplhint");
   }, 300);
 }
+function muRecheck() { [...$("mu-rows").children].forEach(d => { const n = d.querySelector(".mu-n"); if (!n.value.trim()) return;
+  const ex = ownSort(muVendorName(), $("mu-mat").value, n.value);
+  if (ex && +d.dataset.fid !== ex.id) muLink(d, ex); else if (!ex && d.dataset.fid) muUnlink(d); }); }
+$("mu-mat").addEventListener("change", muRecheck); $("mu-mat").addEventListener("input", () => setTimeout(muRecheck, 400));
+$("mu-vendor").addEventListener("change", muRecheck);
 $("mu-vendor").onchange = () => { $("mu-newv").style.display = $("mu-vendor").value === "new" ? "" : "none"; muTpl(); };
 $("mu-mat").oninput = muTpl;
 async function muFromDb() {
@@ -1051,12 +1066,28 @@ async function loadCodes(fid) {
   if (!fid) { box.style.display = "none"; return; }
   let r; try { r = await (await fetch(`/api/lager/codes?fid=${fid}`)).json(); } catch { return; }
   box.style.display = "";
-  box.innerHTML = `<span class="lab">Erkennungs-Nummern</span>` + (r.codes.length
-    ? `<div class="chips">${r.codes.map(c => `<span class="chip">${esc(c)} <button type="button" title="Nummer entfernen" data-c="${esc(c)}">✕</button></span>`).join("")}</div>`
-    : `<div class="muted small">Noch keine – wird beim nächsten Scan oder beim Eintragen einer Charge gelernt.</div>`);
+  box.innerHTML = `<span class="lab">Erkennungs-Nummern</span>
+    <div class="chips">${r.codes.map(c => `<span class="chip">${esc(c)} <button type="button" title="Nummer ändern" data-e="${esc(c)}">✎</button><button type="button" title="Nummer entfernen" data-c="${esc(c)}">✕</button></span>`).join("")}
+      <button type="button" class="small-btn" data-add="1">＋ Nummer</button></div>
+    ${r.codes.length ? "" : `<div class="muted small">Noch keine – wird beim nächsten Scan oder beim Eintragen einer Charge gelernt.</div>`}`;
   box.querySelectorAll("button[data-c]").forEach(b => b.onclick = async () => {
-    await api("/api/lager/codes", "POST", {code: b.dataset.c}); PH.toast(`Nummer ${b.dataset.c} entfernt`); loadCodes(fid);
+    await api("/api/lager/codes", "POST", {code: b.dataset.c, remove: true}); PH.toast(`Nummer ${b.dataset.c} entfernt`); loadCodes(fid);
   });
+  const edit = (old, anchor) => {
+    const inp = document.createElement("input"); inp.className = "codeedit"; inp.value = old || ""; inp.placeholder = "z. B. 04260702AJ"; inp.autocomplete = "off";
+    const ok = document.createElement("button"); ok.type = "button"; ok.className = "small-btn"; ok.textContent = "✓";
+    const wrap = document.createElement("span"); wrap.className = "chip codewrap"; wrap.append(inp, ok);
+    anchor.replaceWith(wrap); inp.focus();
+    const save = async () => {
+      const v = inp.value.trim().toUpperCase().replace(/\s+/g, "");
+      if (!v || v === old) return loadCodes(fid);
+      const d = await api("/api/lager/codes", "POST", {code: v, fid, old: old || ""});
+      PH.toast(d.moved_from ? `Nummer ${v} gehört jetzt zu dieser Sorte (vorher zu einer anderen)` : `Nummer ${v} gespeichert`); loadCodes(fid);
+    };
+    ok.onclick = save; inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") loadCodes(fid); };
+  };
+  box.querySelectorAll("button[data-e]").forEach(b => b.onclick = () => edit(b.dataset.e, b.closest(".chip")));
+  box.querySelector("button[data-add]").onclick = e => edit("", e.target);
 }
 function autoTpl() { fDefaults(); }      // Werte: deine Sorte → SpoolmanDB (mit Herkunft)
 srcWatch(F_MAP); srcWatch(MU_MAP);
@@ -1201,6 +1232,20 @@ function colorLookup(name, vendor, material, cb, key = "f") {
     cb(r);
   }, 450));
 }
+function filExists() {
+  if ($("f-id").value) return false;
+  const vend = $("f-vendor").value === "new" ? $("f-vname").value : (D.vendors.find(v => v.id === +$("f-vendor").value) || {}).name || "";
+  const ex = ownSort(vend, $("f-mat").value, $("f-name").value);
+  let w = $("f-exists");
+  if (!ex) { if (w) w.remove(); return false; }
+  if (!w) { w = document.createElement("div"); w.id = "f-exists"; w.className = "wres small exists"; $("f-name").closest(".field").appendChild(w); }
+  w.innerHTML = `✓ <b>Schon im Lager:</b> ${esc(ex.vendor)} ${esc(ex.material)} ${esc(ex.name)} – <a href="#">nur Rollen hinzufügen</a>`;
+  w.querySelector("a").onclick = e => { e.preventDefault(); const lot = $("f-lot").value.trim(); closeM(); openAdd(ex.id);
+    if (lot) { scanCtx = scanCtx || {}; scanCtx.lot = lot; $("a-res").innerHTML = `Charge <b>${esc(lot)}</b> wird bei den Rollen gespeichert.`; } };
+  return true;
+}
+["f-name", "f-mat"].forEach(id => $(id).addEventListener("input", () => setTimeout(filExists, 300)));
+$("f-vendor").addEventListener("change", () => setTimeout(filExists, 100));
 function filColor() {
   if (colTouched || $("f-id").value) return;
   const vend = $("f-vendor").value === "new" ? $("f-vname").value : (D.vendors.find(v => v.id === +$("f-vendor").value) || {}).name || "";

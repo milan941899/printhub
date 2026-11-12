@@ -1101,6 +1101,22 @@ async def api_lager_codes(request):
         return JSONResponse({"codes": _codes_for(request.query_params.get("fid") or 0)})
     b = await request.json()
     code = _code_norm(b.get("code"))
+    if b.get("fid") and not b.get("remove"):
+        # von Hand zuordnen (neu oder geändert) – gilt auch für vorher gesperrte Nummern
+        new = code
+        if len(new) < 4:
+            return JSONResponse({"error": "Nummer zu kurz (mind. 4 Zeichen)"}, status_code=400)
+        with store.lock:
+            m = store.data.setdefault("ean_map", {})
+            if b.get("old"):
+                m.pop(_code_norm(b["old"]), None)
+            if new in store.data.setdefault("code_conflict", []):
+                store.data["code_conflict"].remove(new)
+            other = m.get(new)
+            m[new] = int(b["fid"])
+            store._save()
+        log.info("Lager: Nummer %s von Hand Sorte #%s zugeordnet%s", new, b["fid"], f" (vorher #{other})" if other and other != int(b["fid"]) else "")
+        return JSONResponse({"ok": True, "moved_from": other if other and other != int(b["fid"]) else None})
     with store.lock:
         (store.data.get("ean_map") or {}).pop(code, None)
         if b.get("block") and code not in store.data.setdefault("code_conflict", []):
