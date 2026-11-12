@@ -6,6 +6,9 @@ ENV PYTHONUNBUFFERED=1 \
     TZ=Europe/Rome
 
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg tzdata fonts-dejavu-core libzbar0 tesseract-ocr tesseract-ocr-eng && rm -rf /var/lib/apt/lists/*
+# schnelles Tesseract-Modell zusätzlich (für den ersten, schnellen Lesedurchgang beim Etikett-Scan)
+ADD https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata /tmp/eng_fast.traineddata
+RUN d=$(dirname $(ls /usr/share/tesseract-ocr/*/tessdata/eng.traineddata)) && mv /tmp/eng_fast.traineddata "$d/eng_fast.traineddata" && chmod 644 "$d/eng_fast.traineddata"
 
 WORKDIR /srv
 COPY requirements.txt .

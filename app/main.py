@@ -1192,7 +1192,7 @@ def _scan_match(parsed, brand=""):
                 sc -= 2
         if parsed.get("color"):
             fn, pn = _tnorm(f.get("name")).strip(), _tnorm(parsed["color"]).strip()
-            if fn == pn:
+            if fn == pn and parsed.get("color_src") != "base":
                 sc += 12; why.append("Farbname")
             elif parsed.get("color_src") != "base" and fn and pn and fn not in pn and pn not in fn:
                 sc -= 6                          # Etikett nennt eine andere Farbe
@@ -1222,6 +1222,59 @@ def _tnorm(t):
     """Klein, nur Wörter, Schreibvarianten vereinheitlicht (Grey = Gray)."""
     w = re.sub(r"[^a-z0-9äöüß+]+", " ", (t or "").lower()).split()
     return " " + " ".join(_SYN.get(x, x) for x in w) + " "
+
+
+_VWORDS = None
+
+
+def _vendor_by_words(text):
+    """Hersteller über ein markantes Wort, das nur bei einem Hersteller vorkommt (z. B. „Panchroma“ → Polymaker)."""
+    global _VWORDS
+    if _VWORDS is None:
+        idx = {}
+        try:
+            for f in spoolman.external_filaments():
+                for w in set(_tnorm(f.get("name")).split()):
+                    if len(w) >= 6 and w.isalpha():
+                        idx.setdefault(w, set()).add((f.get("manufacturer") or "").strip())
+        except Exception:
+            return ""
+        _VWORDS = {w: next(iter(m)) for w, m in idx.items() if len(m) == 1}
+    own = {}
+    for f in _own_filaments():
+        v = ((f.get("vendor") or {}).get("name") or "").strip()
+        for w in _tnorm(f.get("name")).split():
+            if len(w) >= 6 and w.isalpha():
+                own.setdefault(w, set()).add(v)
+    hits = {}
+    for w in set(_tnorm(text).split()):
+        if w in _BASE or w in _MAT_WORDS:
+            continue
+        m = own.get(w)
+        v = next(iter(m)) if m and len(m) == 1 else _VWORDS.get(w)
+        if v:
+            hits[v] = hits.get(v, 0) + 1
+    return max(hits, key=hits.get) if hits else ""
+
+
+def _color_line(text, base, vendor=""):
+    """Zeile, in der der Grundton steht, als Farbname („MATTE FOSSIL GREY“ → „Matte Fossil Grey“) – max. 4 Wörter,
+    ohne Material/Hersteller/Zahlen."""
+    alts = [base] + [k for k, v in _SYN.items() if v == base]
+    skip = (_MAT_WORDS - {"matte", "silk"}) | {(vendor or "").lower(), "color", "colour", "farbe"}   # „Matte“/„Silk“ gehören zum Namen
+    best = None
+    for line in (text or "").splitlines():
+        if not re.search(r"\b(" + "|".join(alts) + r")\b", line, flags=re.I):
+            continue
+        words = [w for w in re.findall(r"[A-Za-zÄÖÜäöüß]+", line) if w.lower() not in skip]
+        if not 2 <= len(words) <= 4 or any(len(w) < 3 for w in words):
+            continue
+        if not any(w.lower() in alts for w in words[-2:]):
+            continue
+        cand = " ".join(w.capitalize() for w in words)
+        if not best or len(cand) > len(best):
+            best = cand
+    return best
 
 
 def _detect_vendor(text):
@@ -1346,20 +1399,25 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
     # Text auf dem Etikett: erst der Bereich um den Strichcode, dann das ganze Foto
     if img is not None:
         texts = []
+        def enough():
+            # fertig, sobald Material und eine richtige Farbe (nicht nur „Grey“) da sind – das Gewicht kommt sonst aus der Sorte
+            tj, pv = "\n".join(texts), scanmod.parse_votes(texts)
+            col = _own_color(tj, pv.get("material", ""), vendor) or (pv.get("color") and pv["color"].lower() not in _BASE)
+            return bool(col and pv.get("material"))
         for c in codes:
             if c.get("box"):
-                texts += scanmod.band_texts(img, c)
-                # Farbe schon gefunden? Sonst Stufe 2: gedreht, Schatten ausgleichen, ganzes Etikett
-                tj, pv = "\n".join(texts), scanmod.parse_votes(texts)
-                # Stufe 2 nur, wenn Farbe oder Material fehlt – das Gewicht allein lohnt die doppelte Zeit nicht (kommt sonst aus der Sorte)
-                if not ((_own_color(tj, pv.get("material", ""), vendor) or pv.get("color")) and pv.get("material")):
-                    texts += scanmod.band_texts(img, c, stage=2)
+                # Stufen: a) Zeile über den Balken (schnell) → b) restliche Streifen → 2) gedreht/Schatten → ganzes Etikett
+                for st in ("a", "b", 2):
+                    texts += scanmod.band_texts(img, c, stage=st)
+                    if enough():
+                        break
+                else:
                     texts += scanmod.ocr_texts(scanmod.label_crop(img, c), small=True)
                 break
         p = scanmod.parse_votes(texts)
         alltexts += texts
-        if not texts or not all(k in p for k in ("material", "color", "weight")):
-            ft = scanmod.ocr_texts(img, small=not texts)
+        if not texts or not (p.get("material") and p.get("color") and p["color"].lower() not in _BASE):
+            ft = scanmod.ocr_texts(img, small=False)
             alltexts += ft
             full = scanmod.parse_votes(ft)
             p = {**full, **p}
@@ -1368,9 +1426,14 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         res["timing"]["total_ocr"] = round(time.time() - t1, 2)
     # Nummern vom Etikett (Charge/Artikel, z. B. „04260702AJ“) – auch ohne Strichcode
     res["ocr_codes"] = scanmod.find_codes(alltexts)[:3]
+    pp = res["parsed"]
+    res["sku"] = pp.get("sku")                       # Artikelnummer: pro Farbe eindeutig → starkes Merkmal
+    if pp.get("batch") and not res["lot"]:
+        b = pp["batch"]                              # „Batch number“ = Charge (Lesefehler „AJ“→„A)“ über find_codes korrigiert)
+        res["lot"] = next((c for c in res["ocr_codes"] if c.startswith(b) and len(c) <= len(b) + 1), b)
     if not res["lot"] and res["ocr_codes"]:
-        res["lot"] = res["ocr_codes"][0]
-    cands = [c for c in [res["ean"]] + others + res["ocr_codes"] if c]
+        res["lot"] = next((c for c in res["ocr_codes"] if _code_norm(c) != _code_norm(res["sku"] or "")), None)
+    cands = [c for c in [res["sku"], res["ean"]] + others + res["ocr_codes"] if c]
     for c in cands:
         if _code_norm(c) in known:
             res["learned"] = known[_code_norm(c)]
@@ -1389,7 +1452,7 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
     # Hersteller + Farbe: SpoolmanDB zuerst, dann eingebaute Farbliste, sonst nur Grundton („Red“) → Vorschläge
     p = res["parsed"]
     text = "\n".join(alltexts)
-    vend = (vendor or "").strip() or p.get("brand") or _detect_vendor(text)
+    vend = (vendor or "").strip() or p.get("brand") or _detect_vendor(text) or _vendor_by_words(text)
     if vend:
         p.setdefault("brand", vend)
     if material and not p.get("material"):
@@ -1418,6 +1481,11 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             base = next((w for w in _BASE if f" {w} " in tn), None)
         if base:
             p["color"], p["color_src"] = base.title(), "base"
+            line = _color_line(text, base, vend)      # „MATTE FOSSIL GREY“ → ganze Zeile als Farbname
+            if line:
+                p["color"], p["color_src"] = line, "line"
+    if p.get("hex_print"):
+        p["color_hex"] = p["hex_print"]              # aufgedruckter Farbcode ist am genauesten
     brand = res["parsed"].get("brand") or ""
     if res["ean"] and not res["learned"]:
         on = scanmod.online_lookup(requests, res["ean"])
@@ -1465,7 +1533,9 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             f = fils[fid]
             res["matches"].append({"id": fid, "label": label(f), "color": "#" + (f.get("color_hex") or "999999")[:6], "score": pts, "why": why})
     ci = res.get("code_info") or {}
-    if res["learned"]:
+    if res["learned"] and res.get("sku") and (res.get("code_info") or {}).get("code") == _code_norm(res["sku"]):
+        boost(res["learned"], 15, "Artikelnummer bekannt")      # SKU ist pro Farbe eindeutig
+    elif res["learned"]:
         if agrees(res["learned"]):
             boost(res["learned"], 4, "Charge bekannt")
         else:

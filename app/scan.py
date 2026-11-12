@@ -122,7 +122,7 @@ def label_crop(img, code):
     return base.crop(box)
 
 
-def band_texts(img, code, stage=1):
+def band_texts(img, code, stage="a"):
     """Text in Streifen über und unter dem Strichcode lesen – in Originalgröße (Vergrößern verschlechtert schmale
     Etikettenschrift). Oben steht meist Material/Farbe, unten Nummer, Gewicht, Temperaturen."""
     base = ImageOps.exif_transpose(img).convert("L")
@@ -151,22 +151,24 @@ def band_texts(img, code, stage=1):
     top = base.crop((max(0, x0 - int(w * .15)), max(0, top_y - int(w * .13)), min(base.width, x1 + int(w * .15)), max(1, top_y)))
     bot = base.crop((max(0, x0 - int(w * .15)), bot_y, min(base.width, x1 + int(w * .25)), min(base.height, bot_y + int(w * .42))))
     jobs = []
-    def go(band, sc, sharp, psm):
+    def go(band, sc, sharp, psm, fast=False):
         if band.width < 20 or band.height < 10:
             return
         b = band.resize((max(1, int(band.width * sc)), max(1, int(band.height * sc))), Image.LANCZOS) if sc != 1 else band
         b = ImageOps.autocontrast(b)
         if sharp:
             b = b.filter(ImageFilter.SHARPEN)
-        jobs.append((b, psm))
-    if stage == 1:
-        for sc, sh, psm in ((0.7, False, "6"), (0.7, True, "11"), (1.0, True, "6"), (1.0, False, "7")):
-            go(top, sc, sh, psm)
+        jobs.append((b, psm, fast))
+    if stage == "a":            # schnell: nur die Zeile über den Balken (Material · Farbe)
+        go(top, 0.7, False, "6", True)
+        go(top, 1.0, True, "6", True)
+        return run_ocr(jobs)
+    if stage == "b":            # Rest der Streifen inkl. unter den Balken (Gewicht, Nummer, Temperaturen)
+        go(top, 0.7, True, "11")
+        go(top, 1.0, False, "7")
         for sc, sh, psm in ((1.0, False, "6"), (1.0, True, "6"), (1.5, False, "6")):
             go(bot, sc, sh, psm)
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=4) as ex:
-            return list(ex.map(lambda j: _tess(*j), jobs))
+        return run_ocr(jobs)
     # Stufe 2 (nur wenn Stufe 1 keine Farbe fand) – schräge Etiketten: großzügiger Bereich über der Lese-Linie, leicht gedreht
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     for ang in (0, -3, 3):
@@ -181,9 +183,7 @@ def band_texts(img, code, stage=1):
         flat = Image.eval(ImageChops.subtract(bg, wide), lambda v: 255 - min(255, v * 3))
         jobs.append((flat, "11"))
         jobs.append((flat.resize((int(flat.width * 1.5), int(flat.height * 1.5)), Image.LANCZOS), "11"))
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=6) as ex:
-        return list(ex.map(lambda j: _tess(*j), jobs))
+    return run_ocr(jobs)
 
 
 def is_ean(code):
@@ -197,12 +197,35 @@ def is_ean(code):
 
 
 # ---------------------------------------------------------------- Text (OCR)
-def _tess(im, psm, timeout=25):
+_WORKERS = max(2, min(8, os.cpu_count() or 2))
+_FAST = None
+
+
+def _fast_lang():
+    """„eng_fast“ (schnelles Tesseract-Modell), falls im Image vorhanden."""
+    global _FAST
+    if _FAST is None:
+        import glob
+        _FAST = "eng_fast" if glob.glob("/usr/share/tesseract-ocr/*/tessdata/eng_fast.traineddata") else ""
+    return _FAST
+
+
+def run_ocr(jobs):
+    """[(bild, psm, fast?)] parallel auf allen Kernen."""
+    from concurrent.futures import ThreadPoolExecutor
+    if not jobs:
+        return []
+    with ThreadPoolExecutor(max_workers=_WORKERS) as ex:
+        return list(ex.map(lambda j: _tess(j[0], j[1], fast=len(j) > 2 and j[2]), jobs))
+
+
+def _tess(im, psm, timeout=25, fast=False):
     b = io.BytesIO()
     im.save(b, "PNG")
     try:
         # OMP_THREAD_LIMIT=1: mehrere Tesseract-Läufe parallel, jeder mit einem Kern (sonst bremsen sie sich gegenseitig aus)
-        p = subprocess.run(["tesseract", "stdin", "stdout", "-l", "eng", "--psm", psm],
+        lang = (_fast_lang() or "eng") if fast else "eng"
+        p = subprocess.run(["tesseract", "stdin", "stdout", "-l", lang, "--psm", psm],
                            input=b.getvalue(), capture_output=True, timeout=timeout,
                            env={**os.environ, "OMP_THREAD_LIMIT": "1"})
         return p.stdout.decode("utf-8", "ignore")
@@ -220,8 +243,13 @@ def ocr_texts(img, small=False):
     im.thumbnail((2400, 2400))
     im = ImageOps.autocontrast(im)
     sharp = im.filter(ImageFilter.SHARPEN)
-    variants = [(sharp, "6"), (im, "6")] if small else [(sharp, "11")]
-    return [_tess(i, psm) for i, psm in variants]
+    if small:
+        return run_ocr([(sharp, "6"), (im, "6")])
+    # ganzes Foto: dunkle Schrift, dazu helle Schrift auf buntem/dunklem Grund (Hintergrund abziehen)
+    bg = im.filter(ImageFilter.GaussianBlur(max(15, im.width // 80)))
+    light = Image.eval(ImageChops.subtract(im, bg), lambda v: 255 - min(255, v * 3))
+    dark = Image.eval(ImageChops.subtract(bg, im), lambda v: 255 - min(255, v * 3))
+    return run_ocr([(sharp, "11"), (light, "11"), (dark, "11")])
 
 
 def ocr(img, timeout=25):
@@ -269,7 +297,7 @@ COLORS = {
 _MOD = ["light", "dark", "sky", "navy", "olive", "grass", "army", "mint", "matte", "silk", "hell", "dunkel"]
 
 
-_OCR_FIX = [(r"(\d)\s?k[9gq](?![a-z])", r"\1kg"), (r"(?<![A-Za-z])Whi[l1I]e(?![a-z])", "White"), (r"(?<![A-Za-z])Whte(?![a-z])", "White"),
+_OCR_FIX = [(r"(?<![A-Za-z0-9])[lI|](\s?kg)(?![a-z])", r"1\1"), (r"(\d)\s?k[9gq](?![a-z])", r"\1kg"), (r"(?<![A-Za-z])Whi[l1I]e(?![a-z])", "White"), (r"(?<![A-Za-z])Whte(?![a-z])", "White"),
             (r"(?<![A-Z0-9])PET[C6](?![A-Z0-9])", "PETG"), (r"(?<![A-Z0-9])P[1I|]A(?![A-Z0-9])", "PLA"),
             (r"(?<![A-Z0-9])A8S(?![A-Z0-9])", "ABS"), (r"(?<![A-Z0-9])TP[UV](?![A-Z0-9])", "TPU")]
 
@@ -308,13 +336,35 @@ def parse_text(text):
     name, hx = colors.find_in_text(t)           # Originalname wie gedruckt, z. B. „Sky Blue“
     if name:
         out["color"], out["color_hex"] = name, hx or "999999"
-    m = re.search(r"(\d+(?:[.,]\d+)?)\s?(kg|k|g)(?![a-z])", low)
+    # Gewicht: „Net weight: 1kg“ zuerst, sonst die erste plausible Angabe (nicht „Spool weight“, keine Skala „800g 600g …“)
+    def kg(num, unit):
+        v = float(num.replace(",", "."))
+        return plausible_weight(v * 1000 if unit in ("kg", "k") else v)
+    m = re.search(r"net\s*(?:weight|wt\.?|gewicht)\s*[:;.]?\s*(\d+(?:[.,]\d+)?)\s?(kg|k|g)(?![a-z])", low)
+    g = kg(m.group(1), m.group(2)) if m else None
+    if not g:
+        for m in re.finditer(r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s?(kg|k|g)(?![a-z])", low):
+            if re.search(r"spool\s*weight\s*[:;.]?\s*~?\s*$", low[max(0, m.start() - 25):m.start()]):
+                continue
+            g = kg(m.group(1), m.group(2))
+            if g:
+                break
+    if g:
+        out["weight"] = g
+    m = re.search(r"(?:spool|empty\s*spool|leer\w*)\s*weight\s*[:;.]?\s*~?\s*(\d{2,3})\s?g", low)
+    if m and 50 <= int(m.group(1)) <= 400:
+        out["spool_weight"] = int(m.group(1))
+    m = re.search(r"hex\s*[:;.]?\s*#?\s*([0-9a-f]{6})(?![0-9a-z])", low)
     if m:
-        v = float(m.group(1).replace(",", "."))
-        g = v * 1000 if m.group(2) in ("kg", "k") else v
-        g = plausible_weight(g)
-        if g:
-            out["weight"] = g
+        out["hex_print"] = m.group(1).upper()
+    m = re.search(r"(?:sku|art(?:ikel)?\.?\s*-?\s*nr\.?|item\s*(?:no|number)\.?|product\s*code)\s*[:;.]?\s*([a-z0-9][a-z0-9-]{3,})", low)
+    if m:
+        out["sku"] = m.group(1).upper()
+    m = re.search(r"(?:batch|lot)\s*(?:number|no\.?|nr\.?|#)?\s*[:;.]?\s*([a-z0-9]{5,})", low)
+    if m and re.search(r"\d", m.group(1)):
+        out["batch"] = m.group(1).upper()
+    if "material" not in out and re.search(r"(?<![a-z])ingeo(?![a-z])", low):
+        out["material"] = "PLA"              # Ingeo = PLA-Rohstoff (z. B. Polymaker)
     m = re.search(r"(1[.,]75|2[.,]85|3[.,]00?)\s?mm", low)
     if m:
         out["diameter"] = float(m.group(1).replace(",", "."))

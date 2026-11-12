@@ -789,7 +789,8 @@ async function muScanOne(f, row) {
     if (f0) muLink(r, f0);
     else if (name) {
       const n = r.querySelector(".mu-n"); n.value = name;
-      if (p.color_src === "db" && p.color_hex) { r.querySelector(".mu-c").value = "#" + p.color_hex.toLowerCase(); r.dataset.touched = "1"; r.dataset.ext = p.external_id || "";
+      if (p.hex_print) { r.querySelector(".mu-c").value = "#" + p.hex_print.toLowerCase(); r.dataset.touched = "1"; r.querySelector(".mu-h").textContent = "📷 Farbcode vom Etikett"; }
+      else if (p.color_src === "db" && p.color_hex) { r.querySelector(".mu-c").value = "#" + p.color_hex.toLowerCase(); r.dataset.touched = "1"; r.dataset.ext = p.external_id || "";
         r.querySelector(".mu-h").textContent = "🗄 Farbe aus der SpoolmanDB"; }
       else { r.dataset.touched = ""; n.dispatchEvent(new Event("input")); }
       if (p.color_src === "base") setTimeout(() => { r.querySelector(".mu-h").innerHTML = `⚠ nur Grundton <b>${esc(name)}</b> erkannt – Feld antippen und genaue Farbe aus den Vorschlägen wählen`; }, 700);
@@ -1031,6 +1032,10 @@ function scanShow(d) {
   if (p.diameter) chips.push(`Ø ${p.diameter} mm`);
   if (p.extruder_temp) chips.push(`Düse ~${p.extruder_temp} °C`);
   if (p.bed_temp) chips.push(`Bett ~${p.bed_temp} °C`);
+  if (p.spool_weight) chips.push(`Leerspule ~${p.spool_weight} g`);
+  if (p.hex_print) chips.push(`<span class="dot" style="background:#${p.hex_print}"></span>#${p.hex_print}`);
+  if (d.sku) chips.push(`SKU ${esc(d.sku)}`);
+  if (!d.codes?.length && d.lot) chips.push(`Charge ${esc(d.lot)}`);
   const codes = (d.codes || []).map(c => `<code>${esc(c.data)}</code> <span class="muted small">${d.ean === c.data ? "EAN" : c.data === d.lot ? "Charge" : esc(c.type)}</span>`).join(" · ");
   let online = "";
   if (d.online && d.online.error) online = `<div class="muted small">🌐 ${esc(d.online.error)}</div>`;
@@ -1073,10 +1078,12 @@ function scanNext() {
     if (p.extruder_temp) autoSet("f-et", p.extruder_temp, "photo", "", "extruder_temp");
     if (p.bed_temp) autoSet("f-bt", p.bed_temp, "photo", "", "bed_temp");
     if (p.diameter) autoSet("f-diam", p.diameter, "photo", "", "diameter");
+    if (p.spool_weight) autoSet("f-sw", p.spool_weight, "photo", "", "spool_weight");
     scanExtra = [];
     if (p.color) {
       $("f-name").value = p.color;
-      if (p.color_src === "db" && p.color_hex) { $("f-color").value = "#" + p.color_hex.toLowerCase(); scanExtra.push(`🗄 Farbe <b>${esc(p.color)}</b> aus der SpoolmanDB`); }
+      if (p.hex_print) { $("f-color").value = "#" + p.hex_print.toLowerCase(); colTouched = true; scanExtra.push(`📷 Farbcode <b>#${esc(p.hex_print)}</b> vom Etikett`); }
+      else if (p.color_src === "db" && p.color_hex) { $("f-color").value = "#" + p.color_hex.toLowerCase(); scanExtra.push(`🗄 Farbe <b>${esc(p.color)}</b> aus der SpoolmanDB`); }
       else if (p.color_src === "list") scanExtra.push(`📷 Farbname <b>${esc(p.color)}</b> vom Foto`);
       if (p.color_src === "base") {
         scanExtra.push(`📷 nur Grundton <b>${esc(p.color)}</b> erkannt – genaue Farbe unten aus den Vorschlägen wählen`);
@@ -1090,7 +1097,8 @@ function scanNext() {
     return;
   }
   if (v !== "other" && scanCtx.lot && !(scanCtx.code_info && scanCtx.code_info.status === "known" && scanCtx.learned === +v))
-    api("/api/lager/codes", "POST", {code: scanCtx.lot, fid: +v, soft: true}).catch(() => {});      // Nummer gleich bei dieser Sorte merken
+    api("/api/lager/codes", "POST", {code: scanCtx.lot, fid: +v, soft: true}).catch(() => {});
+  if (v !== "other" && scanCtx.sku) api("/api/lager/codes", "POST", {code: scanCtx.sku, fid: +v, soft: true}).catch(() => {});      // Nummer gleich bei dieser Sorte merken
   openAdd(v === "other" ? undefined : +v);
   if (p.weight && v !== "other") { const f = D.filaments.find(x => x.id === +v); if (f && f.weight && Math.abs(f.weight - p.weight) > 20) $("a-weight").value = p.weight; }
   $("a-res").innerHTML = scanCtx.lot ? `Charge <b>${esc(scanCtx.lot)}</b> wird bei den Rollen gespeichert.` : "";
@@ -1177,7 +1185,7 @@ async function saveAdd() {
   const d = await api("/api/lager/spools", "POST", {filament_id: +$("a-fil").value, count: +$("a-count").value,
     initial_weight: $("a-weight").value, price: $("a-price").value, location: $("a-loc").value,
     gross: $("a-gross").value, empty: $("a-empty").value, empty_for_filament: $("a-forfil").checked,
-    lot: scanCtx ? scanCtx.lot : "", ean: scanCtx ? (scanCtx.ean || "") : ""});
+    lot: scanCtx ? scanCtx.lot : "", ean: scanCtx ? (scanCtx.ean || scanCtx.sku || "") : ""});
   scanCtx = null;
   closeM(); PH.toast(`${d.ids.length} Rolle(n) angelegt: #${d.ids.join(", #")}`);
   if ($("a-labels").checked) return printLabels(d.ids);
@@ -1492,7 +1500,7 @@ async function saveFil() {
     bed_temp: $("f-bt").value, count: +$("f-count").value || 0, lot: $("f-lot").value.trim(),
     external_id: dbPicked && dbPicked.name === $("f-name").value && dbPicked.color === $("f-color").value ? $("f-ext").value : "",
     density: $("f-dens").value, diameter: $("f-diam").value,
-    ean: scanCtx && !$("f-id").value ? (scanCtx.ean || "") : ""};
+    ean: scanCtx && !$("f-id").value ? (scanCtx.ean || scanCtx.sku || "") : ""};
   const d = await api("/api/lager/filament", "POST", body);
   const mn = Math.max(0, +$("f-min").value || 0);
   if (mn !== +($("f-min").dataset.was || 0)) await api("/api/lager/min", "PUT", {filament_id: d.id, min: mn});
