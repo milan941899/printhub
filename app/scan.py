@@ -11,7 +11,7 @@ import re
 import subprocess
 import time
 
-from PIL import Image, ImageFilter, ImageOps
+from PIL import ImageChops, Image, ImageFilter, ImageOps
 
 from . import colors
 
@@ -149,7 +149,7 @@ def band_texts(img, code):
     top_y, bot_y = top_y - int(w * .01), bot_y + int(w * .01)
     top = base.crop((max(0, x0 - int(w * .15)), max(0, top_y - int(w * .13)), min(base.width, x1 + int(w * .15)), max(1, top_y)))
     bot = base.crop((max(0, x0 - int(w * .15)), bot_y, min(base.width, x1 + int(w * .25)), min(base.height, bot_y + int(w * .42))))
-    out = []
+    jobs = []
     def go(band, sc, sharp, psm):
         if band.width < 20 or band.height < 10:
             return
@@ -157,12 +157,28 @@ def band_texts(img, code):
         b = ImageOps.autocontrast(b)
         if sharp:
             b = b.filter(ImageFilter.SHARPEN)
-        out.append(_tess(b, psm))
+        jobs.append((b, psm))
     for sc, sh, psm in ((0.7, False, "6"), (0.7, True, "11"), (1.0, True, "6"), (1.0, False, "7")):
         go(top, sc, sh, psm)
     for sc, sh, psm in ((1.0, False, "6"), (1.0, True, "6"), (1.5, False, "6")):
         go(bot, sc, sh, psm)
-    return out
+    # schräge Etiketten: großzügiger Bereich über der Lese-Linie, leicht gedreht
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    for ang in (0, -3, 3):
+        rb = base.rotate(ang, center=(cx, cy), resample=Image.BICUBIC, fillcolor=255) if ang else base
+        wide = rb.crop((max(0, int(x0 - w * .12)), max(0, int(y0 - w * .30)), min(base.width, int(x1 + w * .12)), max(1, int(y0 - w * .02))))
+        go(wide, 0.7, False, "6")
+        go(wide, 0.7, False, "11")
+    # Schatten/ungleichmäßiges Licht ausgleichen: Hintergrund (stark weichgezeichnet) abziehen
+    wide = base.crop((max(0, int(x0 - w * .12)), max(0, int(y0 - w * .30)), min(base.width, int(x1 + w * .12)), max(1, int(y0 - w * .02))))
+    if wide.width > 20 and wide.height > 10:
+        bg = wide.filter(ImageFilter.GaussianBlur(max(10, int(w * .04))))
+        flat = Image.eval(ImageChops.subtract(bg, wide), lambda v: 255 - min(255, v * 3))
+        jobs.append((flat, "11"))
+        jobs.append((flat.resize((int(flat.width * 1.5), int(flat.height * 1.5)), Image.LANCZOS), "11"))
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        return list(ex.map(lambda j: _tess(*j), jobs))
 
 
 def is_ean(code):

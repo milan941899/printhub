@@ -1021,13 +1021,16 @@ function scanShow(d) {
   if (d.online && d.online.error) online = `<div class="muted small">🌐 ${esc(d.online.error)}</div>`;
   else if (d.online) online = `<div class="small">🌐 Online gefunden: <b>${esc(d.online.title)}</b></div>`;
   else if (d.ean && !d.learned) online = `<div class="muted small">🌐 Online nichts gefunden – <a href="https://www.google.com/search?q=${d.ean}" target="_blank">im Web suchen ↗</a></div>`;
-  const opts = (d.matches || []).map((m, i) => `<label class="scopt"><input type="radio" name="scf" value="${m.id}" ${i === 0 ? "checked" : ""}>
+  // nur vorauswählen, wenn die Farbe vom Etikett gelesen wurde – sonst entscheidet nicht die Charge
+  const sure = !!(p.color && p.color_src !== "base" && d.exact_fid);
+  const opts = (d.matches || []).map((m, i) => `<label class="scopt"><input type="radio" name="scf" value="${m.id}" ${i === 0 && sure ? "checked" : ""}>
       <span class="dot" style="background:${m.color}"></span><b>${esc(m.label)}</b> <span class="muted small">${esc(m.why || "")}</span></label>`).join("");
   $("sc-res").innerHTML = `
     ${codes ? `<div class="small">Code: ${codes}</div>` : `<div class="muted small">Kein Strichcode erkannt.</div>`}
     ${chips.length ? `<div class="scchips">${chips.map(c => `<span>${c}</span>`).join("")}</div>` : `<div class="muted small">Kein Text erkannt – Foto näher und gerade aufnehmen.</div>`}
     ${online}
     ${codeMsg(d)}
+    ${!p.color ? `<div class="wres small codemsg multi">⚠ Farbe auf dem Foto nicht erkannt – bitte unten die Sorte wählen oder <a href="#" onclick="event.preventDefault();scanStart()">nochmal fotografieren</a> (gerade, ohne Schatten, Etikett groß im Bild).</div>` : ""}
     <div class="label" style="margin-top:10px">Welche Sorte?</div>
     ${opts || `<div class="muted small">Keine passende Sorte im Lager.</div>`}
     ${d.template ? `<label class="scopt"><input type="radio" name="scf" value="tpl" ${opts ? "" : "checked"}> ＋ Neue Sorte wie <b>${esc(d.template.label)}</b> – Farbe <b>${esc(p.color || "?")}</b></label>` : ""}
@@ -1037,6 +1040,7 @@ function scanShow(d) {
 }
 function scanNext() {
   const v = (document.querySelector("input[name=scf]:checked") || {}).value, p = scanCtx.parsed || {};
+  if (!v) return PH.toast("Bitte eine Sorte wählen", true);
   scanClose();
   if (v === "tpl" || v === "new") {
     openFil(null, v === "tpl" ? scanCtx.template.id : undefined);
