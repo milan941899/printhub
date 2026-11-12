@@ -1038,3 +1038,8 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 @media (max-width:640px) { table.list.nr-week th { white-space:normal !important; overflow-wrap:anywhere; } }
 .nr-week th .sm { display:none; }
 @media (max-width:640px) { .nr-week th .lg { display:none; } .nr-week th .sm { display:inline; } }
+/* Auswahlkreise im Scan nicht zusammendrücken, Text als ein Block */
+.scopt > input[type=radio], .scopt > input[type=checkbox] { flex:0 0 20px; width:20px; height:20px; margin:0; }
+.scopt > .dot { flex:none; }
+.scopt > span, .scopt > b { min-width:0; }
+.scchips .dot, .scopt .dot { flex:none; width:12px !important; height:12px !important; min-width:12px; max-width:12px; padding:0; }
