@@ -115,6 +115,16 @@
     };
   };
 
+  // <base href> lässt Links wie href="#meldungen" auf die Startseite zeigen → im selben Dokument bleiben
+  document.addEventListener("click", e => {
+    const a = e.target.closest && e.target.closest("a[href]");
+    const h = a && a.getAttribute("href");
+    if (h && h.startsWith("#") && !e.defaultPrevented) {
+      e.preventDefault();
+      if (h.length > 1) location.hash = h; else history.replaceState(null, "", location.pathname + location.search);
+    }
+  });
+
   // Hinweis-Leiste oben
   document.addEventListener("DOMContentLoaded", () => {
     const bar = document.createElement("div");
