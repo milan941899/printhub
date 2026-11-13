@@ -45,7 +45,9 @@ Gemacht für **Bambu Lab A1 / A1 mini / P1** (über das Heimnetz, ohne Cloud) un
 |---|---|
 | **Übersicht** | Live-Status jedes Druckers: Fortschritt, Restzeit („noch 56 min“), Schicht, Temperaturen von Düse und Bett, Lüfter, Geschwindigkeit, Kamerabild, Licht- und Strom-Knopf, AMS-Leiste mit allen Spulen |
 | **Spulen** | Jede Spule im Drucker ist einer Spule im Lager (Spoolman) zugeordnet. Nach jedem Druck wird der Verbrauch automatisch abgebucht. Warnung, wenn das Filament für den Druck nicht reicht |
-| **Lager** | Bestand pro Sorte, neue Rollen anlegen (auch aus der Filament-Datenbank), Mindestbestand, Archiv, Etiketten mit QR-Code |
+| **Lager** | Bestand pro Sorte in drei Ansichten (kompakt, ausführlich, Kacheln) mit Suche, Filtern und Sortierung; neue Rollen auch aus der Filament-Datenbank; Mindestbestand mit **Einkaufsliste**, Archiv, Trocknen, Wiegen |
+| **Rolle scannen** | Etikett mit dem Handy fotografieren → Hersteller, Material, Farbe, Gewicht, Temperaturen, Charge und Artikelnummer werden gelesen und mit Lager und Filament-Datenbank abgeglichen. Optional zusätzlich mit **KI** (Google Gemini, Gratis-Schlüssel) für unscharfe oder schattige Fotos |
+| **Serie & Stapel** | Viele Rollen auf einmal erfassen: **Serie** = viele Farben einer Sorte, **Stapel** = gemischte Lieferung verschiedener Hersteller – fotografieren, prüfen, abhaken, anlegen |
 | **Etiketten** | QR-Etiketten für Spulen – als PDF oder direkt auf einem **Brother QL**-Etikettendrucker. QR-Code mit dem Handy scannen → Spule einem Slot zuweisen |
 | **Kosten** | Pro Druck: Strom (mit Shelly-Steckdose gemessen), Filament, Verschleiß – und die Summe |
 | **Verlauf** | Alle Drucke mit Modellbild und Foto nach dem Druck, Filter, Monatsübersicht, CSV-Export; dazu der Verlauf der Warteschlange |
@@ -104,6 +106,8 @@ am Drucker unter *Einstellungen → Netzwerk* den **LAN-Modus** und bei neueren 
 | **OctoEverywhere** | Fernzugriff und KI-Fehlererkennung – PrintHub zeigt den Status und kann den Container bei Druckstart neu starten |
 | **Eigene Kamera** (z. B. USB-Webcam über go2rtc) | Statt oder zusätzlich zur Druckerkamera |
 | **Home Assistant** | Wird nicht gebraucht, stört aber auch nicht |
+| **Google-Gemini-Schlüssel** (kostenlos) | KI-Etiketterkennung beim Rolle-Scannen – für unscharfe Fotos und unbekannte Etiketten |
+| **Handy mit Kamera** | Etiketten scannen, QR-Codes der Spulen |
 
 ---
 
@@ -347,7 +351,10 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
 
 - **Druckerkarte:** Zustand (bereit, druckt, pausiert, Fehler), Fortschrittsring, Restzeit und Fertig-Uhrzeit, Schicht x/y,
   Düse und Bett mit Ziel-Temperatur, Lüfter, Geschwindigkeitsstufe, Dateiname und Modellbild.
-- **Kamera:** Live-Bild der Druckerkamera (oder eigener Kamera), antippen zum Vergrößern.
+- **Kamera:** Live-Bild der Druckerkamera (oder eigener Kamera), antippen zum Vergrößern. Ist der Drucker aus, steht nur
+  eine schmale Leiste „📷 Kamera aus – Drucker offline“; Fehler werden verständlich angezeigt („Drucker nicht erreichbar –
+  ausgeschaltet oder nicht im WLAN“).
+- **Kacheln** unter dem Fortschritt: Leistung, Strom heute, Spulen – während eines Drucks Strom, Filament und Kosten dieses Drucks.
 - **💡 Licht** und **⚡ Strom**-Knopf direkt an der Karte.
 - **AMS-Leiste:** Jeder Slot mit Farbe, Material und zugeordneter Spule aus dem Lager inkl. Restgewicht.
   Slot antippen → Spule wählen oder aus dem Drucker nehmen.
@@ -379,35 +386,115 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
 
 ### 6.3 Lager
 
-- Bestand pro **Sorte** (Hersteller + Material + Farbe) mit Anzahl Rollen, Gesamtgewicht, Wert.
-- **Mindestbestand** pro Sorte → Meldung „Lagerbestand unter Minimum“.
+**Überblick**
+- Bestand pro **Sorte** (Hersteller + Material + Farbe) mit Anzahl Rollen, Restgewicht und Wert. Oben Kennzahlen:
+  Sorten, Rollen (voll/angebrochen), Filament gesamt, Lagerwert, „Nachkaufen“.
+- **Drei Ansichten:** *Kompakt* (eine Zeile pro Sorte – ideal am Handy und bei vielen Rollen), *Ausführlich* (jede Rolle
+  einzeln) und *Kacheln* (Farbfelder). Gruppieren nach Hersteller, Material oder Farbfamilie; sortieren nach Name,
+  Bestand, Restmenge oder zuletzt benutzt.
+- **Suchleiste** bleibt beim Scrollen oben; **Material-Chips** (PLA, PETG …) und **Status-Filter**: unter Minimum,
+  Trocknen fällig, fast leer, im Drucker.
+- Die gewählte Ansicht merkt sich jedes Gerät.
+
+**Mindestbestand & Einkaufsliste**
+- **Mindestbestand** (volle Rollen) pro Sorte unter ✎ → Meldung „Nachkaufen 🛒“ per Telegram/ntfy.
+- **⋯ Mehr → 🛒 Einkaufsliste:** alle Sorten unter dem Minimum mit fehlender Anzahl, letztem Preis und ungefährer Summe –
+  **📋 Als Text kopieren** für eine Nachricht oder Bestellung.
+
+**Neue Sorten und Rollen**
 - Neue Sorten aus der **SpoolmanDB** (Tausende Filamente mit korrekten Daten) übernehmen.
+- **Werte mit Herkunft:** Beim Anlegen füllt PrintHub Temperaturen, Gewichte und Preis automatisch aus – und zeigt an
+  jedem Feld, woher der Wert kommt (📷 Etikett, ★ deine ähnliche Sorte, 🗄 SpoolmanDB, ≈ Farbliste). Ein geändertes Feld
+  verliert seine Markierung.
+- **Farbe zum Namen:** PrintHub sucht zu „Sky Blue“ & Co. den Farbwert – zuerst in der Filament-Datenbank (gleicher
+  Hersteller), sonst in einer eingebauten Farbliste. Beim Tippen erscheinen **Vorschläge** (auch mit Tippfehlern, deutsch
+  und englisch). Passt nichts, gibt es **📷 aus Foto** (Pipette, mit Weißabgleich am Etikett).
+- **„Schon im Lager“:** Gibt es die Sorte schon, sagt PrintHub das sofort und legt nur Rollen dazu statt einer doppelten Sorte.
+- **⧉** an jeder Sorte: neue Sorte mit allen Werten dieser Sorte, nur Name und Farbe neu.
+- **☑ Sorten auswählen → ✎ Gemeinsam bearbeiten:** Preis, Temperaturen, Gewichte für viele Sorten auf einmal ändern.
+- **Namen:** Sorten heißen wie auf dem Etikett (meist Englisch). **⋯ Mehr → Aa Namen vereinheitlichen** benennt deutsche
+  Farbnamen um („Weiß“ → „White“).
+- **Danach gleich Etiketten drucken:** Haken bei „Neue Rollen“, „Neue Sorte“ und im Stapel – nach dem Anlegen öffnen sich
+  die QR-Etiketten aller neuen Rollen.
+
+**Wiegen & angebrochene Rollen**
 - **⚖ Wiegen:** Bruttogewicht von der Waage eingeben – PrintHub zieht das Leergewicht der Spule ab und speichert den
-  Rest. Das Leergewicht merkt sich PrintHub auf Wunsch für die ganze Sorte. In der Liste steht bei jeder Rolle, was die
-  Waage zeigen sollte („⚖ 1165 g“) – so sieht man Abweichungen sofort.
-- **Viele ähnliche Sorten bequem anlegen:**
-  - Bei „Neue Sorte“ übernimmt PrintHub automatisch Preis, Temperaturen, Netto- und Leergewicht der zuletzt angelegten Sorte
-    desselben Herstellers und Materials – nur Name und Farbe eintragen. **⧉** an jeder Sorte macht dasselbe gezielt.
-  - **⋯ Mehr → 🎨 Mehrere Farben anlegen:** gemeinsame Werte einmal, dann pro Farbe eine Zeile (Name, Farbe, Anzahl Rollen) –
-    oder Farben direkt aus der Filament-Datenbank ankreuzen.
-  - **☑ Sorten auswählen → ✎ Gemeinsam bearbeiten:** Preis, Temperaturen, Gewichte für viele Sorten auf einmal ändern.
-  - **Farbe zum Namen:** PrintHub sucht zu „Sky Blue“ & Co. den Farbwert – zuerst in der Filament-Datenbank (gleicher Hersteller),
-    sonst in einer eingebauten Farbliste. Passt nichts, gibt es **📷 aus Foto** (Pipette, mit Weißabgleich am Etikett).
-  - **Namen:** Sorten heißen wie auf dem Etikett (meist Englisch). **⋯ Mehr → Aa Namen vereinheitlichen** benennt deutsche
-    Farbnamen um („Weiß“ → „White“). Suche und Abgleich verstehen beide Sprachen.
-  - Leergewicht beim Wiegen auch **für alle Rollen eines Herstellers** merken.
-- **📷 Rolle scannen:** Etikett oder Schachtel mit dem Handy fotografieren. PrintHub liest den Strichcode (EAN oder
-  Chargen-Nummer) und den Text auf dem Etikett (Material, Farbe, Gewicht, Temperaturen) und schlägt die passende Sorte vor –
-  oder legt mit diesen Daten eine neue an. Codes werden gelernt: ab der zweiten Rolle reicht ein Scan. Unbekannte EAN-Codes
-  schlägt PrintHub online nach (UPCitemdb, kostenlos, 100 Abfragen/Tag). Die Chargen-Nummer wird bei der Rolle gespeichert.
-  Live-Scannen mit der Kamera geht, wenn PrintHub über HTTPS aufgerufen wird (z. B. Tailscale Serve); sonst per Foto.
-- **Neue Rollen brutto gewogen anlegen:** zeigt gleich, ob wirklich 1000 g drauf sind („994 g – −6 g zum Nenngewicht“).
+  Rest. Das Leergewicht merkt sich PrintHub auf Wunsch für die Sorte oder für alle Rollen eines Herstellers. In der Liste
+  steht bei jeder Rolle, was die Waage zeigen sollte („⚖ 1165 g“).
+- **Neue Rollen brutto gewogen:** zeigt gleich, ob wirklich 1000 g drauf sind („994 g – −6 g zum Nenngewicht“).
+- **Angebrochene Rolle einlagern:** Haken „Rolle ist angebrochen“ (bzw. Feld „Angebrochen? Waage mit Spule“ im Stapel und
+  bei „Neue Sorte“) – dann gilt die Waage als **Restmenge**, das Nenngewicht bleibt.
+
+**Pflege**
 - **✎ Rolle bearbeiten:** Filament neu, übrig, Leergewicht, Preis, Ort, Charge, Notiz – ohne Spoolman öffnen zu müssen.
-- **💧 Trocknen:** Jede angebrochene Rolle zeigt, wie viele Tage sie offen ist (seit dem Öffnen bzw. dem letzten Trocknen).
-  Nach dem Trocknen (z. B. im Filamenttrockner) auf **🔥** tippen. Grenzen pro Material einstellbar (Standard: PLA 60,
-  PETG 21, TPU 7, PA 3 Tage …). Steckt eine zu lange offene Rolle im Drucker, kommt eine Meldung mit Knopf „getrocknet“.
+- **💧 Trocknen:** Jede angebrochene Rolle zeigt, wie viele Tage sie offen ist. Nach dem Trocknen auf **🔥** tippen.
+  Grenzen pro Material einstellbar (Standard: PLA 60, PETG 21, TPU 7, PA 3 Tage …). Steckt eine zu lange offene Rolle im
+  Drucker, kommt eine Meldung mit Knopf „getrocknet“.
 - Leere Spulen ins **Archiv** (📦 an jeder Rolle, auch wenn sie noch einem Slot zugeordnet ist).
-- **Etiketten** einzeln oder für mehrere Spulen auf einmal.
+- **Erkennungsnummern** (Chargen, Artikelnummern) siehst und bearbeitest du bei jeder Sorte unter ✎ als Chips.
+
+### 6.3.1 Rolle scannen
+
+**📷 Rolle scannen:** Etikett oder Schachtel mit dem Handy fotografieren (oder ein Foto aus der Galerie wählen).
+
+- **Was gelesen wird:** Strichcode (EAN oder Chargen-Nummer) und der Text auf dem Etikett – Hersteller, Material, Farbname
+  (z. B. „Matte Fossil Grey“), aufgedruckter Farbcode, Netto- und Leerspulengewicht, Temperaturen, Charge,
+  **Artikelnummer** (SKU, Bambu-Modellnummer `A01-K1-…`, Bambu „Filament Code“).
+- **Wie gelesen wird:** Erst der Bereich um den Strichcode (schnell, meist unter 1 s), dann – nur wenn nötig – gedreht,
+  mit Schattenausgleich, das ganze Etikett und zuletzt das ganze Foto. Ohne lesbaren Strichcode sucht PrintHub das weiße
+  Etikett im Bild. Alles läuft parallel auf allen Kernen des Servers.
+- **Abgleich:** Material, Farbe und Gewicht zählen am meisten. Gefunden wird zuerst deine **eigene Sorte**, dann die
+  **SpoolmanDB** (dann kommen Farbcode, Temperaturen und Leerspule von dort), sonst die Farbliste. Eine Zeile
+  „🗄 SpoolmanDB: … gefunden“ bzw. „kein Eintrag – Werte von: Etikett, deiner Sorte …“ zeigt, woher die Werte stammen.
+- **Produktlinien werden aufgeräumt:** „PLA Matte“, „PLAMETAL“, „Easy PLA“, „HT-PLA Pro“ → Material **PLA**, die Linie
+  wandert in den Namen („Matte Charcoal“, „Iron Gray Metallic“) – so wie in der SpoolmanDB. PLA+, PLA-CF, PETG-HF
+  usw. bleiben eigene Materialien. Produktlinien als Hersteller („Panchroma“) werden zum Hersteller (Polymaker),
+  „Bambu“ zu „Bambu Lab“.
+- **Erkennungsnummern lernen:** Nach dem Zuordnen merkt sich PrintHub Charge und Artikelnummer. **Artikelnummern** sind pro
+  Farbe eindeutig und erkennen die Sorte beim nächsten Mal sofort. **Chargen** sind nur ein schwacher Hinweis (dieselbe
+  Charge kann auf mehreren Farben stehen) – sie zählen nur, wenn Material und Farbe passen. Ähnliche Nummern (eine Ziffer
+  anders) werden erkannt; fehlt der Hersteller auf dem Etikett, schlägt PrintHub ihn anhand ähnlicher Chargen vor.
+- **Vorauswahl:** Nur wenn die Farbe sicher gelesen wurde. Gibt es keine passende Sorte, ist „＋ Neue Sorte“ vorausgewählt.
+  Fehlt das Material bei gleichnamigen Sorten (z. B. „Black“ als PETG und PLA+), wählst du selbst.
+- **🖨 In den Drucker einlegen:** Ist die Sorte schon im Lager, schlägt PrintHub gleich die passende Rolle vor
+  (angebrochene zuerst) – **Slot wählen →** und fertig.
+- **⏱ Zeitauswertung:** Aufklappbar unter dem Ergebnis – Upload, Netz, Tower, jede Lesestufe und die KI einzeln.
+- Unbekannte EAN-Codes schlägt PrintHub online nach (UPCitemdb), aber nur, wenn das Etikett selbst nicht reicht.
+  Live-Scannen mit der Kamera geht über HTTPS (z. B. Tailscale Serve); sonst per Foto.
+
+**KI-Etiketterkennung (optional)** – *Einstellungen → Spulen*
+- Liest das Etikett zusätzlich mit **Google Gemini** – robuster bei unscharfen, schrägen oder schattigen Fotos und bei
+  Herstellern, die PrintHub noch nie gesehen hat. Gratis-Schlüssel unter [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+- **Wann:** *Nur wenn nötig* (wenn Material oder Farbe fehlen) oder *Immer* (KI und Server lesen gleichzeitig –
+  ein Scan dauert dann etwa so lange wie die KI allein, meist 1–2 s).
+- Ist Google gestört oder das Gratis-Limit erreicht, liest PrintHub automatisch allein weiter. Minutenlimit → kurz warten
+  und nochmal; Tageslimit → KI pausiert bis 9 Uhr. **„Heute verbraucht“** zeigt die Anzahl Anfragen.
+- Nummern, die nur die KI liest, zählen als schwache Erkennungsnummer (Ausnahme: das eindeutige Bambu-Muster).
+- Im Gratis-Kontingent kann Google die Fotos zur Verbesserung nutzen. Ohne Schlüssel bleibt alles lokal.
+
+### 6.3.2 Viele Rollen auf einmal: Serie & Stapel
+
+**⋯ Mehr → 🎨 Serie: mehrere Farben einer Sorte** – z. B. 30 Rollen JAYO PETG:
+- Gemeinsame Werte (Hersteller, Material, Gewichte, Temperaturen, Preis) einmal, dann pro Farbe eine Zeile
+  (Name, Farbe, Anzahl) – oder Farben aus der Filament-Datenbank ankreuzen.
+- **📷 Etikett scannen / 🖼 Fotos aus Galerie:** jedes Etikett wird eine Zeile, gleiche Farbe zählt hoch, Chargen
+  (×Anzahl) und Artikelnummern (🏷) werden pro Zeile gemerkt. Fremde Etiketten (anderer Hersteller/Material) werden
+  **nicht** übernommen und aufgelistet.
+
+**⋯ Mehr → 📚 Stapel: gemischte Rollen** – z. B. eine Lieferung mit Bambu, Sunlu, Polymaker und JAYO:
+- Etiketten nacheinander fotografieren oder viele aus der Galerie wählen; es werden **2 Fotos gleichzeitig** gelesen,
+  du kannst sofort weiter fotografieren. Auch aus „Rolle scannen“ heraus: Knopf **📚 Stapel**.
+- Jede Sorte wird eine Zeile: **✓ schon im Lager** · **＋ neue Sorte** (mit Herkunft der Werte) · **⚠ unvollständig/prüfen**.
+  Sichere Zeilen sind **automatisch abgehakt**, fragliche nicht. Dieselbe Sorte nochmal → Anzahl +1; dieselbe Charge
+  innerhalb von 20 s → Rückfrage „weitere Rolle?“.
+- **✎** öffnet die Zeile: vorhandene Sorte wählen oder Hersteller, Material, Name, Farbe, Gewichte, Temperaturen, Preis,
+  Lagerort und Waage (angebrochen) anpassen. **🗑** löscht eine falsche Zeile.
+- **Anlegen:** Solange eine Zeile unvollständig ist, wird nichts angelegt. Neue Hersteller und Sorten entstehen
+  automatisch, Rollen werden eingebucht, Nummern der Sorte zugeordnet. Lagerort und Preis gelten für alle, pro Zeile änderbar.
+- **Übersteht Funklöcher und Neuladen:** Zeilen **und** noch nicht gelesene Fotos bleiben im Browser gespeichert;
+  „📚 Stapel fortsetzen“ macht genau dort weiter. Fotos ohne Verbindung werden bis zu 3× neu gesendet.
+- **Später weiter** schließt und behält alles, **Abbrechen** verwirft den Stapel (mit Rückfrage).
+- **⏱ Protokoll** mit den Zeiten jedes Fotos – **📋 kopieren**, falls etwas zu lange dauert.
 
 ### 6.4 Spule per QR-Code zuweisen
 
@@ -523,7 +610,11 @@ Jede Meldung einzeln ein/aus, getrennt für ntfy und Telegram, mit eigener Dring
 
 ### 6.14 Handy & Datensparen
 
-- Navigationsleiste unten wie in einer App; beim Hineinzoomen blendet sie sich aus.
+- Navigationsleiste unten wie in einer App; beim Hineinzoomen blendet sie sich aus und sitzt danach wieder richtig.
+- Die **Zurück-Taste** am Handy schließt das offene Fenster statt die Seite zu verlassen.
+- Auswahllisten und Vorschläge lassen sich am Handy durchscrollen, ohne dass beim Scrollen etwas ausgewählt wird;
+  sie rutschen über die Tastatur. Fenster schließen nur über „Abbrechen“/„Schließen“, nicht durch Tippen daneben.
+- Diagramme in der Statistik reagieren erst auf Antippen, nicht beim Scrollen.
 - **Datensparmodus** (*Einstellungen → Allgemein*, pro Gerät): *Automatisch* (im Mobilnetz sparen), *Immer* oder *Aus*.
   Im Hintergrund pausiert PrintHub komplett; die Kamera lädt nur, wenn sie sichtbar ist.
 
@@ -544,8 +635,8 @@ Darunter das **Protokoll** (Passwörter und Tokens werden darin unkenntlich gema
 | **Dienste** | Adressen von Spoolman, Bambuddy, OctoEverywhere; Container-Namen für Status und Neustart |
 | **Wartung** | Wartungsbuch |
 | **Druckwächter** | Ein/aus, Bambuddy-Zugang, Druckfenster pro Tag, Puffer, Plattenprüfung, Referenzbilder, „Alles über den Druckwächter“, Licht, Ausschalten nach Fehler, Testmodus, Protokoll |
-| **Spulen** | Slot am Drucker setzen, Standort im Regal, „fast leer“-Grenze, QR-Adresse, Filament-Warnung + Reserve, Foto nach dem Druck, Etikettendrucker, gelernte Profile |
-| **Kosten** | Strompreis (€/kWh), Verschleiß (€/h), Ersatz-Filamentpreis |
+| **Spulen** | Slot am Drucker setzen, Standort im Regal, „fast leer“-Grenze, QR-Adresse, Filament-Warnung + Reserve, Foto nach dem Druck, Etikettendrucker, **KI-Etiketterkennung** (Schlüssel, wann, Modell, heute verbraucht), gelernte Profile |
+| **Kosten** | Strompreis (€/kWh – wird für alle Kosten verwendet, aber nicht in der Übersicht angezeigt), Verschleiß (€/h), Ersatz-Filamentpreis |
 | **Meldungen** | ntfy, Telegram, Feineinstellungen (Fortschritt alle x %, Grenzen), Dringlichkeit, welche Meldung über welchen Weg |
 | **Zugriff** | PIN-Schutz |
 | **Daten** | Sicherung herunterladen/zurückspielen, automatische Sicherung, Export (Verlauf, Statistik, Wartung), Import aus Bambuddy |
@@ -573,6 +664,14 @@ nächsten Start, ob die Platte leer ist, und fragt sonst per Telegram nach.
 
 **Neue Spule einlegen**
 Spule ins AMS → QR-Etikett scannen → Slot wählen. Ohne Etikett: Übersicht → Slot antippen → Spule wählen.
+Oder: Lager → 📷 Rolle scannen → Etikett fotografieren → **🖨 In den Drucker einlegen** → Slot wählen.
+
+**Neue Lieferung einlagern**
+Lager → ⋯ Mehr → 📚 Stapel → alle Etiketten aus der Galerie wählen → ⚠-Zeilen prüfen oder löschen → Haken
+„Etiketten drucken“ → Anlegen. Bei vielen Farben einer einzigen Sorte ist die **Serie** noch schneller.
+
+**Nachbestellen**
+Lager → ⋯ Mehr → 🛒 Einkaufsliste → 📋 Als Text kopieren.
 
 **Unterwegs nachsehen**
 Telegram → `/status` oder `/bild`. Für die volle Oberfläche von unterwegs z. B. ein VPN wie Tailscale oder WireGuard nutzen.
@@ -596,6 +695,10 @@ Zuerst immer: **Einstellungen → Diagnose → Alles prüfen.**
 | ntfy kommt verspätet | In der ntfy-App „Sofortzustellung“ an, Akku-Optimierung aus – oder Telegram nutzen |
 | Am Handy alte Ansicht | Seite neu laden; PrintHub lädt neue Versionen automatisch |
 | Strom wird nicht gemessen | Shelly-IP beim Drucker eingetragen? Shelly im Browser unter `http://<shelly-ip>` erreichbar? |
+| Rolle scannen erkennt die Farbe nicht | Etikett groß, gerade und ohne Schatten fotografieren; bei schwierigen Etiketten die KI-Erkennung einschalten (*Spulen*) |
+| Scan dauert lange | Unter dem Ergebnis **⏱** aufklappen: „unterwegs“ = Netz (über Mobilfunk/VPN normal), „Tower“ = Server, „KI“ = Google. Im Stapel: **⏱ Protokoll** kopieren |
+| KI: „Gratis-Kontingent aufgebraucht“ | Minutenlimit: kurz warten. Tageslimit: KI pausiert bis 9 Uhr, PrintHub liest so lange allein. Anderes Modell wählen hat ein eigenes Kontingent |
+| Falsche Nummer bei einer Sorte gespeichert | Lager → Sorte ✎ → Erkennungsnummern → ✕ am Chip |
 
 ---
 
