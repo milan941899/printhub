@@ -1067,8 +1067,8 @@ function scanShow(d) {
     <div class="label" style="margin-top:10px">Welche Sorte?</div>
     ${opts || `<div class="muted small">Keine passende Sorte im Lager.</div>`}
     ${d.template ? `<label class="scopt"><input type="radio" name="scf" value="tpl" ${opts ? "" : "checked"}> <span>＋ Neue Sorte wie <b>${esc(d.template.label)}</b> – Farbe <b>${esc(p.color || "?")}</b></span></label>` : ""}
-    <label class="scopt"><input type="radio" name="scf" value="other" ${opts || d.template ? "" : "checked"}> Andere Sorte aus dem Lager …</label>
-    <label class="scopt"><input type="radio" name="scf" value="new"> ＋ Neue Sorte mit diesen Daten anlegen</label>
+    <label class="scopt"><input type="radio" name="scf" value="other"> Andere Sorte aus dem Lager …</label>
+    <label class="scopt"><input type="radio" name="scf" value="new" ${opts || d.template ? "" : "checked"}> ＋ Neue Sorte mit diesen Daten anlegen</label>
     <div class="mact"><button type="button" onclick="scanStart()">↺ Nochmal</button><button class="primary" type="button" onclick="scanNext()">Weiter</button></div>`;
 }
 function scanNext() {

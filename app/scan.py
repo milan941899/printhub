@@ -427,6 +427,12 @@ def parse_text(text):
     m = re.search(r"(?:sku|art(?:ikel)?\.?\s*-?\s*nr\.?|item\s*(?:no|number)\.?|product\s*code)\s*[:;.]?\s*([a-z0-9][a-z0-9-]{3,})", low)
     if m:
         out["sku"] = m.group(1).upper()
+    if "sku" not in out:                         # Bambu: „Model: A01-K1-1.75-1000-SPL“ – pro Farbe eindeutig
+        m = re.search(r"model\s*[:;.]?\s*([a-z0-9]{2,4}-[a-z0-9]{1,3}-1\.75-\d{3,4}-[a-z]{2,8})", low)
+        if m:
+            sk = m.group(1).upper().split("-")
+            sk[0] = sk[0][0] + sk[0][1:].replace("O", "0")          # „AO1“ → „A01“
+            out["sku"] = "-".join(sk)
     m = re.search(r"(?:batch|lot)\s*(?:number|no\.?|nr\.?|#)?\s*[:;.]?\s*([a-z0-9]{5,})", low)
     if m and re.search(r"\d", m.group(1)):
         out["batch"] = m.group(1).upper()

@@ -1232,6 +1232,27 @@ def _tnorm(t):
     return " " + " ".join(_SYN.get(x, x) for x in w) + " "
 
 
+# Produktlinie im Material („PLA Matte“, „PLAMETAL“) → Material PLA, Linie in den Farbnamen – wie in der SpoolmanDB
+_LINES = {"MATTE": ("pre", "Matte"), "METAL": ("suf", "Metallic"), "METALLIC": ("suf", "Metallic"), "SILK": ("pre", "Silk"),
+          "SILK+": ("pre", "Silk+"), "BASIC": None, "TOUGH+": ("pre", "Tough+"), "TOUGH": ("pre", "Tough"), "LITE": ("pre", "Lite"),
+          "AERO": ("pre", "Aero"), "GLOW": ("pre", "Glow"), "GALAXY": ("suf", "Galaxy"), "SPARKLE": ("suf", "Sparkle"),
+          "TRANSLUCENT": ("pre", "Translucent"), "PURE": ("pre", "Pure"), "MARBLE": None}
+_LINE_RE = "|".join(re.escape(k) for k in sorted(_LINES, key=len, reverse=True))
+
+
+def _split_material(mat, color):
+    m = re.sub(r"\s+", " ", (mat or "").upper()).strip()
+    r = (re.fullmatch(rf"(PLA|PETG|ABS|ASA|TPU|PC)\s*-?\s*({_LINE_RE})", m)
+         or re.fullmatch(rf"({_LINE_RE})\s*-?\s*(PLA|PETG|ABS|ASA|TPU|PC)", m))
+    if not r:
+        return mat, color
+    base, line = (r.group(1), r.group(2)) if r.group(1) in ("PLA", "PETG", "ABS", "ASA", "TPU", "PC") else (r.group(2), r.group(1))
+    how = _LINES.get(line)
+    if how and color and how[1].lower().rstrip("+") not in color.lower():
+        color = f"{how[1]} {color}" if how[0] == "pre" else f"{color} {how[1]}"
+    return base, color
+
+
 _VWORDS = None
 
 
@@ -1552,6 +1573,11 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             res["code_info"] = {"code": lot, "status": "unknown", "fids": []}
     # Hersteller + Farbe: SpoolmanDB zuerst, dann eingebaute Farbliste, sonst nur Grundton („Red“) → Vorschläge
     p = res["parsed"]
+    if p.get("material"):
+        p["material"], col = _split_material(p["material"], p.get("color"))
+        if col and col != p.get("color"):
+            p["color"] = col
+            alltexts.append(col)
     text = "\n".join(alltexts)
     vend = (vendor or "").strip() or p.get("brand") or _detect_vendor(text)
     weak = "" if vend else _vendor_by_words(text)     # nur aus einem Wort geraten – entscheidet nicht allein

@@ -41,8 +41,20 @@ def read(img, key, model="gemini-flash-lite-latest", timeout=20):
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
     try:
-        r = requests.post(URL.format(model=model or "gemini-flash-lite-latest"), json=body, timeout=timeout,
-                          headers={"x-goog-api-key": key})
+        for attempt in (1, 2):                 # Google kurz überlastet (5xx) oder Verbindung weg → einmal neu versuchen
+            try:
+                r = requests.post(URL.format(model=model or "gemini-flash-lite-latest"), json=body, timeout=timeout,
+                                  headers={"x-goog-api-key": key})
+            except requests.RequestException:
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
+                continue
+            if r.status_code < 500 or attempt == 2:
+                break
+            time.sleep(0.5)
+        if r.status_code >= 500:
+            return None, time.time() - t, f"Google gerade überlastet/gestört ({r.status_code}) – eigene Erkennung verwendet"
         if r.status_code == 429:
             return None, time.time() - t, "Gratis-Kontingent für heute aufgebraucht"
         if r.status_code in (400, 401, 403):
@@ -55,7 +67,8 @@ def read(img, key, model="gemini-flash-lite-latest", timeout=20):
         if isinstance(d, list):
             d = d[0] if d else {}
     except requests.RequestException as e:
-        return None, time.time() - t, f"nicht erreichbar ({type(e).__name__})"
+        code = getattr(getattr(e, "response", None), "status_code", None)
+        return None, time.time() - t, f"nicht erreichbar ({code or type(e).__name__})"
     except (ValueError, KeyError, IndexError) as e:
         return None, time.time() - t, f"Antwort unverständlich ({type(e).__name__})"
     out = {}
