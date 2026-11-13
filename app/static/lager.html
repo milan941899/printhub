@@ -951,7 +951,7 @@ function stFailedShow() {
   b.innerHTML = stFailed.length ? `<div class="wres codemsg multi">⚠ ${stFailed.length} Foto${stFailed.length > 1 ? "s" : ""} wegen fehlender Verbindung nicht gelesen.
     <button type="button" class="small-btn" onclick="stRetry()">↻ nochmal senden</button></div>` : "";
 }
-function stRetry() { const l = stFailed; stFailed = []; stFailedShow(); l.forEach(x => { stBusy(+1); stQueue = stQueue.then(() => stScanOne(x.f, x.no, performance.now())).catch(() => {}).finally(() => stBusy(-1)); }); }
+function stRetry() { const l = stFailed; stFailed = []; stFailedShow(); l.forEach(x => { stBusy(+1); stRun(() => stScanOne(x.f, x.no, performance.now())).finally(() => stBusy(-1)); }); }
 window.addEventListener("beforeunload", e => { if (stBusyN > 0 || stFailed.length) { e.preventDefault(); e.returnValue = ""; } });
 function stLogAdd(line) {
   const t = ((performance.now() - stT0) / 1000).toFixed(1).padStart(5);
@@ -969,11 +969,17 @@ function stLogCopy() {
   if (navigator.clipboard) return navigator.clipboard.writeText(txt).then(() => PH.toast("Protokoll kopiert")).catch(() => PH.toast("Kopieren nicht möglich", true));
   PH.toast("Kopieren nicht möglich", true);
 }
+// 2 Fotos gleichzeitig (eins wartet auf Google, das nächste wird schon gesendet); Zeilen werden der Reihe nach eingetragen
+let stActive = 0, stWaitQ = [], stAddQ = Promise.resolve();
+function stRun(job) {
+  return new Promise(res => { stWaitQ.push(() => job().catch(() => {}).finally(() => { stActive--; res(); stPump(); })); stPump(); });
+}
+function stPump() { while (stActive < 2 && stWaitQ.length) { stActive++; stWaitQ.shift()(); } }
 function stScanFile(f) {
   if (!stT0) stT0 = performance.now();
   const no = ++stNo, tq = performance.now();
   stLogAdd(`#${no} Foto gewählt (${(f.size / 1e6).toFixed(1)} MB${f.type ? ", " + f.type : ""})`);
-  stBusy(+1); stQueue = stQueue.then(() => stScanOne(f, no, tq)).catch(e => stLogAdd(`#${no} Fehler: ${e}`)).finally(() => stBusy(-1));
+  stBusy(+1); stRun(() => stScanOne(f, no, tq).catch(e => stLogAdd(`#${no} Fehler: ${e}`))).finally(() => stBusy(-1));
 }
 async function stScanOne(f, no, tq) {
   const t0 = performance.now();
@@ -993,7 +999,7 @@ async function stScanOne(f, no, tq) {
     (d.ai ? ` · KI ${d.ai.sec}s${d.ai.error ? " FEHLER " + d.ai.error : ""}` : "") +
     (d.error ? ` · FEHLER ${d.error}` : ` → ${[d.parsed?.brand, d.parsed?.material, d.parsed?.color].filter(Boolean).join(" ") || "nichts erkannt"}`));
   if (d.error) { PH.toast("Etikett: " + d.error, true); return; }
-  await stAdd(d);
+  const add = stAddQ.then(() => stAdd(d)); stAddQ = add.catch(() => {}); await add;
   stLogAdd(`#${no} fertig nach ${sec(performance.now() - tq)}s ab Auswahl`);
 }
 function stValid(r) { return !!(r.fid || (r.vendor.trim() && r.material.trim() && r.name.trim())); }
@@ -1029,6 +1035,7 @@ async function stAdd(d) {
     r.src = i ? (i.hit ? "🗄 SpoolmanDB" : `🗄 nicht in der SpoolmanDB – Werte: Etikett${(i.from || []).length ? ", " + i.from.join(", ") : ""}`) : "";
     if (p.color_src === "base") r.warn = `nur Grundton „${r.name}“ erkannt – genaue Farbe prüfen`;
   }
+  if (d.vendor_guess && !r.fid) r.warn = (r.warn ? r.warn + " · " : "") + `Hersteller „${r.vendor}“ aus ähnlicher Charge – prüfen`;
   if (d.ai && d.ai.error && !r.fid) r.warn = (r.warn ? r.warn + " · " : "") + "KI nicht verfügbar – nur Tower-Erkennung, bitte prüfen";
   r.checked = stValid(r) && !r.warn;          // sichere Zeilen gleich abhaken, fragliche nicht
   ST.push(r); stMsg(`📷 ${r.vendor} ${r.material} ${r.name} → ${r.fid ? "schon im Lager" : "neue Sorte"}`); stRender();

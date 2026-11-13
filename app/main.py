@@ -1166,6 +1166,26 @@ def _similar_codes(code):
     return res[:3]
 
 
+def _vendor_from_code(code):
+    """Hersteller aus ähnlichen bekannten Nummern (gleicher Aufbau, z. B. JAYO-Chargen 04360714AJ ~ 04360703AJ).
+    Nur wenn alle Treffer zum selben Hersteller gehören."""
+    code = _code_norm(code)
+    if len(code) < 6:
+        return ""
+    skel = re.sub(r"\d", "9", code)
+    fids = {fid for c, fid in (store.data.get("ean_map") or {}).items()
+            if len(c) == len(code) and re.sub(r"\d", "9", c) == skel and c[:3] == code[:3]}
+    if not fids:
+        return ""
+    try:
+        fils = {f["id"]: f for f in spoolman._get("/filament")}
+    except Exception:
+        return ""
+    vs = {((fils.get(fid) or {}).get("vendor") or {}).get("name") for fid in fids if fid in fils}
+    vs.discard(None)
+    return vs.pop() if len(vs) == 1 else ""
+
+
 def _codes_for(fid):
     return sorted(c for c, f in (store.data.get("ean_map") or {}).items() if f == int(fid))
 
@@ -1697,6 +1717,10 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
     if p.get("brand"):
         p["brand"] = _canon_vendor(p["brand"])
     res["label_brand"] = p.get("brand") or _detect_vendor(text) or ""     # was auf dem Etikett steht (ohne Vorgabe)
+    if not (vendor or "").strip() and not res["label_brand"] and res.get("lot"):
+        g = _vendor_from_code(res["lot"])                 # kein Hersteller auf dem Etikett → aus ähnlicher bekannter Charge
+        if g:
+            p["brand"], res["vendor_guess"] = g, True
     vend = _canon_vendor((vendor or "").strip()) or p.get("brand") or _detect_vendor(text)
     weak = "" if vend else _vendor_by_words(text)     # nur aus einem Wort geraten – entscheidet nicht allein
     vend = vend or weak
