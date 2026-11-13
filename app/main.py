@@ -1677,6 +1677,24 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 p["color_src"] = "list"                # Etikett nennt genau „White“ (nicht „Mystic White“)
     if p.get("hex_print"):
         p["color_hex"] = p["hex_print"]              # aufgedruckter Farbcode ist am genauesten
+    # Hinweis, ob die SpoolmanDB diese Sorte kennt – und woher die Werte sonst kommen
+    try:
+        if p.get("color_src") == "db":
+            res["db_info"] = {"hit": True, "label": " ".join(x for x in [vend, p.get("material"), p.get("color")] if x)}
+        elif vend and p.get("material") and p.get("color") and p.get("color_src") not in ("own", "base"):
+            known_v = any((f.get("manufacturer") or "").strip().lower() == vend.lower() for f in spoolman.external_filaments())
+            vid = next((v["id"] for v in spoolman._get("/vendor") if (v.get("name") or "").lower() == vend.lower()), None)
+            dfl = _defaults(vid, vend, p["material"], p["color"])
+            frm = []
+            for k, v in dfl["src"].items():
+                if k != "color" and v["kind"] in ("own", "db"):
+                    lab = ("deiner Sorte " if v["kind"] == "own" else "SpoolmanDB ") + v["label"]
+                    if lab not in frm:
+                        frm.append(lab)
+            res["db_info"] = {"hit": False, "vendor_known": known_v,
+                              "label": " ".join(x for x in [vend, p.get("material"), p.get("color")] if x), "from": frm}
+    except Exception as e:
+        log.debug("Scan: SpoolmanDB-Hinweis: %s", e)
     brand = res["parsed"].get("brand") or ""
     if res["ean"] and not res["learned"]:
         on = scanmod.online_lookup(requests, res["ean"])

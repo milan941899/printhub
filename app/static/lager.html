@@ -977,6 +977,14 @@ async function scanFile(f) {
   scanSend(await uploadBlob(f));
 }
 // Foto hochladen mit Fortschritt (zeigt, ob das WLAN oder der Tower bremst) und Zeitlimit
+function dbInfo(d) {
+  const i = d.db_info; if (!i) return "";
+  if (i.hit) return `<div class="small">🗄 SpoolmanDB: <b>${esc(i.label)}</b> gefunden – Farbe und Werte von dort.</div>`;
+  const lbl = d.parsed?.hex_print ? "Farbcode vom Etikett" : "Farbe ungefähr aus der Farbliste";
+  const from = ["Etikett", ...(i.from || [])].join(", ");
+  return `<div class="small muted">🗄 SpoolmanDB: ${i.vendor_known ? "kein Eintrag für" : "Hersteller nicht in der SpoolmanDB –"} <b>${esc(i.label)}</b>.
+    ${esc(lbl)}, übrige Werte von: ${esc(from)}. Bitte beim Anlegen prüfen.</div>`;
+}
 function postPhoto(url, blob, onProg) {
   return new Promise((ok, bad) => {
     const x = new XMLHttpRequest();
@@ -1080,6 +1088,7 @@ function scanShow(d) {
       ${(d.timing.steps || []).map(x => `<div>${esc(x.name)}: ${x.runs}× · ${x.sec} s (längster ${x.max} s, ${x.mpx} MP)</div>`).join("")}
     </details>` : ""}
     ${d.ai ? `<div class="small ${d.ai.error ? "muted" : ""}">🤖 KI-Test: ${d.ai.error ? esc(d.ai.error) : `gelesen in ${d.ai.sec} s (${esc(d.ai.fields.join(", ") || "nichts")})`}</div>` : ""}
+    ${dbInfo(d)}
     ${codeMsg(d)}
     ${p.color && !p.material && (d.matches || []).length > 1 && !d.exact_fid ? `<div class="wres small codemsg multi">⚠ Material auf dem Foto nicht erkannt – bitte unten die richtige Sorte wählen.</div>` : ""}
     ${!p.color ? `<div class="wres small codemsg multi">⚠ Farbe auf dem Foto nicht erkannt – bitte unten die Sorte wählen oder <a href="#" onclick="event.preventDefault();scanStart()">nochmal fotografieren</a> (gerade, ohne Schatten, Etikett groß im Bild).</div>` : ""}
