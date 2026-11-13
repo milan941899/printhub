@@ -221,7 +221,8 @@ function openPick(pid, key) {
 // Finger-hoch, geht der Klick verloren. Darum beim Berühren das Neuzeichnen kurz anhalten und den Slot selbst merken.
 let pkDown = null;
 document.addEventListener("pointerdown", e => {
-  const b = e.target.closest && e.target.closest(".aspool .overlay[data-key]");
+  const a = e.target.closest && e.target.closest(".aspool");          // egal wo im Slot (auch auf Nummer/Spule)
+  const b = a && a.querySelector(".overlay[data-key]");
   if (!b) return;
   pkDown = {pid: b.dataset.pid, key: b.dataset.key, x: e.clientX, y: e.clientY, t: Date.now()};
   editing = true;
@@ -230,8 +231,11 @@ document.addEventListener("pointerdown", e => {
 document.addEventListener("pointerup", e => {
   const d = pkDown; pkDown = null;
   if (!d || Date.now() - d.t > 1200 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12) return;   // war Scrollen
-  e.preventDefault(); openPick(d.pid, d.key);
+  e.preventDefault(); pkGhost = Date.now(); openPick(d.pid, d.key);
 }, true);
+// Nach dem Öffnen kommt noch der „Klick“ des Fingers – der darf nicht im gerade geöffneten Fenster landen
+let pkGhost = 0;
+document.addEventListener("click", e => { if (Date.now() - pkGhost < 600) { e.preventDefault(); e.stopPropagation(); } }, true);
 document.addEventListener("pointercancel", () => { pkDown = null; if (!PK) editing = false; }, true);
 function pickClose() { document.getElementById("m-pick").classList.remove("open"); editing = false; PK = null; }
 document.getElementById("pk-q").oninput = () => pickRender();

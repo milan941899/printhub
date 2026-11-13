@@ -1102,3 +1102,5 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 /* Kamera-Leiste (Drucker offline) auch bei selbst eingestellter Kachelhöhe schmal */
 .blk.hset:has(.camthumb.off) { height:auto !important; }
 .blk:has(.camthumb.off) .camthumb.off { min-height:0 !important; aspect-ratio:auto !important; }
+
+.aspool .overlay { z-index:5; }   /* über Spule und Nummer, damit jeder Tipp im Slot ankommt */
