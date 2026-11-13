@@ -1256,10 +1256,12 @@ def _vendor_by_words(text):
                 own.setdefault(w, set()).add(v)
     hits = {}
     for w in set(_tnorm(text).split()):
-        if w in _BASE or w in _MAT_WORDS or w in _color_words():
-            continue                     # Farbwörter („Vibrant“, „Mystic“) gibt es bei vielen Herstellern
+        if w in _BASE or w in _MAT_WORDS:
+            continue
+        v = _VWORDS.get(w)               # Wort nur bei einem Hersteller der SpoolmanDB (z. B. „Panchroma“) – verlässlich
         m = own.get(w)
-        v = next(iter(m)) if m and len(m) == 1 else _VWORDS.get(w)
+        if not v and m and len(m) == 1 and w not in _color_words():
+            v = next(iter(m))            # eigene Sorten: Farbwörter („Vibrant“, „Mystic“) zählen nicht
         if v:
             hits[v] = hits.get(v, 0) + 1
     return max(hits, key=hits.get) if hits else ""
@@ -1503,6 +1505,10 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                                   1, round(sec, 2), round(sec, 2), 0))
             if err:
                 log.info("Scan: KI-Test fehlgeschlagen: %s", err)
+            if d and d.get("brand"):
+                # KI liest oft die Produktlinie („Panchroma“) statt des Herstellers (Polymaker) → auf bekannten Hersteller abbilden
+                b = d["brand"]
+                d["brand"] = _detect_vendor(b) or _vendor_by_words(b) or b
             if d:
                 alltexts.append(aiscan.as_text(d))
                 if d.get("color") and not d.get("hex_print"):
