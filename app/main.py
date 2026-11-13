@@ -1749,8 +1749,14 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                     lab = ("deiner Sorte " if v["kind"] == "own" else "SpoolmanDB ") + v["label"]
                     if lab not in frm:
                         frm.append(lab)
+            if (dfl["src"].get("color") or {}).get("kind") == "db" and dfl["values"].get("external_id"):
+                # gleichnamige Sorte in der SpoolmanDB (z. B. GEEETECH PETG „Green“) – das ist ein Treffer
+                res["db_info"] = {"hit": True, "label": dfl["src"]["color"]["label"]}
+                raise StopIteration
             res["db_info"] = {"hit": False, "vendor_known": known_v,
                               "label": " ".join(x for x in [vend, p.get("material"), p.get("color")] if x), "from": frm}
+    except StopIteration:
+        pass
     except Exception as e:
         log.debug("Scan: SpoolmanDB-Hinweis: %s", e)
     brand = res["parsed"].get("brand") or ""

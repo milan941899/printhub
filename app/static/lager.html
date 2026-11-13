@@ -929,9 +929,15 @@ function stLogAdd(line) {
 }
 function stLogCopy() {
   const txt = `PrintHub Stapel-Protokoll ${new Date().toLocaleString("de-DE")}\n${navigator.userAgent}\n` + stLog.join("\n");
-  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => PH.toast("Protokoll kopiert"))
-    .catch(() => { const r = document.createRange(); r.selectNodeContents($("st-log")); getSelection().removeAllRanges(); getSelection().addRange(r);
-      PH.toast("Text markiert – jetzt kopieren"); });
+  // ohne HTTPS gibt es navigator.clipboard nicht → altes execCommand über ein Textfeld (geht auch am Handy)
+  const ta = document.createElement("textarea");
+  ta.value = txt; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px";
+  document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, txt.length);
+  let ok = false; try { ok = document.execCommand("copy"); } catch {}
+  ta.remove();
+  if (ok) return PH.toast("Protokoll kopiert – jetzt im Chat einfügen");
+  if (navigator.clipboard) return navigator.clipboard.writeText(txt).then(() => PH.toast("Protokoll kopiert")).catch(() => PH.toast("Kopieren nicht möglich", true));
+  PH.toast("Kopieren nicht möglich", true);
 }
 function stScanFile(f) {
   if (!stT0) stT0 = performance.now();
