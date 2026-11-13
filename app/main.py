@@ -1675,11 +1675,17 @@ async def api_lager_scan(request):
     ct = request.headers.get("content-type", "")
     try:
         if ct.startswith("image/"):
+            t0 = time.time()
             body = await request.body()
+            t1 = time.time()
             if len(body) > 15_000_000:
                 return JSONResponse({"error": "Foto zu groß"}, status_code=400)
             q = request.query_params
             res = await run_in_threadpool(_scan, body, q.get("code"), q.get("vendor", ""), q.get("material", ""))
+            if res.get("timing"):            # Empfang am Tower (Netz) + gesamte Arbeit inkl. Abgleich mit dem Lager
+                res["timing"]["recv"] = round(t1 - t0, 2)
+                res["timing"]["server"] = round(time.time() - t1, 2)
+                log.info("Scan: Empfang %.1fs, Tower gesamt %.1fs", t1 - t0, time.time() - t1)
         else:
             b = await request.json()
             if not (b.get("code") or "").strip():

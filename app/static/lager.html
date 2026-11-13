@@ -967,7 +967,7 @@ function postPhoto(url, blob, onProg) {
     x.upload.onprogress = e => { if (e.lengthComputable) onProg(Math.round(e.loaded / e.total * 100), "up"); };
     const t0 = performance.now(); let tUp = 0;
     x.upload.onload = () => { tUp = (performance.now() - t0) / 1000; onProg(100, "work"); };
-    x.onload = () => { try { const d = JSON.parse(x.responseText); if (d.timing) d.timing.upload = tUp; ok(d); } catch { ok({error: `Antwort vom Tower unlesbar (${x.status})`}); } };
+    x.onload = () => { try { const d = JSON.parse(x.responseText); if (d.timing) { d.timing.upload = tUp; d.timing.wait = (performance.now() - t0) / 1000 - tUp; } ok(d); } catch { ok({error: `Antwort vom Tower unlesbar (${x.status})`}); } };
     x.onerror = () => ok({error: "Keine Verbindung zum Tower"});
     x.ontimeout = () => ok({error: "Zeitüberschreitung – Foto zu groß oder WLAN zu langsam. Nochmal versuchen oder kleineres Foto (Kamera auf 10–12 MP stellen)."});
     x.send(blob);
@@ -1054,7 +1054,8 @@ function scanShow(d) {
     ${codes ? `<div class="small">Code: ${codes}</div>` : `<div class="muted small">Kein Strichcode erkannt.</div>`}
     ${chips.length ? `<div class="scchips">${chips.map(c => `<span>${c}</span>`).join("")}</div>` : `<div class="muted small">Kein Text erkannt – Foto näher und gerade aufnehmen.</div>`}
     ${online}
-    ${d.timing ? `<details class="muted small tdet"><summary>⏱ Foto ${(d.timing.bytes / 1e6).toFixed(1)} MB · Upload ${((d.timing.upload || 0)).toFixed(1)} s · Tower ${(d.timing.decode + (d.timing.total_ocr || d.timing.barcode)).toFixed(1)} s</summary>
+    ${d.timing ? `<details class="muted small tdet"><summary>⏱ Foto ${(d.timing.bytes / 1e6).toFixed(1)} MB · Upload ${((d.timing.upload || 0)).toFixed(1)} s · danach ${(d.timing.wait || 0).toFixed(1)} s</summary>
+      <div>Danach ${(d.timing.wait || 0).toFixed(1)} s = Foto noch unterwegs zum Tower ${(d.timing.recv ?? 0).toFixed(1)} s + Tower ${(d.timing.server ?? 0).toFixed(1)} s (Lesen ${(d.timing.decode + (d.timing.total_ocr || d.timing.barcode)).toFixed(1)} s, Abgleich ${Math.max(0, (d.timing.server ?? 0) - d.timing.decode - (d.timing.total_ocr || d.timing.barcode)).toFixed(1)} s) + Antwort zurück ${Math.max(0, (d.timing.wait || 0) - (d.timing.recv ?? 0) - (d.timing.server ?? 0)).toFixed(1)} s</div>
       <div>Bild ${esc(d.timing.size || "")} · ${d.timing.cpus || "?"} Kerne · schnelles Modell: ${d.timing.fast ? "ja" : "nein"}</div>
       <div>Laden ${d.timing.decode} s · Strichcode ${d.timing.barcode} s</div>
       ${(d.timing.steps || []).map(x => `<div>${esc(x.name)}: ${x.runs}× · ${x.sec} s (längster ${x.max} s, ${x.mpx} MP)</div>`).join("")}
