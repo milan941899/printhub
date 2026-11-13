@@ -40,6 +40,11 @@ for js in ("common.js", "ui.js"):
         t = re.sub(r'navigator\.serviceWorker\.register\([^)]*\)', "Promise.resolve()", t)
     open(p, "w", encoding="utf-8").write(t)
 os.remove(os.path.join(OUT, "static", "sw.js"))
+# CSS: Symbole der unteren Leiste hängen an a[href="/lager"] usw. → an die umgeschriebenen Links anpassen
+p = os.path.join(OUT, "static", "style.css")
+css = open(p, encoding="utf-8").read().replace('[href="/"]', '[href="./"]')
+css = re.sub(r'\[href="/(lager|verlauf|statistik|einstellungen)"\]', r'[href="\1"]', css)
+open(p, "w", encoding="utf-8").write(css)
 
 head = (f'<base href="{BASE}">\n<script src="demo/fixtures.js"></script>\n<script src="demo/demo.js"></script>\n'
         f'<meta name="robots" content="noindex">\n')

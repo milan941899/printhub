@@ -28,6 +28,7 @@
   // laufender Druck schreitet in der Demo langsam voran
   function liveState(s) {
     s = JSON.parse(JSON.stringify(s));
+    s.printers = (s.printers || []).filter(p => p.id === "a1");   // Übersicht der Demo: nur der A1 (übersichtlicher)
     const min = (Date.now() - t0) / 60000;
     for (const p of s.printers || []) {
       if (!p.printing) continue;
