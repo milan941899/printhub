@@ -918,11 +918,15 @@ function stSave() {
 function stSaved() { try { const x = JSON.parse(localStorage.getItem("ph-stack") || "null"); return x && Date.now() - x.t < 14 * 864e5 ? x : null; } catch { return null; } }
 function stResumeBtn() {
   const x = stSaved(), b = $("st-resume"); if (!b) return;
-  b.style.display = x && x.ST.length ? "" : "none"; if (x) b.textContent = `📚 Stapel fortsetzen (${x.ST.length})`;
+  stqAll().then(l => {
+    const n = x ? x.ST.length : 0, q = (l || []).length;
+    b.style.display = n || q ? "" : "none";
+    b.textContent = `📚 Stapel fortsetzen (${n}${q ? ` + ${q} wartend` : ""})`;
+  });
 }
 function stClear() {
   if (ST.length && !confirm(`Stapel mit ${ST.length} Zeilen wirklich verwerfen?`)) return;
-  ST = []; stLog = []; stFailed = []; $("st-log").textContent = ""; stSave(); stRender(); stFailedShow(); stResumeBtn();
+  ST = []; stLog = []; stFailed = []; $("st-log").textContent = ""; stqClear(); stSave(); stRender(); stFailedShow(); stResumeBtn();
 }
 function openStack(first) {
   ST = []; stLast = {}; stLog = []; stT0 = 0; stNo = 0; stFailed = []; $("st-log").textContent = "";
@@ -932,6 +936,9 @@ function openStack(first) {
     ST = sv.ST; stLog = sv.stLog || []; stN = sv.stN || ST.length; stNo = sv.stNo || 0; $("st-loc").value = sv.loc || ""; $("st-price").value = sv.price || "";
     stLog.push(`[fortgesetzt ${new Date().toLocaleTimeString("de-DE")}]`); $("st-log").textContent = stLog.join("\n");
   }
+  stqAll().then(l => { if (!l || !l.length) return;
+    stLogAdd(`${l.length} Foto${l.length > 1 ? "s" : ""} aus der Warteschlange werden weiter gelesen`);
+    l.sort((a, b) => a.no - b.no).forEach(x => { stNo = Math.max(stNo, x.no); stScanFile(x.blob, x.no); }); });
   stFailedShow();
   $("st-vendors").innerHTML = D.vendors.map(v => `<option value="${esc(v.name)}">`).join("");
   $("st-scanst").innerHTML = ""; stRender();
@@ -944,7 +951,7 @@ function stBusy(n) {
 }
 $("st-loc").oninput = $("st-price").oninput = () => stSave();
 $("st-cam").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) stScanFile(f); };
-$("st-gal").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; fs.forEach(stScanFile); };
+$("st-gal").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; fs.forEach(f => stScanFile(f)); };
 let stLog = [], stT0 = 0, stNo = 0, stFailed = [];
 function stFailedShow() {
   const b = $("st-failed"); if (!b) return;
@@ -952,8 +959,22 @@ function stFailedShow() {
     <button type="button" class="small-btn" onclick="stRetry()">↻ nochmal senden</button></div>` : "";
 }
 function stRetry() { const l = stFailed; stFailed = []; stFailedShow(); l.forEach(x => { stBusy(+1); stRun(() => stScanOne(x.f, x.no, performance.now())).finally(() => stBusy(-1)); }); }
-window.addEventListener("beforeunload", e => { if (stBusyN > 0 || stFailed.length) { e.preventDefault(); e.returnValue = ""; } });
+// Warteschlange (noch nicht gelesene Fotos) im Browser ablegen – IndexedDB kann Bilder speichern, übersteht Neuladen
+function stDB() {
+  return new Promise((res, rej) => { const r = indexedDB.open("printhub", 1);
+    r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains("stq")) r.result.createObjectStore("stq", {keyPath: "no"}); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+}
+async function stq(mode, fn) {
+  try { const db = await stDB(); return await new Promise((res, rej) => { const t = db.transaction("stq", mode), q = fn(t.objectStore("stq"));
+    t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); }); } catch { return null; }
+}
+const stqPut = (no, f) => stq("readwrite", o => o.put({no, blob: f, type: f.type || "image/jpeg", size: f.size}));
+const stqDel = no => stq("readwrite", o => o.delete(no));
+const stqAll = () => stq("readonly", o => o.getAll());
+const stqClear = () => stq("readwrite", o => o.clear());
 function stLogAdd(line) {
+  if (!stT0) stT0 = performance.now();
   const t = ((performance.now() - stT0) / 1000).toFixed(1).padStart(5);
   stLog.push(`[+${t}s] ${line}`); $("st-log").textContent = stLog.join("\n"); stSave();
 }
@@ -975,10 +996,11 @@ function stRun(job) {
   return new Promise(res => { stWaitQ.push(() => job().catch(() => {}).finally(() => { stActive--; res(); stPump(); })); stPump(); });
 }
 function stPump() { while (stActive < 2 && stWaitQ.length) { stActive++; stWaitQ.shift()(); } }
-function stScanFile(f) {
+function stScanFile(f, resumeNo) {
   if (!stT0) stT0 = performance.now();
-  const no = ++stNo, tq = performance.now();
-  stLogAdd(`#${no} Foto gewählt (${(f.size / 1e6).toFixed(1)} MB${f.type ? ", " + f.type : ""})`);
+  const no = resumeNo || ++stNo, tq = performance.now();
+  if (resumeNo) stLogAdd(`#${no} aus der Warteschlange fortgesetzt`);
+  else { stqPut(no, f); stLogAdd(`#${no} Foto gewählt (${(f.size / 1e6).toFixed(1)} MB${f.type ? ", " + f.type : ""})`); }
   stBusy(+1); stRun(() => stScanOne(f, no, tq).catch(e => stLogAdd(`#${no} Fehler: ${e}`))).finally(() => stBusy(-1));
 }
 async function stScanOne(f, no, tq) {
@@ -998,8 +1020,8 @@ async function stScanOne(f, no, tq) {
     (tm.server != null ? ` = unterwegs ${tm.recv}s + Tower ${tm.server}s (Bild ${tm.size || "?"}, ${steps || "–"})` : "") +
     (d.ai ? ` · KI ${d.ai.sec}s${d.ai.error ? " FEHLER " + d.ai.error : ""}` : "") +
     (d.error ? ` · FEHLER ${d.error}` : ` → ${[d.parsed?.brand, d.parsed?.material, d.parsed?.color].filter(Boolean).join(" ") || "nichts erkannt"}`));
-  if (d.error) { PH.toast("Etikett: " + d.error, true); return; }
-  const add = stAddQ.then(() => stAdd(d)); stAddQ = add.catch(() => {}); await add;
+  if (d.error) { stqDel(no); PH.toast("Etikett: " + d.error, true); return; }
+  const add = stAddQ.then(() => stAdd(d)); stAddQ = add.catch(() => {}); await add; stqDel(no);
   stLogAdd(`#${no} fertig nach ${sec(performance.now() - tq)}s ab Auswahl`);
 }
 function stValid(r) { return !!(r.fid || (r.vendor.trim() && r.material.trim() && r.name.trim())); }
@@ -1127,7 +1149,7 @@ async function saveStack() {
         weight: r.weight, spool_weight: r.spool_weight, extruder_temp: r.et, bed_temp: r.bt, diameter: r.diameter,
         price: r.price, location: r.location, count: r.count,
         lots: Object.entries(r.lots).map(([lot, n]) => ({lot, n})), codes: r.codes}))});
-    ST = []; stLog = []; stFailed = []; stSave();
+    ST = []; stLog = []; stFailed = []; stSave(); stqClear();
     closeM(); PH.toast(`${d.new} Sorten neu${d.existing ? `, ${d.existing} ergänzt` : ""} – ${d.rolls} Rollen angelegt`); d.ids.forEach(i => open.add(i)); load();
   } finally { $("st-save").disabled = false; }
 }
