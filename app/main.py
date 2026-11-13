@@ -1486,6 +1486,9 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             if err:
                 log.info("Scan: KI-Test fehlgeschlagen: %s", err)
             if d:
+                ks = d.pop("sku", None)            # KI-Nummer nie als SKU (die zählt stark) – nur als normale Erkennungsnummer
+                if ks and not d.get("batch"):
+                    d["batch"] = ks
                 alltexts.append(aiscan.as_text(d))
                 if d.get("color") and not d.get("hex_print"):
                     hx, _ = colormod.from_list(d["color"])
