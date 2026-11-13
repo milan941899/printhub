@@ -193,6 +193,55 @@ def band_texts(img, code, stage="a"):
     return run_ocr(jobs, "Stufe 2 (gedreht)")
 
 
+def find_label(img):
+    """Weißes Etikett im Foto finden, wenn kein Strichcode gelesen wurde: helle, rechteckige Fläche mit viel
+    Schrift-Kanten (bevorzugt vor glattem Hintergrund). Gibt den Ausschnitt in voller Auflösung zurück oder None."""
+    g = ImageOps.exif_transpose(img).convert("L")
+    sm = g.copy()
+    sm.thumbnail((320, 320))
+    f = g.width / sm.width
+    ac = ImageOps.autocontrast(sm)
+    edges = ac.filter(ImageFilter.FIND_EDGES)
+    blob = ac.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.MinFilter(3))   # Schrift „zumachen“
+    W, H = blob.size
+    data = blob.tobytes()
+    hist = sorted(data)
+    thr = max(170, hist[int(len(hist) * 0.80)] - 25)
+    seen = bytearray(W * H)
+    best = None
+    for y in range(H):
+        for x in range(W):
+            i = y * W + x
+            if seen[i] or data[i] < thr:
+                continue
+            st, n, x0, x1, y0, y1 = [i], 0, x, x, y, y
+            seen[i] = 1
+            while st:
+                j = st.pop(); n += 1
+                cx, cy = j % W, j // W
+                x0, x1, y0, y1 = min(x0, cx), max(x1, cx), min(y0, cy), max(y1, cy)
+                for k in ((j + 1) if cx + 1 < W else -1, (j - 1) if cx > 0 else -1, j + W if cy + 1 < H else -1, j - W if cy > 0 else -1):
+                    if k >= 0 and not seen[k] and data[k] >= thr:
+                        seen[k] = 1; st.append(k)
+            bw, bh = x1 - x0 + 1, y1 - y0 + 1
+            if n > W * H * 0.01 and n / (bw * bh) > 0.5 and 1.2 < bw / bh < 6:
+                e = edges.crop((x0, y0, x1 + 1, y1 + 1)).tobytes()
+                sc = sum(e) / len(e)
+                if not best or sc > best[0]:
+                    best = (sc, (x0, y0, x1, y1))
+    if not best or best[0] < 25:
+        return None
+    x0, y0, x1, y1 = best[1]
+    return g.crop((max(0, int((x0 - 3) * f)), max(0, int((y0 - 3) * f)), min(g.width, int((x1 + 3) * f)), min(g.height, int((y1 + 3) * f))))
+
+
+def label_texts(crop):
+    ac = ImageOps.autocontrast(crop)
+    if ac.width > 1400:
+        ac.thumbnail((1400, 1400))
+    return run_ocr([(ac.filter(ImageFilter.SHARPEN), "6"), (ac, "11")], "Etikett gefunden (ohne Strichcode)")
+
+
 def is_ean(code):
     """EAN-13 / UPC-A / EAN-8 mit gültiger Prüfziffer."""
     if not re.fullmatch(r"\d{8}|\d{12,13}", code or ""):

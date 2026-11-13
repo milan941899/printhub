@@ -1257,6 +1257,27 @@ def _vendor_by_words(text):
     return max(hits, key=hits.get) if hits else ""
 
 
+_CWORDS = None
+
+
+def _color_words():
+    """Alle Wörter aus Farbnamen der SpoolmanDB und der eingebauten Farbliste."""
+    global _CWORDS
+    if _CWORDS is None:
+        w = set()
+        try:
+            for f in spoolman.external_filaments():
+                w.update(x for x in _tnorm(f.get("name")).split() if x.isalpha() and len(x) >= 3)
+        except Exception:
+            pass
+        for k in colormod.NAMES:
+            w.update(k.lower().split())
+        w.update(("matte", "silk", "vibrant", "pastel", "neon", "dark", "light", "deep", "bright", "metallic", "glitter", "fossil",
+                  "sky", "navy", "ivory", "jade", "olive", "army", "forest", "mint", "electric", "royal", "ocean", "galaxy"))
+        _CWORDS = w
+    return _CWORDS
+
+
 def _color_line(text, base, vendor=""):
     """Zeile, in der der Grundton steht, als Farbname („MATTE FOSSIL GREY“ → „Matte Fossil Grey“) – max. 4 Wörter,
     ohne Material/Hersteller/Zahlen."""
@@ -1275,6 +1296,13 @@ def _color_line(text, base, vendor=""):
         while end < len(words) and words[end].lower() in ("matte", "silk"):
             end += 1
         words = words[max(0, idx - 3):end]
+        # Wörter vor dem Grundton nur, wenn sie als Farbwort bekannt sind (SpoolmanDB/Farbliste) – sonst OCR-Müll („Neth White“)
+        known = _color_words()
+        if known:
+            start = next((i for i, w in enumerate(words) if w.lower() in alts), 0)
+            while start > 0 and words[start - 1].lower() in known:
+                start -= 1
+            words = words[start:]
         if not 2 <= len(words) <= 4 or any(len(w) < 3 for w in words):
             continue
         cand = " ".join(w.capitalize() for w in words)
@@ -1411,7 +1439,7 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             tj, pv = "\n".join(texts), scanmod.parse_votes(texts)
             base = (pv.get("color") or "").lower()
             col = (_own_color(tj, pv.get("material", ""), vendor) or (pv.get("color") and base not in _BASE)
-                   or (base in _BASE and _color_line(tj, _SYN.get(base, base), vendor))
+                   or (base in _BASE and (_color_line(tj, _SYN.get(base, base), vendor) or _base_ok(_SYN.get(base, base), tj)))
                    or _db_color(tj, vendor or pv.get("brand") or _detect_vendor(tj), pv.get("material", "")))
             return bool(col and pv.get("material"))
         for c in codes:
@@ -1426,7 +1454,15 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 break
         p = scanmod.parse_votes(texts)
         alltexts += texts
-        if not texts or not enough():          # ganzes Foto nur, wenn am Etikett nichts Brauchbares stand (z. B. kein Strichcode)
+        if not texts:                           # kein Strichcode: erst weißes Etikett im Foto suchen und lesen
+            lab = scanmod.find_label(img)
+            if lab is not None:
+                lt = scanmod.label_texts(lab)
+                texts += lt
+                alltexts += lt
+                p = scanmod.parse_votes(texts)
+                res["parsed"] = p
+        if not texts or not enough():          # ganzes Foto nur, wenn am Etikett nichts Brauchbares stand
             ft = scanmod.ocr_texts(img, small=False)
             alltexts += ft
             full = scanmod.parse_votes(ft)
@@ -1501,6 +1537,8 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             line = _color_line(text, base, vend)      # „MATTE FOSSIL GREY“ → ganze Zeile als Farbname
             if line:
                 p["color"], p["color_src"] = line, "line"
+            elif _base_ok(base, text):
+                p["color_src"] = "list"                # Etikett nennt genau „White“ (nicht „Mystic White“)
     if p.get("hex_print"):
         p["color_hex"] = p["hex_print"]              # aufgedruckter Farbcode ist am genauesten
     brand = res["parsed"].get("brand") or ""
