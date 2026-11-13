@@ -949,6 +949,9 @@ def _multi(b):
         for lot, n in lots:
             spoolman.create_spools(fid, n, loc, None, None, lot)
             _learn_code(lot, fid)
+        for c in row.get("codes") or []:          # Artikelnummern (SKU/Modell/Filament Code) → Sorte, nicht an die Rolle
+            if _code_ok(str(c)):
+                _learn_code(str(c), fid)
         rest = total - sum(n for _, n in lots)
         if rest > 0:
             spoolman.create_spools(fid, rest, loc)
@@ -1037,6 +1040,12 @@ async def api_lager_names(request):
 
 # ---------------- Rolle per Foto / Strichcode erkennen ----------------
 from . import scan as scanmod
+
+
+def _code_ok(c):
+    """Sieht wie eine Nummer aus (keine Datum/Uhrzeit, keine Leerzeichen/Schrägstriche/Doppelpunkte)."""
+    c = (c or "").strip()
+    return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.\-]{3,40}", c) and re.search(r"\d", c))
 
 
 def _code_norm(code):
@@ -1562,8 +1571,11 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         res["timing"]["cpus"] = scanmod._WORKERS
         res["timing"]["fast"] = bool(scanmod._fast_lang())
     # Nummern vom Etikett (Charge/Artikel, z. B. „04260702AJ“) – auch ohne Strichcode
-    res["ocr_codes"] = scanmod.find_codes(alltexts)[:3]
+    res["ocr_codes"] = [c for c in scanmod.find_codes(alltexts) if _code_ok(c)][:3]
     pp = res["parsed"]
+    for k in ("sku", "batch"):                        # Datum/Uhrzeit („31/10/2019 01:54:40“) o. ä. ist keine Nummer
+        if pp.get(k) and not _code_ok(str(pp[k])):
+            pp.pop(k)
     res["sku"] = pp.get("sku")                       # Artikelnummer: pro Farbe eindeutig → starkes Merkmal
     if pp.get("batch") and not res["lot"]:
         b = pp["batch"]                              # „Batch number“ = Charge (Lesefehler „AJ“→„A)“ über find_codes korrigiert)

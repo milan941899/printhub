@@ -736,9 +736,12 @@ function muLots(d) {
   const l = JSON.parse(d.dataset.lots || "{}"), k = d.querySelector(".mu-k"), sum = Object.values(l).reduce((a, b) => a + b, 0);
   if ((+k.value || 0) < sum) k.value = sum;
   const box = d.querySelector(".mu-l");
-  box.innerHTML = Object.entries(l).map(([lot, n]) => `<span class="chip">${esc(lot)} ×${n} <button type="button" data-l="${esc(lot)}" title="Charge entfernen">✕</button></span>`).join("") +
+  const sk = JSON.parse(d.dataset.skus || "[]");
+  box.innerHTML = sk.map(c => `<span class="chip" title="Artikelnummer – wird der Sorte zugeordnet">🏷 ${esc(c)} <button type="button" data-s="${esc(c)}" title="Artikelnummer entfernen">✕</button></span>`).join("") +
+    Object.entries(l).map(([lot, n]) => `<span class="chip">${esc(lot)} ×${n} <button type="button" data-l="${esc(lot)}" title="Charge entfernen">✕</button></span>`).join("") +
     `<input class="mu-li" placeholder="＋ Charge" autocomplete="off">`;
   box.querySelectorAll("button[data-l]").forEach(b => b.onclick = () => { const x = JSON.parse(d.dataset.lots); delete x[b.dataset.l]; d.dataset.lots = JSON.stringify(x); muLots(d); });
+  box.querySelectorAll("button[data-s]").forEach(b => b.onclick = () => { d.dataset.skus = JSON.stringify(JSON.parse(d.dataset.skus || "[]").filter(x => x !== b.dataset.s)); muLots(d); });
   const li = box.querySelector(".mu-li");
   const add = () => { if (li.value.trim()) { muAddLot(d, li.value); } };
   li.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); add(); } };
@@ -768,6 +771,16 @@ async function muScanOne(f, row) {
   catch { d = {error: "keine Verbindung"}; }
   if (d.error) { PH.toast("Etikett: " + d.error, true); return; }
   const p = d.parsed || {}, rows = [...$("mu-rows").children];
+  // Serie gehört zu einem Hersteller + Material: fremde Etiketten nicht still übernehmen
+  const nrm = x => (x || "").toLowerCase().replace(/[^a-z0-9+]/g, ""), sv = nrm(muVendorName()), sm = nrm($("mu-mat").value);
+  const lv = nrm(p.brand), lm = nrm(p.material);
+  const started = rows.some(x => x.querySelector(".mu-n").value.trim() || x.dataset.fid);
+  const badV = started && sv && lv && !(lv.includes(sv) || sv.includes(lv)), badM = started && sm && lm && lm !== sm;
+  if (badV || badM) {
+    const what = [badV ? p.brand : "", badM ? p.material : ""].filter(Boolean).join(" ");
+    const msg = `⚠ Etikett ist ${what} – passt nicht zu ${muVendorName()} ${$("mu-mat").value.trim()}. Nicht übernommen – bitte einzeln über „Rolle scannen“ erfassen.`;
+    $("mu-scanst").dataset.last = esc(msg); PH.toast(msg, true); return;
+  }
   // gemeinsame Felder einmal aus dem ersten Etikett
   if (p.brand && !rows.some(x => x.querySelector(".mu-n").value.trim())) {
     const vd = D.vendors.find(x => x.name.toLowerCase() === p.brand.toLowerCase());
@@ -796,8 +809,9 @@ async function muScanOne(f, row) {
       if (p.color_src === "base") setTimeout(() => { r.querySelector(".mu-h").innerHTML = `⚠ nur Grundton <b>${esc(name)}</b> erkannt – Feld antippen und genaue Farbe aus den Vorschlägen wählen`; }, 700);
     } else r.querySelector(".mu-h").textContent = "⚠ Farbe nicht erkannt – bitte Namen eintragen";
   } else k.value = (+k.value || 0) + 1;
-  if (d.lot) muAddLot(r, d.lot); else muLots(r);
-  const msg = `📷 ${name || "Etikett"}${d.lot ? " · Charge " + d.lot : ""} → ${fresh ? "neue Zeile" : "Anzahl " + k.value}${f0 ? " (schon im Lager)" : ""}`;
+  if (d.sku) { const sk = JSON.parse(r.dataset.skus || "[]"); if (!sk.includes(d.sku)) sk.push(d.sku); r.dataset.skus = JSON.stringify(sk); }
+  if (d.lot && d.lot !== d.sku) muAddLot(r, d.lot); else muLots(r);
+  const msg = `📷 ${name || "Etikett"}${d.sku ? " · Artikelnr. " + d.sku : ""}${d.lot && d.lot !== d.sku ? " · Charge " + d.lot : ""} → ${fresh ? "neue Zeile" : "Anzahl " + k.value}${f0 ? " (schon im Lager)" : ""}`;
   $("mu-scanst").dataset.last = esc(msg); PH.toast(msg);
 }
 let muT;
@@ -848,7 +862,7 @@ async function saveMulti() {
   const rows = [...$("mu-rows").children].map(r => ({name: r.querySelector(".mu-n").value.trim(), hex: r.querySelector(".mu-c").value,
     count: +r.querySelector(".mu-k").value || 0, external_id: r.dataset.ext && r.dataset.ext !== "x" ? r.dataset.ext : "",
     fid: r.dataset.fid ? +r.dataset.fid : null,
-    lots: Object.entries(JSON.parse(r.dataset.lots || "{}")).map(([lot, n]) => ({lot, n}))})).filter(r => r.name || r.fid);
+    lots: Object.entries(JSON.parse(r.dataset.lots || "{}")).map(([lot, n]) => ({lot, n})), codes: JSON.parse(r.dataset.skus || "[]")})).filter(r => r.name || r.fid);
   if (!rows.length) return PH.toast("Mindestens eine Farbe eintragen", true);
   const newV = $("mu-vendor").value === "new";
   $("mu-save").disabled = true;
