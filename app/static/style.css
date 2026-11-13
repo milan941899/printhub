@@ -1087,3 +1087,18 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .pk-mats:empty { display:none; }
 .pk-mats button { background:none; border:1px solid var(--line); border-radius:999px; padding:5px 12px; color:var(--fg); font:inherit; font-size:13px; font-weight:700; cursor:pointer; }
 .pk-mats button.on { background:var(--acc); border-color:var(--acc); color:#0a1220; }
+
+/* Slot-Spulen (AMS): sauberer Aufbau – Ring = Restmenge, Scheibe = Farbe, Nabe = Nummer */
+.reel { width:min(60px, 100%); box-shadow:0 2px 8px var(--shadow); background:conic-gradient(var(--c) 0 calc(var(--p) * 1%), var(--trk) calc(var(--p) * 1%) 100%); }
+.reel::before { inset:9%; background:var(--c); box-shadow:inset 0 0 0 3px #00000022, 0 0 0 2px var(--card); }
+.reel .hub { inset:auto; left:50%; top:50%; width:44%; height:44%; transform:translate(-50%,-50%); border:0; border-radius:50%;
+  background:var(--card); color:var(--fg); box-shadow:0 0 0 2px #00000026; font-size:13px; line-height:1; z-index:2; }
+.reel.empty { background:none; box-shadow:none; border:2px dashed var(--line); box-sizing:border-box; }
+.reel.empty::before { inset:9%; background:var(--well); box-shadow:none; }
+.reel.empty .hub { box-shadow:0 0 0 1px var(--line); color:var(--muted); }
+.reel.dark { box-shadow:0 2px 8px var(--shadow); background:conic-gradient(#94a3b8 0 calc(var(--p) * 1%), var(--trk) calc(var(--p) * 1%) 100%); }
+.reel.dark::before { box-shadow:inset 0 0 0 3px #ffffff1f, 0 0 0 2px var(--card); }
+
+/* Kamera-Leiste (Drucker offline) auch bei selbst eingestellter Kachelhöhe schmal */
+.blk.hset:has(.camthumb.off) { height:auto !important; }
+.blk:has(.camthumb.off) .camthumb.off { min-height:0 !important; aspect-ratio:auto !important; }
