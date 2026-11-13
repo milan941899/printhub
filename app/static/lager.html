@@ -344,6 +344,7 @@ async function load() {
   const cur = $("mat").value;
   $("mat").innerHTML = `<option value="">Alle</option>` + mats.map(m => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join("");
   render(); stResumeBtn();
+  if (location.hash === "#scan" && !window._scanHash) { window._scanHash = 1; history.replaceState(null, "", location.pathname + location.search); scanStart(); }
   // Link aus der Meldung „Spule leer“: /lager?wiegen=12 öffnet gleich den Wiegen-Dialog
   const w = +new URLSearchParams(location.search).get("wiegen");
   if (w && !window._wiegenDone) {
@@ -1315,6 +1316,13 @@ async function scanFile(f) {
 }
 // Foto hochladen mit Fortschritt (zeigt, ob das WLAN oder der Tower bremst) und Zeitlimit
 // Sorte schon im Lager → passende Rolle gleich in einen Drucker-Slot legen (angebrochene zuerst, dann älteste volle)
+function slotTarget() { try { return JSON.parse(sessionStorage.getItem("ph-slot-target") || "null"); } catch { return null; } }
+async function toSlot(id) {
+  const t = slotTarget(); if (!t) return;
+  const r = await api("/api/assign", "POST", {printer: t.pid, slot: t.key, spool_id: id});
+  try { sessionStorage.removeItem("ph-slot-target"); } catch {}
+  closeM(); PH.toast(`Rolle #${id} → ${t.label}${r.warning ? " – " + r.warning : ""}`); setTimeout(() => location.href = "/", 600);
+}
 function toPrinter(d) {
   const f = d.exact_fid ? D.filaments.find(x => x.id === d.exact_fid) : null;
   const free = f ? f.spools.filter(s => !s.in_printer) : [];
@@ -1323,7 +1331,8 @@ function toPrinter(d) {
   const opts = free.map(s => `<option value="${s.id}" ${s.id === pick.id ? "selected" : ""}>#${s.id} · ${s.opened ? `angebrochen, ${g(s.remaining)}` : "voll"}${s.location ? " · " + esc(s.location) : ""}</option>`).join("");
   return `<div class="wres small" style="margin-top:8px">🖨 <b>In den Drucker einlegen?</b>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><select id="sc-tp" style="flex:1;min-width:180px">${opts}</select>
-    <button type="button" class="primary" onclick="const v=$('sc-tp').value;closeM();setTimeout(()=>location.href='/assign?spool='+v,400)">Slot wählen →</button></div></div>`;
+    ${slotTarget() ? `<button type="button" class="primary" onclick="toSlot(+$('sc-tp').value)">In ${esc(slotTarget().label)} einlegen</button>`
+      : `<button type="button" class="primary" onclick="const v=$('sc-tp').value;closeM();setTimeout(()=>location.href='/assign?spool='+v,400)">Slot wählen →</button>`}</div></div>`;
 }
 function dbInfo(d) {
   const i = d.db_info; if (!i) return "";

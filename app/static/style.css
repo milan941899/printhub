@@ -166,7 +166,8 @@ button.danger { color:var(--err); border-color:#f8717155; background:#f8717112; 
 .a-name { font-size:11px; color:var(--muted); line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word; min-height:2.4em; }
 .a-warn { font-size:10.5px; color:var(--warn); font-weight:700; }
 .a-temp { font-size:12px; font-weight:700; }
-.aspool select.overlay { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; font-size:16px; }
+.aspool .overlay { background:none; border:0; padding:0; }
+.aspool select.overlay, .aspool .overlay { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; font-size:16px; }
 .legend { font-size:11.5px; color:var(--muted); }
 
 /* Fußzeile */
@@ -1063,3 +1064,21 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .camthumb.off .msg { font-size:13px; }
 .blk[data-b="camera"]:has(.camthumb.off) { min-height:0 !important; }
 .camrow:has(.camthumb.off) .camhint { display:none; }
+
+/* Spule für Slot wählen */
+.pick #pk-list { display:flex; flex-direction:column; }
+.pk-sec { font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px; }
+.pk-row { display:grid; grid-template-columns:1fr auto; align-items:center; border-bottom:1px solid var(--line); }
+.pk-main { display:flex; gap:10px; align-items:center; text-align:left; background:none; border:0; padding:10px 4px; color:var(--fg); font:inherit; cursor:pointer; min-width:0; }
+.pk-main:hover { background:var(--card2, transparent); }
+.pk-main .dot { width:20px; height:20px; border-radius:50%; flex:none; border:1px solid var(--line); }
+.pk-t { min-width:0; }
+.pk-n { font-weight:700; }
+.pk-m { font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:0 5px; margin-left:4px; }
+.pk-i { display:block; font-size:12px; color:var(--muted); margin-top:2px; }
+.pk-row.busy .pk-main { opacity:.45; cursor:default; }
+.pk-row.cur .pk-n { color:var(--acc); }
+.pk-more { background:none; border:1px solid var(--line); border-radius:8px; color:var(--fg); width:36px; height:36px; cursor:pointer; }
+.pk-rolls { grid-column:1/-1; display:flex; flex-direction:column; gap:4px; padding:0 0 10px 34px; }
+.pk-rolls button { text-align:left; background:var(--card2, transparent); border:1px solid var(--line); border-radius:8px; padding:8px 10px; color:var(--fg); font:inherit; font-size:13px; cursor:pointer; }
+#pk-q { font-size:16px; }

@@ -36,6 +36,15 @@
     <img id="lbimg" alt="Kamera groß">
   </div>
 </div>
+<div class="modal" id="m-pick">
+  <div class="mbox card pick">
+    <h2 id="pk-title">Spule wählen</h2>
+    <input id="pk-q" type="search" placeholder="Suchen: Hersteller, Farbe, Material …" autocomplete="off">
+    <div id="pk-list"></div>
+    <div class="mact"><button type="button" onclick="pickScan()">📷 Etikett scannen</button>
+      <button type="button" onclick="pickSet(null)">— leer —</button><button type="button" onclick="pickClose()">Abbrechen</button></div>
+  </div>
+</div>
 <footer>
   <span id="notify-state">Benachrichtigungen: –</span>
   <a class="small" href="/einstellungen">Einstellungen →</a>
@@ -178,6 +187,93 @@ function spoolOptions(selected) {
     o += `</optgroup>`;
   }
   return o;
+}
+
+// ---------- Spule für einen Slot wählen (eigenes Fenster statt Browser-Liste) ----------
+let PK = null;
+function pkDl(a, b) {
+  const d = Array.from({length: a.length + 1}, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function pkMatch(q, text) {           // alle Suchwörter müssen vorkommen (ein Tippfehler je Wort erlaubt)
+  const t = (text || "").toLowerCase(), words = t.split(/[^a-z0-9äöüß+]+/).filter(Boolean);
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => t.includes(w) ||
+    (w.length >= 4 && words.some(x => pkDl(w, x.slice(0, w.length)) <= 1)));
+}
+function hexRgb(h) { h = (h || "").replace("#", ""); return h.length >= 6 ? [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16)) : null; }
+function colorNear(a, b) { const x = hexRgb(a), y = hexRgb(b); if (!x || !y) return 0;
+  const d = Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); return d < 40 ? 2 : d < 90 ? 1 : 0; }
+function openPick(pid, key) {
+  const p = lastPrinters.find(x => x.id === pid), s = p && p.slots.find(x => x.key === key);
+  if (!s) return;
+  PK = {pid, key, s, open: null};
+  document.getElementById("pk-title").textContent = `${s.label} – Spule wählen`;
+  document.getElementById("pk-q").value = ""; pickRender();
+  document.getElementById("m-pick").classList.add("open"); editing = true;
+  if (!matchMedia("(pointer:coarse)").matches) setTimeout(() => document.getElementById("pk-q").focus(), 50);
+  loadSpools(true).then(() => PK && pickRender());
+}
+function pickClose() { document.getElementById("m-pick").classList.remove("open"); editing = false; PK = null; }
+document.getElementById("pk-q").oninput = () => pickRender();
+function pickGroups() {
+  const cur = PK.s.spool_id, G = {};
+  for (const sp of spools) {
+    const k = sp.filament_id ?? sp.name;
+    const g = (G[k] ||= {name: sp.name, material: sp.material, color: sp.color, rolls: []});
+    g.rolls.push(sp);
+  }
+  return Object.values(G).map(g => {
+    const free = g.rolls.filter(r => !r.slot || r.id === cur);
+    const opened = free.filter(r => r.id !== cur && ((r.used || 0) > 0.5 || r.first_used)).sort((a, b) => (a.remaining ?? 1e9) - (b.remaining ?? 1e9));
+    const fresh = free.filter(r => r.id !== cur && !opened.includes(r)).sort((a, b) => a.id - b.id);
+    g.cur = g.rolls.find(r => r.id === cur);
+    g.best = g.cur || opened[0] || fresh[0] || null;
+    g.free = free; g.opened = opened; g.fresh = fresh;
+    g.busy = !free.length ? g.rolls.filter(r => r.slot).map(r => r.slot) : [];
+    g.score = (PK.s.material && sameMaterial(PK.s.material, g.material) ? 2 : 0) + colorNear(PK.s.color, g.color);
+    return g;
+  });
+}
+function pickRow(g) {
+  const info = g.cur ? `<b>eingelegt</b> · #${g.cur.id}${g.cur.remaining != null ? ` · ${Math.round(g.cur.remaining)} g` : ""}`
+    : g.busy.length ? `steckt in ${esc(g.busy.join(", "))}`
+    : [g.fresh.length ? `${g.fresh.length} voll` : "", g.opened.length ? `${g.opened.length} angebrochen (${Math.round(g.opened[0].remaining)} g übrig)` : ""].filter(Boolean).join(" · ");
+  const id = g.name.replace(/[^a-z0-9]/gi, "_");
+  const more = g.free.length > 1 && PK.open === id;
+  return `<div class="pk-row${g.busy.length ? " busy" : ""}${g.cur ? " cur" : ""}">
+    <button type="button" class="pk-main" ${g.best ? `onclick="pickSet(${g.best.id})"` : "disabled"}>
+      <span class="dot" style="background:${g.color || "#64748b"}"></span>
+      <span class="pk-t"><span class="pk-n">${esc(stripMat(g.name, g.material))}</span> <span class="pk-m">${esc(g.material)}</span>
+      <span class="pk-i">${info}</span></span></button>
+    ${g.free.length > 1 ? `<button type="button" class="pk-more" onclick="PK.open=PK.open==='${id}'?null:'${id}';pickRender()" title="Bestimmte Rolle wählen">${more ? "▾" : "▸"}</button>` : ""}
+    ${more ? `<div class="pk-rolls">${[...(g.cur ? [g.cur] : []), ...g.opened, ...g.fresh].map(r => `<button type="button" onclick="pickSet(${r.id})">
+      #${r.id} · ${r.id === g.cur?.id ? "eingelegt" : g.opened.includes(r) ? "angebrochen" : "voll"} · ${r.remaining != null ? Math.round(r.remaining) + " g" : "?"}${r.location ? " · " + esc(r.location) : ""}</button>`).join("")}</div>` : ""}
+  </div>`;
+}
+function pickRender() {
+  if (!PK) return;
+  const q = document.getElementById("pk-q").value.trim();
+  let gs = pickGroups().sort((a, b) => a.name.localeCompare(b.name, "de"));
+  if (q) gs = gs.filter(g => pkMatch(q, `${g.name} ${g.material}`));
+  const top = q ? [] : gs.filter(g => g.score >= 2 && !g.busy.length && !g.cur).sort((a, b) => b.score - a.score).slice(0, 5);
+  const cur = gs.filter(g => g.cur);
+  const rest = gs.filter(g => !top.includes(g) && !g.cur).sort((a, b) => (a.busy.length ? 1 : 0) - (b.busy.length ? 1 : 0));
+  const sec = (t, list) => list.length ? `<div class="pk-sec">${t}</div>${list.map(pickRow).join("")}` : "";
+  document.getElementById("pk-list").innerHTML = (cur.length ? sec("Jetzt eingelegt", cur) : "") +
+    sec(`Passt zu diesem Slot${PK.s.material ? ` (${esc(PK.s.material)})` : ""}`, top) +
+    sec(q ? "Treffer" : "Alle Sorten", rest) ||
+    `<div class="muted" style="padding:12px 0">Nichts gefunden.</div>`;
+}
+async function pickSet(id) {
+  const {pid, key} = PK; pickClose();
+  await assign(pid, key, id || "");
+}
+function pickScan() {
+  try { sessionStorage.setItem("ph-slot-target", JSON.stringify({pid: PK.pid, key: PK.key, label: PK.s.label})); } catch {}
+  pickClose(); setTimeout(() => location.href = "/lager#scan", 300);
 }
 
 // ---------- Düsengrafik ----------
@@ -421,7 +517,7 @@ function aspool(p, s, i) {
     <div class="a-name">${name}</div>
     ${extra}
     ${p._first && p._first.has(s.key) ? `<div class="a-first" title="Gleiche Sorte liegt mehrfach im AMS – diese zuerst aufbrauchen (beim Sync diesen Slot wählen)">▲ zuerst</div>` : ""}
-    <select class="overlay" aria-label="${esc(s.label)}: Spule wählen" onfocus="editing=true" onblur="editing=false" onchange="assign('${p.id}','${s.key}',this.value)">${spoolOptions(s.spool_id)}</select>
+    <button type="button" class="overlay" aria-label="${esc(s.label)}: Spule wählen" onclick="openPick('${p.id}','${s.key}')"></button>
   </div>`;
 }
 
