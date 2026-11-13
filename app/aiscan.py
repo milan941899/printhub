@@ -68,6 +68,9 @@ def read(img, key, model="gemini-flash-lite-latest", timeout=20):
             out[k] = v if k == "diameter" else int(v)
         except (TypeError, ValueError):
             pass
+    for k in ("brand", "color"):              # Etiketten in GROSSBUCHSTABEN → „Matte Fossil Grey“
+        if out.get(k) and out[k].isupper() and len(out[k]) > 4:
+            out[k] = " ".join(w.capitalize() for w in out[k].split())
     hx = str(d.get("color_hex") or "").lstrip("#").upper()
     if len(hx) == 6 and all(c in "0123456789ABCDEF" for c in hx):
         out["hex_print"] = hx
