@@ -2186,15 +2186,21 @@ async def api_lager_filament(request):
             f = await run_in_threadpool(spoolman.update_filament, int(b["id"]), data)
         else:
             f = await run_in_threadpool(spoolman.create_filament, data)
+        sids = []
         if b.get("count"):
-            await run_in_threadpool(spoolman.create_spools, f["id"], int(b["count"]), settings["storage_location"], None, None,
-                                    b.get("lot") or None)
+            sids = await run_in_threadpool(spoolman.create_spools, f["id"], int(b["count"]), settings["storage_location"], None, None,
+                                           b.get("lot") or None)
+            if _num(b.get("gross")) and sids:          # eine Rolle davon angebrochen → Restmenge aus der Waage
+                try:
+                    await run_in_threadpool(_weigh, sids[-1], {"gross": b["gross"], "empty": b.get("spool_weight")})
+                except ValueError as e:
+                    log.info("Neue Sorte: Rolle #%s nicht gewogen: %s", sids[-1], e)
         for c in (b.get("ean"), b.get("lot")):
             if c:
                 _learn_code(c, f["id"])
     except (ValueError, KeyError, RuntimeError, TypeError) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-    return JSONResponse({"ok": True, "id": f["id"]})
+    return JSONResponse({"ok": True, "id": f["id"], "spools": sids if not b.get("id") else []})
 
 
 def _weigh(sid, b):

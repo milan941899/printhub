@@ -314,6 +314,10 @@
       <div class="field" id="f-lotbox"><span class="lab">Charge (optional)</span><input id="f-lot" placeholder="z. B. 04260702AJ" autocomplete="off"></div>
       <div class="field" id="f-codes" style="grid-column:1/-1;display:none"></div>
     </div>
+    <div id="f-afterbox">
+      <label class="chk"><input type="checkbox" id="f-opened"> Eine Rolle ist angebrochen – Waage mit Spule (g): <input id="f-gross" type="number" min="1" style="width:100px" placeholder="g"></label>
+      <label class="chk"><input type="checkbox" id="f-labels"> Danach gleich Etiketten für die neuen Rollen drucken</label>
+    </div>
     <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit">Speichern</button></div>
   </form>
 </div>
@@ -1592,6 +1596,9 @@ function openFil(fid, tplId) {
   $("f-price").value = f ? (f.price ?? "") : ""; $("f-et").value = f ? (f.extruder_temp ?? "") : "";
   $("f-bt").value = f ? (f.bed_temp ?? "") : ""; $("f-count").value = 0;
   $("f-countbox").style.display = f ? "none" : "";
+  $("f-afterbox").style.display = f ? "none" : ""; $("f-opened").checked = false; $("f-gross").value = "";
+  $("f-gross").oninput = () => { if ($("f-gross").value) $("f-opened").checked = true; };
+  try { $("f-labels").checked = localStorage.getItem("ph-f-labels") === "1"; } catch {}
   $("f-dbbox").style.display = f ? "none" : "";
   $("f-db").value = ""; $("f-dbres").innerHTML = ""; $("f-dbsel").textContent = "";
   dbNameSynced = ""; $("f-db").value = "";
@@ -1886,12 +1893,18 @@ async function saveFil() {
     bed_temp: $("f-bt").value, count: +$("f-count").value || 0, lot: $("f-lot").value.trim(),
     external_id: dbPicked && dbPicked.name === $("f-name").value && dbPicked.color === $("f-color").value ? $("f-ext").value : "",
     density: $("f-dens").value, diameter: $("f-diam").value,
-    ean: scanCtx && !$("f-id").value ? (scanCtx.ean || scanCtx.sku || "") : ""};
+    ean: scanCtx && !$("f-id").value ? (scanCtx.ean || scanCtx.sku || "") : "",
+    gross: $("f-opened").checked ? $("f-gross").value : ""};
+  if ($("f-opened").checked && !+$("f-gross").value) return PH.toast("Gewicht der angebrochenen Rolle eintragen (Waage mit Spule)", true);
   const d = await api("/api/lager/filament", "POST", body);
   const mn = Math.max(0, +$("f-min").value || 0);
   if (mn !== +($("f-min").dataset.was || 0)) await api("/api/lager/min", "PUT", {filament_id: d.id, min: mn});
   scanCtx = null;
-  closeM(); PH.toast("Sorte gespeichert"); open.add(d.id); load();
+  const lbl = !$("f-id").value && $("f-labels").checked;
+  try { if (!$("f-id").value) localStorage.setItem("ph-f-labels", $("f-labels").checked ? "1" : ""); } catch {}
+  closeM(); PH.toast("Sorte gespeichert" + ((d.spools || []).length ? ` – ${d.spools.length} Rolle(n) angelegt` : "")); open.add(d.id);
+  if (lbl && (d.spools || []).length) return printLabels(d.spools);
+  load();
 }
 
 // Material: eigene Vorschlagsliste (ersetzt die Browser-Liste, die am Handy sofort wieder zuging)
