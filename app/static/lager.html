@@ -179,6 +179,9 @@
     <input type="file" id="st-gal" accept="image/*" multiple style="display:none">
     <div id="st-rows"></div>
     <div id="st-sum" class="muted small"></div>
+    <details class="muted small tdet" id="st-logbox"><summary>⏱ Protokoll (Zeiten pro Foto)</summary>
+      <pre id="st-log" style="white-space:pre-wrap;font-size:.8em;margin:6px 0"></pre>
+      <button type="button" class="small-btn" onclick="stLogCopy()">📋 Protokoll kopieren</button></details>
     <datalist id="st-vendors"></datalist>
     <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit" id="st-save">Anlegen</button></div>
   </form>
@@ -906,7 +909,7 @@ async function saveMulti() {
 let ST = [], stN = 0, stBusyN = 0, stQueue = Promise.resolve(), stLast = {};
 const _sk = x => (x || "").toLowerCase().replace(/[^a-z0-9+]/g, "");
 function openStack(first) {
-  ST = []; stLast = {};
+  ST = []; stLast = {}; stLog = []; stT0 = 0; stNo = 0; $("st-log").textContent = "";
   $("st-loc").value = ""; $("st-loc").placeholder = D.storage || "Lager"; $("st-price").value = "";
   $("st-vendors").innerHTML = D.vendors.map(v => `<option value="${esc(v.name)}">`).join("");
   $("st-scanst").innerHTML = ""; stRender();
@@ -919,13 +922,38 @@ function stBusy(n) {
 }
 $("st-cam").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) stScanFile(f); };
 $("st-gal").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; fs.forEach(stScanFile); };
-function stScanFile(f) { stBusy(+1); stQueue = stQueue.then(() => stScanOne(f)).catch(() => {}).finally(() => stBusy(-1)); }
-async function stScanOne(f) {
+let stLog = [], stT0 = 0, stNo = 0;
+function stLogAdd(line) {
+  const t = ((performance.now() - stT0) / 1000).toFixed(1).padStart(5);
+  stLog.push(`[+${t}s] ${line}`); $("st-log").textContent = stLog.join("\n");
+}
+function stLogCopy() {
+  const txt = `PrintHub Stapel-Protokoll ${new Date().toLocaleString("de-DE")}\n${navigator.userAgent}\n` + stLog.join("\n");
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => PH.toast("Protokoll kopiert"))
+    .catch(() => { const r = document.createRange(); r.selectNodeContents($("st-log")); getSelection().removeAllRanges(); getSelection().addRange(r);
+      PH.toast("Text markiert – jetzt kopieren"); });
+}
+function stScanFile(f) {
+  if (!stT0) stT0 = performance.now();
+  const no = ++stNo, tq = performance.now();
+  stLogAdd(`#${no} Foto gewählt (${(f.size / 1e6).toFixed(1)} MB${f.type ? ", " + f.type : ""})`);
+  stBusy(+1); stQueue = stQueue.then(() => stScanOne(f, no, tq)).catch(e => stLogAdd(`#${no} Fehler: ${e}`)).finally(() => stBusy(-1));
+}
+async function stScanOne(f, no, tq) {
+  const t0 = performance.now();
   const blob = await uploadBlob(f);
+  const t1 = performance.now();
   let d; try { d = await (await fetch("/api/lager/scan", {method: "POST", headers: {"Content-Type": "image/jpeg"}, body: blob})).json(); }
   catch { d = {error: "keine Verbindung"}; }
+  const t2 = performance.now(), tm = d.timing || {}, sec = x => (x / 1000).toFixed(1);
+  const steps = (tm.steps || []).map(x => `${x.name} ${x.sec}s`).join(", ");
+  stLogAdd(`#${no} gewartet ${sec(t0 - tq)}s · vorbereitet ${sec(t1 - t0)}s (${(blob.size / 1e6).toFixed(2)} MB) · Senden+Tower ${sec(t2 - t1)}s` +
+    (tm.server != null ? ` = unterwegs ${tm.recv}s + Tower ${tm.server}s (Bild ${tm.size || "?"}, ${steps || "–"})` : "") +
+    (d.ai ? ` · KI ${d.ai.sec}s${d.ai.error ? " FEHLER " + d.ai.error : ""}` : "") +
+    (d.error ? ` · FEHLER ${d.error}` : ` → ${[d.parsed?.brand, d.parsed?.material, d.parsed?.color].filter(Boolean).join(" ") || "nichts erkannt"}`));
   if (d.error) { PH.toast("Etikett: " + d.error, true); return; }
   await stAdd(d);
+  stLogAdd(`#${no} fertig nach ${sec(performance.now() - tq)}s ab Auswahl`);
 }
 function stValid(r) { return !!(r.fid || (r.vendor.trim() && r.material.trim() && r.name.trim())); }
 function stKey(r) { return r.fid ? "f" + r.fid : _sk(r.vendor) + "|" + _sk(r.material) + "|" + _sk(r.name); }
