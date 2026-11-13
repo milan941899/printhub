@@ -166,7 +166,7 @@
   <form class="mbox card" onsubmit="event.preventDefault();saveStack()">
     <h2>📚 Stapel: gemischte Rollen</h2>
     <div class="muted small">Etiketten verschiedener Hersteller und Farben nacheinander fotografieren. Jede Sorte wird eine Zeile –
-      prüfen, abhaken, dann „Anlegen“. Fehlerhafte Zeilen mit 🗑 löschen. Der Stapel bleibt auch beim Neuladen der Seite erhalten.</div>
+      sichere Zeilen sind gleich abgehakt, fragliche (⚠) prüfen, dann „Anlegen“. Fehlerhafte Zeilen mit 🗑 löschen. Der Stapel bleibt auch beim Neuladen der Seite erhalten.</div>
     <div id="st-failed" class="small"></div>
     <div class="fgrid">
       <div class="field"><span class="lab">Lagerort (für alle)</span><input id="st-loc" autocomplete="off"></div>
@@ -1029,6 +1029,8 @@ async function stAdd(d) {
     r.src = i ? (i.hit ? "🗄 SpoolmanDB" : `🗄 nicht in der SpoolmanDB – Werte: Etikett${(i.from || []).length ? ", " + i.from.join(", ") : ""}`) : "";
     if (p.color_src === "base") r.warn = `nur Grundton „${r.name}“ erkannt – genaue Farbe prüfen`;
   }
+  if (d.ai && d.ai.error && !r.fid) r.warn = (r.warn ? r.warn + " · " : "") + "KI nicht verfügbar – nur Tower-Erkennung, bitte prüfen";
+  r.checked = stValid(r) && !r.warn;          // sichere Zeilen gleich abhaken, fragliche nicht
   ST.push(r); stMsg(`📷 ${r.vendor} ${r.material} ${r.name} → ${r.fid ? "schon im Lager" : "neue Sorte"}`); stRender();
 }
 function stMsg(m) { $("st-scanst").dataset.last = esc(m); if (!stBusyN) $("st-scanst").innerHTML = esc(m); }
@@ -1084,7 +1086,7 @@ function stPanelWire(el, r) {
     i.onchange = () => {
       if (k === "fid") {
         const f = D.filaments.find(x => x.id === +i.value);
-        if (f) Object.assign(r, {fid: f.id, vendor: f.vendor, material: f.material, name: f.name, hex: (f.color || "#999999").slice(1), src: "", warn: ""});
+        if (f) Object.assign(r, {fid: f.id, vendor: f.vendor, material: f.material, name: f.name, hex: (f.color || "#999999").slice(1), src: "", warn: "", checked: true});
         else r.fid = null;
         return stRender();
       }
@@ -1095,7 +1097,7 @@ function stPanelWire(el, r) {
       el.classList.toggle("st-inv", !ok); stSum();
     };
   });
-  el.querySelector(".st-ok").onclick = () => { r.open = false; stRender(); };
+  el.querySelector(".st-ok").onclick = () => { r.open = false; r.warn = ""; r.checked = stValid(r); stRender(); };
 }
 function stSum() {
   stSave();
