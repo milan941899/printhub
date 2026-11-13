@@ -690,7 +690,7 @@ function powerChip(p) {
 }
 
 function stopsHtml(ps) {
-  return ps.filter(p => p.printing).map(p => `<button class="stopbtn" onclick="ctl('${p.id}','stop')">■ ${esc(p.type === "moonraker" ? "U1" : "A1")} STOPP</button>`).join("");
+  return ps.filter(p => p.printing).map(p => `<button class="stopbtn" onclick="ctl('${p.id}','stop')">■ ${esc(p.id.toUpperCase().slice(0, 3))} STOPP</button>`).join("");
 }
 
 let lastHistory = [];
@@ -725,7 +725,7 @@ function printerCard(p) {
     return `<div class="blk${h ? " hset" : ""}" data-b="${k}" style="--bs:${bs};${h}">${blkCtl(p.id, k)}${bodies[k]()}</div>`;
   }).join("");
   return `<div class="head">
-      <h2><span class="icon">${p.type === "moonraker" ? "U1" : "A1"}</span>${esc(p.name)}</h2>
+      <h2><span class="icon">${esc(p.id.toUpperCase().slice(0, 3))}</span>${esc(p.name)}</h2>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${p.maint_due ? `<a class="mchip" href="/einstellungen#wartung" title="Wartung fällig">🔧 ${p.maint_due}</a>` : ""}${p.online ? lightBtn : ""}${powerChip(p)}${statusBadge(p)}</div>
     </div>
     ${p.error ? `<div class="err" style="margin-bottom:8px">${esc(p.error)}</div>` : ""}

@@ -15,6 +15,8 @@ Gemacht für **Bambu Lab A1 / A1 mini / P1** (über das Heimnetz, ohne Cloud) un
   <img src="docs/screenshots/handy-warteschlange.png" alt="Warteschlange am Handy" width="24%">
 </p>
 
+**🧪 [Live-Demo ausprobieren](https://milan941899.github.io/printhub/)** – läuft direkt im Browser, ohne Installation, mit erfundenen Daten.
+
 > PrintHub ist ein Hobbyprojekt. Benutzung auf eigene Gefahr – ein 3D-Drucker, der nachts oder unbeaufsichtigt druckt,
 > braucht trotzdem einen Rauchmelder in der Nähe.
 
