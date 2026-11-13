@@ -126,7 +126,7 @@
   let depth = 0, skip = 0;
   const openOnes = () => [...document.querySelectorAll(SEL)];
   const closeTop = el => {
-    const btn = [...el.querySelectorAll(".mact button, button")].find(b => /^(Abbrechen|Schließen|Schliessen|✕|×)$/.test(b.textContent.trim()));
+    const btn = [...el.querySelectorAll(".mact button, button")].find(b => /^(Abbrechen|Schließen|Schliessen|Später weiter|✕|×)$/.test(b.textContent.trim()));
     if (btn) btn.click(); else el.classList.remove("open");
     if (el.classList.contains("open")) el.classList.remove("open");
   };

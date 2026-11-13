@@ -39,6 +39,7 @@
         <button onclick="this.closest('details').open=false;openNames()">Aa Namen vereinheitlichen</button>
         <button onclick="this.closest('details').open=false;fsel.clear();bulkMode=!bulkMode;render()">☑ Sorten auswählen (gemeinsam bearbeiten)</button>
       </div></details>
+      <button id="st-resume" style="display:none" onclick="openStack()">📚 Stapel fortsetzen</button>
       <button onclick="scanStart()" title="Etikett oder Strichcode der Rolle fotografieren">📷 Rolle scannen</button>
       <button class="primary" onclick="scanCtx=null;openAdd()">＋ Neue Rollen</button>
     </div>
@@ -165,7 +166,8 @@
   <form class="mbox card" onsubmit="event.preventDefault();saveStack()">
     <h2>📚 Stapel: gemischte Rollen</h2>
     <div class="muted small">Etiketten verschiedener Hersteller und Farben nacheinander fotografieren. Jede Sorte wird eine Zeile –
-      prüfen, abhaken, dann „Anlegen“. Fehlerhafte Zeilen mit 🗑 löschen.</div>
+      prüfen, abhaken, dann „Anlegen“. Fehlerhafte Zeilen mit 🗑 löschen. Der Stapel bleibt auch beim Neuladen der Seite erhalten.</div>
+    <div id="st-failed" class="small"></div>
     <div class="fgrid">
       <div class="field"><span class="lab">Lagerort (für alle)</span><input id="st-loc" autocomplete="off"></div>
       <div class="field"><span class="lab">Preis je Rolle € (für alle, optional)</span><input id="st-price" type="number" min="0" step="0.01"></div>
@@ -183,7 +185,7 @@
       <pre id="st-log" style="white-space:pre-wrap;font-size:.8em;margin:6px 0"></pre>
       <button type="button" class="small-btn" onclick="stLogCopy()">📋 Protokoll kopieren</button></details>
     <datalist id="st-vendors"></datalist>
-    <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit" id="st-save">Anlegen</button></div>
+    <div class="mact"><button type="button" onclick="stClear()" title="Alle Zeilen verwerfen">🗑 Leeren</button><button type="button" onclick="closeM();stResumeBtn()" title="Schließen – der Stapel bleibt gespeichert">Später weiter</button><button class="primary" type="submit" id="st-save">Anlegen</button></div>
   </form>
 </div>
 
@@ -324,7 +326,7 @@ async function load() {
   const mats = [...new Set(d.filaments.map(f => f.material).filter(Boolean))].sort();
   const cur = $("mat").value;
   $("mat").innerHTML = `<option value="">Alle</option>` + mats.map(m => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join("");
-  render();
+  render(); stResumeBtn();
   // Link aus der Meldung „Spule leer“: /lager?wiegen=12 öffnet gleich den Wiegen-Dialog
   const w = +new URLSearchParams(location.search).get("wiegen");
   if (w && !window._wiegenDone) {
@@ -908,9 +910,29 @@ async function saveMulti() {
 // ---------- Stapel: gemischte Rollen ----------
 let ST = [], stN = 0, stBusyN = 0, stQueue = Promise.resolve(), stLast = {};
 const _sk = x => (x || "").toLowerCase().replace(/[^a-z0-9+]/g, "");
+// Stapel im Browser merken (Empfang weg, Seite neu geladen → nichts verloren)
+function stSave() {
+  try { if (ST.length || stLog.length) localStorage.setItem("ph-stack", JSON.stringify({ST, stLog, stN, stNo, t: Date.now(),
+    loc: $("st-loc").value, price: $("st-price").value})); else localStorage.removeItem("ph-stack"); } catch {}
+}
+function stSaved() { try { const x = JSON.parse(localStorage.getItem("ph-stack") || "null"); return x && Date.now() - x.t < 14 * 864e5 ? x : null; } catch { return null; } }
+function stResumeBtn() {
+  const x = stSaved(), b = $("st-resume"); if (!b) return;
+  b.style.display = x && x.ST.length ? "" : "none"; if (x) b.textContent = `📚 Stapel fortsetzen (${x.ST.length})`;
+}
+function stClear() {
+  if (ST.length && !confirm(`Stapel mit ${ST.length} Zeilen wirklich verwerfen?`)) return;
+  ST = []; stLog = []; stFailed = []; $("st-log").textContent = ""; stSave(); stRender(); stFailedShow(); stResumeBtn();
+}
 function openStack(first) {
-  ST = []; stLast = {}; stLog = []; stT0 = 0; stNo = 0; $("st-log").textContent = "";
+  ST = []; stLast = {}; stLog = []; stT0 = 0; stNo = 0; stFailed = []; $("st-log").textContent = "";
   $("st-loc").value = ""; $("st-loc").placeholder = D.storage || "Lager"; $("st-price").value = "";
+  const sv = stSaved();
+  if (sv && sv.ST.length && (!first || confirm(`Angefangenen Stapel mit ${sv.ST.length} Zeilen fortsetzen?`))) {
+    ST = sv.ST; stLog = sv.stLog || []; stN = sv.stN || ST.length; stNo = sv.stNo || 0; $("st-loc").value = sv.loc || ""; $("st-price").value = sv.price || "";
+    stLog.push(`[fortgesetzt ${new Date().toLocaleTimeString("de-DE")}]`); $("st-log").textContent = stLog.join("\n");
+  }
+  stFailedShow();
   $("st-vendors").innerHTML = D.vendors.map(v => `<option value="${esc(v.name)}">`).join("");
   $("st-scanst").innerHTML = ""; stRender();
   $("m-stack").classList.add("open");
@@ -920,12 +942,20 @@ function stBusy(n) {
   stBusyN += n;
   $("st-scanst").innerHTML = stBusyN > 0 ? `<span class="spin"></span> ${stBusyN} Etikett${stBusyN > 1 ? "en werden" : " wird"} gelesen … du kannst schon das nächste fotografieren` : ($("st-scanst").dataset.last || "");
 }
+$("st-loc").oninput = $("st-price").oninput = () => stSave();
 $("st-cam").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) stScanFile(f); };
 $("st-gal").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; fs.forEach(stScanFile); };
-let stLog = [], stT0 = 0, stNo = 0;
+let stLog = [], stT0 = 0, stNo = 0, stFailed = [];
+function stFailedShow() {
+  const b = $("st-failed"); if (!b) return;
+  b.innerHTML = stFailed.length ? `<div class="wres codemsg multi">⚠ ${stFailed.length} Foto${stFailed.length > 1 ? "s" : ""} wegen fehlender Verbindung nicht gelesen.
+    <button type="button" class="small-btn" onclick="stRetry()">↻ nochmal senden</button></div>` : "";
+}
+function stRetry() { const l = stFailed; stFailed = []; stFailedShow(); l.forEach(x => { stBusy(+1); stQueue = stQueue.then(() => stScanOne(x.f, x.no, performance.now())).catch(() => {}).finally(() => stBusy(-1)); }); }
+window.addEventListener("beforeunload", e => { if (stBusyN > 0 || stFailed.length) { e.preventDefault(); e.returnValue = ""; } });
 function stLogAdd(line) {
   const t = ((performance.now() - stT0) / 1000).toFixed(1).padStart(5);
-  stLog.push(`[+${t}s] ${line}`); $("st-log").textContent = stLog.join("\n");
+  stLog.push(`[+${t}s] ${line}`); $("st-log").textContent = stLog.join("\n"); stSave();
 }
 function stLogCopy() {
   const txt = `PrintHub Stapel-Protokoll ${new Date().toLocaleString("de-DE")}\n${navigator.userAgent}\n` + stLog.join("\n");
@@ -949,8 +979,13 @@ async function stScanOne(f, no, tq) {
   const t0 = performance.now();
   const blob = await uploadBlob(f);
   const t1 = performance.now();
-  let d; try { d = await (await fetch("/api/lager/scan", {method: "POST", headers: {"Content-Type": "image/jpeg"}, body: blob})).json(); }
-  catch { d = {error: "keine Verbindung"}; }
+  let d;
+  for (const wait of [0, 2000, 5000, 10000]) {         // Empfang kurz weg → bis zu 3× neu versuchen
+    if (wait) { stLogAdd(`#${no} keine Verbindung – neuer Versuch in ${wait / 1000}s`); await new Promise(r => setTimeout(r, wait)); }
+    try { d = await (await fetch("/api/lager/scan", {method: "POST", headers: {"Content-Type": "image/jpeg"}, body: blob})).json(); break; }
+    catch { d = {error: "keine Verbindung", net: true}; }
+  }
+  if (d.net) { stFailed.push({f, no}); stFailedShow(); stLogAdd(`#${no} NICHT gesendet (keine Verbindung) – später „nochmal senden“`); return; }
   const t2 = performance.now(), tm = d.timing || {}, sec = x => (x / 1000).toFixed(1);
   const steps = (tm.steps || []).map(x => `${x.name} ${x.sec}s`).join(", ");
   stLogAdd(`#${no} gewartet ${sec(t0 - tq)}s · vorbereitet ${sec(t1 - t0)}s (${(blob.size / 1e6).toFixed(2)} MB) · Senden+Tower ${sec(t2 - t1)}s` +
@@ -1063,6 +1098,7 @@ function stPanelWire(el, r) {
   el.querySelector(".st-ok").onclick = () => { r.open = false; stRender(); };
 }
 function stSum() {
+  stSave();
   const ch = ST.filter(r => r.checked), bad = ST.filter(r => !stValid(r)).length;
   $("st-sum").innerHTML = ST.length ? `${ch.length} von ${ST.length} Zeilen abgehakt · ${ch.reduce((a, r) => a + r.count, 0)} Rollen` +
     (bad ? ` · <span class="st-bad">${bad} unvollständig</span>` : "") : "";
@@ -1082,6 +1118,7 @@ async function saveStack() {
         weight: r.weight, spool_weight: r.spool_weight, extruder_temp: r.et, bed_temp: r.bt, diameter: r.diameter,
         price: r.price, location: r.location, count: r.count,
         lots: Object.entries(r.lots).map(([lot, n]) => ({lot, n})), codes: r.codes}))});
+    ST = []; stLog = []; stFailed = []; stSave();
     closeM(); PH.toast(`${d.new} Sorten neu${d.existing ? `, ${d.existing} ergänzt` : ""} – ${d.rolls} Rollen angelegt`); d.ids.forEach(i => open.add(i)); load();
   } finally { $("st-save").disabled = false; }
 }
