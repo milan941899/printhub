@@ -23,7 +23,9 @@ Lies es und antworte NUR mit JSON in dieser Form (fehlende Werte = null, nichts 
  "weight": Nettogewicht in Gramm (Zahl), "diameter": mm (Zahl),
  "extruder_temp": empfohlene Düsentemperatur Mitte in °C (Zahl), "bed_temp": Bett °C (Zahl),
  "sku": Artikelnummer oder null, "batch": Chargen-/Batch-Nummer oder null,
- "model": Modellnummer hinter „Model:“ (z.B. "A01-K1-1.75-1000-SPL") oder null}
+ "model": Modellnummer hinter „Model:“ (z.B. "A01-K1-1.75-1000-SPL") oder null,
+ "filament_code": Nummer hinter „Filament Code:“ oder null,
+ "spool_weight": Gewicht der leeren Spule in Gramm („Empty Weight“, „Spool Weight“) oder null}
 Lies nur das Etikett der vorderen/größten Rolle, nicht Etiketten im Hintergrund."""
 
 
@@ -78,7 +80,7 @@ def read(img, key, model="gemini-flash-lite-latest", timeout=20):
     for k in ("brand", "material", "color", "sku", "batch"):
         if isinstance(d.get(k), str) and d[k].strip() and d[k].strip().lower() not in ("null", "none", "unknown"):
             out[k] = d[k].strip()
-    for k in ("weight", "diameter", "extruder_temp", "bed_temp"):
+    for k in ("weight", "diameter", "extruder_temp", "bed_temp", "spool_weight"):
         try:
             v = float(str(d.get(k)).replace(",", ".").rstrip("gm°C ").strip())
             out[k] = v if k == "diameter" else int(v)
@@ -92,6 +94,9 @@ def read(img, key, model="gemini-flash-lite-latest", timeout=20):
         sk = mo.split("-")
         sk[0] = sk[0][0] + sk[0][1:].replace("O", "0")
         out["model"] = "-".join(sk)
+    fc = re.sub(r"\s", "", str(d.get("filament_code") or ""))
+    if re.fullmatch(r"\d{5}", fc):
+        out["filament_code"] = fc
     hx = str(d.get("color_hex") or "").lstrip("#").upper()
     if len(hx) == 6 and all(c in "0123456789ABCDEF" for c in hx):
         out["hex_print"] = hx

@@ -1048,6 +1048,8 @@ function scanShow(d) {
   else if (d.ean && !d.learned) online = `<div class="muted small">🌐 Online nichts gefunden – <a href="https://www.google.com/search?q=${d.ean}" target="_blank">im Web suchen ↗</a></div>`;
   // nur vorauswählen, wenn die Farbe vom Etikett gelesen wurde – sonst entscheidet nicht die Charge
   const sure = !!(p.color && p.color_src !== "base" && d.exact_fid);
+  // Farbname gelesen, aber keine Sorte oben hat ihn → „Neue Sorte“ vorauswählen (ähnliche Farbe allein reicht nicht)
+  const newPick = !sure && !!(p.color && p.color_src !== "base") && !(d.matches || []).some(m => /Farbname|Charge bekannt|Artikelnummer/.test(m.why || ""));
   const opts = (d.matches || []).map((m, i) => `<label class="scopt"><input type="radio" name="scf" value="${m.id}" ${i === 0 && sure ? "checked" : ""}>
       <span class="dot" style="background:${m.color}"></span><span><b>${esc(m.label)}</b> <span class="muted small">${esc(m.why || "")}</span></span></label>`).join("");
   $("sc-res").innerHTML = `
@@ -1066,9 +1068,9 @@ function scanShow(d) {
     ${!p.color ? `<div class="wres small codemsg multi">⚠ Farbe auf dem Foto nicht erkannt – bitte unten die Sorte wählen oder <a href="#" onclick="event.preventDefault();scanStart()">nochmal fotografieren</a> (gerade, ohne Schatten, Etikett groß im Bild).</div>` : ""}
     <div class="label" style="margin-top:10px">Welche Sorte?</div>
     ${opts || `<div class="muted small">Keine passende Sorte im Lager.</div>`}
-    ${d.template ? `<label class="scopt"><input type="radio" name="scf" value="tpl" ${opts ? "" : "checked"}> <span>＋ Neue Sorte wie <b>${esc(d.template.label)}</b> – Farbe <b>${esc(p.color || "?")}</b></span></label>` : ""}
+    ${d.template ? `<label class="scopt"><input type="radio" name="scf" value="tpl" ${!opts || newPick ? "checked" : ""}> <span>＋ Neue Sorte wie <b>${esc(d.template.label)}</b> – Farbe <b>${esc(p.color || "?")}</b></span></label>` : ""}
     <label class="scopt"><input type="radio" name="scf" value="other"> Andere Sorte aus dem Lager …</label>
-    <label class="scopt"><input type="radio" name="scf" value="new" ${opts || d.template ? "" : "checked"}> ＋ Neue Sorte mit diesen Daten anlegen</label>
+    <label class="scopt"><input type="radio" name="scf" value="new" ${(!opts || newPick) && !d.template ? "checked" : ""}> ＋ Neue Sorte mit diesen Daten anlegen</label>
     <div class="mact"><button type="button" onclick="scanStart()">↺ Nochmal</button><button class="primary" type="button" onclick="scanNext()">Weiter</button></div>`;
 }
 function scanNext() {

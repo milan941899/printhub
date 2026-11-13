@@ -433,6 +433,10 @@ def parse_text(text):
             sk = m.group(1).upper().split("-")
             sk[0] = sk[0][0] + sk[0][1:].replace("O", "0")          # „AO1“ → „A01“
             out["sku"] = "-".join(sk)
+    if "sku" not in out:                         # Bambu: „Filament Code: 10103“ – pro Sorte+Farbe eindeutig
+        m = re.search(r"filament\s*code\s*[:;.]?\s*(\d{5})(?!\d)", low)
+        if m:
+            out["sku"] = m.group(1)
     m = re.search(r"(?:batch|lot)\s*(?:number|no\.?|nr\.?|#)?\s*[:;.]?\s*([a-z0-9]{5,})", low)
     if m and re.search(r"\d", m.group(1)):
         out["batch"] = m.group(1).upper()

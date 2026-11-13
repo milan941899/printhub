@@ -1245,7 +1245,21 @@ def _split_material(mat, color):
     r = (re.fullmatch(rf"(PLA|PETG|ABS|ASA|TPU|PC)\s*-?\s*({_LINE_RE})", m)
          or re.fullmatch(rf"({_LINE_RE})\s*-?\s*(PLA|PETG|ABS|ASA|TPU|PC)", m))
     if not r:
-        return mat, color
+        # Material mit eigenen Zusätzen ohne Linienwort („EASYPLA“, „HT-PLAPRO“) → Grundmaterial, Zusatz in den Namen
+        if re.fullmatch(r"(PLA|PETG|PCTG|ABS|ASA|TPU|PC|PA\d*|PVA|PVB|PET|HIPS|PP)(\+|-?(CF|GF|HF|\d{2}A)\d*)*", m.replace(" ", "")):
+            return mat, color                       # PLA+, PLA-CF, PETG-HF, TPU-95A … sind eigene Materialien
+        b = re.search(r"PETG|PCTG|PLA|ABS|ASA|TPU|PVA|PVB|HIPS", m)
+        if not b:
+            return mat, color
+        pre, post = m[:b.start()].strip(), m[b.end():].strip(" -")
+        if not pre and not post or post.startswith("+"):
+            return mat, color
+        def nice(w):
+            return " ".join(x if len(x.strip("-")) <= 2 else x.capitalize() for x in w.split())
+        line = (nice(pre) + ("" if pre.endswith("-") else " ") if pre else "") + b.group(0) + (" " + nice(post) if post else "")
+        if color and line.lower() not in color.lower():
+            color = f"{line} {color}"
+        return b.group(0), color
     base, line = (r.group(1), r.group(2)) if r.group(1) in ("PLA", "PETG", "ABS", "ASA", "TPU", "PC") else (r.group(2), r.group(1))
     how = _LINES.get(line)
     if how and color and how[1].lower().rstrip("+") not in color.lower():
@@ -1521,7 +1535,8 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 ks = d.pop("sku", None)            # KI-Nummer nie als SKU (die zählt stark) – nur als normale Erkennungsnummer
                 if ks and not d.get("batch"):
                     d["batch"] = ks
-                mo = d.pop("model", None)          # Bambu-Modellnummer (strenges Muster) darf stark zählen
+                mo = d.pop("model", None) or d.pop("filament_code", None)   # Bambu Modell-/Filament-Code: pro Farbe eindeutig → stark
+                d.pop("filament_code", None)
                 if mo and not p.get("sku"):
                     d["sku"] = mo
             res["ai"] = {"sec": round(sec, 1), "error": err, "fields": sorted(d) if d else [], "parallel": bool(ai_fut)}
