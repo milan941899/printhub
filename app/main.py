@@ -39,6 +39,8 @@ from .settings import Settings
 from .shelly import Shelly
 from . import labelprint
 from . import aiscan          # TEST: KI-Etiketterkennung (entfernbar)
+from concurrent.futures import ThreadPoolExecutor as _TPE
+_AI_POOL = _TPE(max_workers=2)
 from .spoolman import Spoolman
 from .telegram import Telegram
 from .power import Power
@@ -1452,43 +1454,56 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                    or (base in _BASE and (_color_line(tj, _SYN.get(base, base), vendor) or _base_ok(_SYN.get(base, base), tj)))
                    or _db_color(tj, vendor or pv.get("brand") or _detect_vendor(tj), pv.get("material", "")))
             return bool(col and pv.get("material"))
+        # KI-Test: bei „Immer“ läuft die KI gleichzeitig mit der eigenen Erkennung (die dann nur die schnelle Stufe macht)
+        ai_on = bool(settings.get("ai_enabled") and settings.get("ai_key"))
+        ai_fut = (_AI_POOL.submit(aiscan.read, img, settings.get("ai_key"), settings.get("ai_model"))
+                  if ai_on and settings.get("ai_mode") == "always" else None)
         for c in codes:
             if c.get("box"):
                 # Stufen: a) Zeile über den Balken (schnell) → b) restliche Streifen → 2) gedreht/Schatten → ganzes Etikett
-                for st in ("a", "b", 2):
+                for st in (("a",) if ai_fut else ("a", "b", 2)):
                     texts += scanmod.band_texts(img, c, stage=st)
                     if enough():
                         break
                 else:
-                    texts += scanmod.ocr_texts(scanmod.label_crop(img, c), small=True)
+                    if not ai_fut:
+                        texts += scanmod.ocr_texts(scanmod.label_crop(img, c), small=True)
                 break
         p = scanmod.parse_votes(texts)
         alltexts += texts
-        if not texts:                           # kein Strichcode: erst weißes Etikett im Foto suchen und lesen
-            lab = scanmod.find_label(img)
-            if lab is not None:
-                lt = scanmod.label_texts(lab)
-                texts += lt
-                alltexts += lt
-                p = scanmod.parse_votes(texts)
-                res["parsed"] = p
-        if not texts or not enough():          # ganzes Foto nur, wenn am Etikett nichts Brauchbares stand
-            ft = scanmod.ocr_texts(img, small=False)
-            alltexts += ft
-            full = scanmod.parse_votes(ft)
-            p = {**full, **p}
-        # --- KI-Test (Gemini): nur wenn eingeschaltet; „fallback“ = nur wenn Material oder Farbe fehlen ---
-        if (settings.get("ai_enabled") and settings.get("ai_key")
-                and (settings.get("ai_mode") == "always" or not (p.get("material") and p.get("color")))):
-            d, sec, err = aiscan.read(img, settings.get("ai_key"), settings.get("ai_model"))
-            res["ai"] = {"sec": round(sec, 1), "error": err, "fields": sorted(d) if d else []}
-            scanmod.TRACE.append(("KI " + (settings.get("ai_model") or ""), 1, round(sec, 2), round(sec, 2), 0))
-            if err:
-                log.info("Scan: KI-Test fehlgeschlagen: %s", err)
+        ai = None
+        if ai_fut:
+            ai = ai_fut.result()
+        def local_rest():
+            nonlocal p, texts
+            if not texts:                           # kein Strichcode: erst weißes Etikett im Foto suchen und lesen
+                lab = scanmod.find_label(img)
+                if lab is not None:
+                    lt = scanmod.label_texts(lab)
+                    texts += lt
+                    alltexts.extend(lt)
+                    p = scanmod.parse_votes(texts)
+            if not texts or not enough():          # ganzes Foto nur, wenn am Etikett nichts Brauchbares stand
+                ft = scanmod.ocr_texts(img, small=False)
+                alltexts.extend(ft)
+                p = {**scanmod.parse_votes(ft), **p}
+        if not (ai and ai[0]):
+            local_rest()                            # ohne KI (oder KI fehlgeschlagen): eigene Erkennung komplett
+        # „Nur wenn nötig“: KI erst, wenn Material oder Farbe fehlen
+        if ai is None and ai_on and not (p.get("material") and p.get("color")):
+            ai = aiscan.read(img, settings.get("ai_key"), settings.get("ai_model"))
+        if ai is not None:
+            d, sec, err = ai
             if d:
                 ks = d.pop("sku", None)            # KI-Nummer nie als SKU (die zählt stark) – nur als normale Erkennungsnummer
                 if ks and not d.get("batch"):
                     d["batch"] = ks
+            res["ai"] = {"sec": round(sec, 1), "error": err, "fields": sorted(d) if d else [], "parallel": bool(ai_fut)}
+            scanmod.TRACE.append(("KI " + (settings.get("ai_model") or "") + (" (gleichzeitig)" if ai_fut else ""),
+                                  1, round(sec, 2), round(sec, 2), 0))
+            if err:
+                log.info("Scan: KI-Test fehlgeschlagen: %s", err)
+            if d:
                 alltexts.append(aiscan.as_text(d))
                 if d.get("color") and not d.get("hex_print"):
                     hx, _ = colormod.from_list(d["color"])
