@@ -34,7 +34,8 @@
       <button onclick="scanCtx=null;openFil()">＋ Neue Sorte</button>
       <button id="bulkbtn" style="display:none" onclick="openBulk()">✎ Gemeinsam bearbeiten</button>
       <details class="moremenu"><summary class="btn">⋯ Mehr</summary><div class="mm">
-        <button onclick="this.closest('details').open=false;openMulti()">🎨 Mehrere Farben anlegen</button>
+        <button onclick="this.closest('details').open=false;openMulti()">🎨 Serie: mehrere Farben einer Sorte</button>
+        <button onclick="this.closest('details').open=false;openStack()">📚 Stapel: gemischte Rollen</button>
         <button onclick="this.closest('details').open=false;openNames()">Aa Namen vereinheitlichen</button>
         <button onclick="this.closest('details').open=false;fsel.clear();bulkMode=!bulkMode;render()">☑ Sorten auswählen (gemeinsam bearbeiten)</button>
       </div></details>
@@ -128,7 +129,7 @@
 <!-- Dialog: Mehrere Farben -->
 <div class="modal" id="m-multi">
   <form class="mbox card" onsubmit="event.preventDefault();saveMulti()">
-    <h2>🎨 Mehrere Farben anlegen</h2>
+    <h2>🎨 Serie: mehrere Farben einer Sorte</h2>
     <div class="muted small">Gemeinsame Werte einmal eintragen, dann pro Farbe eine Zeile. Werte einer vorhandenen Sorte werden automatisch übernommen.</div>
     <div id="mu-tplhint" class="wres small" style="display:none"></div>
     <div class="fgrid">
@@ -156,6 +157,30 @@
       <button type="button" onclick="muFromDb()">📚 Farben aus der Datenbank wählen</button></div>
     <div id="mu-db"></div>
     <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit" id="mu-save">Anlegen</button></div>
+  </form>
+</div>
+
+<!-- Dialog: Stapel (gemischte Rollen) -->
+<div class="modal" id="m-stack">
+  <form class="mbox card" onsubmit="event.preventDefault();saveStack()">
+    <h2>📚 Stapel: gemischte Rollen</h2>
+    <div class="muted small">Etiketten verschiedener Hersteller und Farben nacheinander fotografieren. Jede Sorte wird eine Zeile –
+      prüfen, abhaken, dann „Anlegen“. Fehlerhafte Zeilen mit 🗑 löschen.</div>
+    <div class="fgrid">
+      <div class="field"><span class="lab">Lagerort (für alle)</span><input id="st-loc" autocomplete="off"></div>
+      <div class="field"><span class="lab">Preis je Rolle € (für alle, optional)</span><input id="st-price" type="number" min="0" step="0.01"></div>
+    </div>
+    <div class="muscan">
+      <button type="button" class="primary" onclick="$('st-cam').click()">📷 Etikett fotografieren</button>
+      <button type="button" onclick="$('st-gal').click()">🖼 Fotos aus Galerie</button>
+      <div id="st-scanst" class="small"></div>
+    </div>
+    <input type="file" id="st-cam" accept="image/*" capture="environment" style="display:none">
+    <input type="file" id="st-gal" accept="image/*" multiple style="display:none">
+    <div id="st-rows"></div>
+    <div id="st-sum" class="muted small"></div>
+    <datalist id="st-vendors"></datalist>
+    <div class="mact"><button type="button" onclick="closeM()">Abbrechen</button><button class="primary" type="submit" id="st-save">Anlegen</button></div>
   </form>
 </div>
 
@@ -877,6 +902,156 @@ async function saveMulti() {
   } finally { $("mu-save").disabled = false; }
 }
 
+// ---------- Stapel: gemischte Rollen ----------
+let ST = [], stN = 0, stBusyN = 0, stQueue = Promise.resolve(), stLast = {};
+const _sk = x => (x || "").toLowerCase().replace(/[^a-z0-9+]/g, "");
+function openStack(first) {
+  ST = []; stLast = {};
+  $("st-loc").value = ""; $("st-loc").placeholder = D.storage || "Lager"; $("st-price").value = "";
+  $("st-vendors").innerHTML = D.vendors.map(v => `<option value="${esc(v.name)}">`).join("");
+  $("st-scanst").innerHTML = ""; stRender();
+  $("m-stack").classList.add("open");
+  if (first) stAdd(first);
+}
+function stBusy(n) {
+  stBusyN += n;
+  $("st-scanst").innerHTML = stBusyN > 0 ? `<span class="spin"></span> ${stBusyN} Etikett${stBusyN > 1 ? "en werden" : " wird"} gelesen … du kannst schon das nächste fotografieren` : ($("st-scanst").dataset.last || "");
+}
+$("st-cam").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) stScanFile(f); };
+$("st-gal").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; fs.forEach(stScanFile); };
+function stScanFile(f) { stBusy(+1); stQueue = stQueue.then(() => stScanOne(f)).catch(() => {}).finally(() => stBusy(-1)); }
+async function stScanOne(f) {
+  const blob = await uploadBlob(f);
+  let d; try { d = await (await fetch("/api/lager/scan", {method: "POST", headers: {"Content-Type": "image/jpeg"}, body: blob})).json(); }
+  catch { d = {error: "keine Verbindung"}; }
+  if (d.error) { PH.toast("Etikett: " + d.error, true); return; }
+  await stAdd(d);
+}
+function stValid(r) { return !!(r.fid || (r.vendor.trim() && r.material.trim() && r.name.trim())); }
+function stKey(r) { return r.fid ? "f" + r.fid : _sk(r.vendor) + "|" + _sk(r.material) + "|" + _sk(r.name); }
+async function stAdd(d) {
+  const p = d.parsed || {};
+  const f0 = d.exact_fid ? D.filaments.find(x => x.id === d.exact_fid) : null;
+  let r = f0 ? {fid: f0.id, vendor: f0.vendor, material: f0.material, name: f0.name, hex: (f0.color || "#999999").slice(1)}
+             : {fid: null, vendor: p.brand || "", material: p.material || "", name: p.color || "", hex: (p.hex_print || p.color_hex || "999999")};
+  const lot = d.lot && d.lot !== d.sku ? d.lot : "";
+  // gleiche Rolle Sekunden später nochmal? → nachfragen statt still doppelt zählen
+  if (lot && stLast[lot] && Date.now() - stLast[lot] < 20000 &&
+      !confirm(`Charge ${lot} wurde gerade schon fotografiert – ist das eine weitere Rolle?`)) return;
+  if (lot) stLast[lot] = Date.now();
+  const ex = ST.find(x => stKey(x) === stKey(r) && stValid(x));
+  if (ex) { ex.count++; if (lot) ex.lots[lot] = (ex.lots[lot] || 0) + 1; if (d.sku && !ex.codes.includes(d.sku)) ex.codes.push(d.sku);
+    stMsg(`📷 ${ex.vendor} ${ex.name} → Anzahl ${ex.count}`); return stRender(); }
+  r = {...r, id: ++stN, count: 1, lots: lot ? {[lot]: 1} : {}, codes: d.sku ? [d.sku] : [], checked: false, open: false,
+       weight: "", spool_weight: "", et: "", bt: "", diameter: 1.75, price: "", location: "", ext: "", src: "", warn: ""};
+  if (!r.fid) {
+    // Werte für die neue Sorte: SpoolmanDB/deine Sorte, dann was auf dem Etikett steht (hat Vorrang)
+    try {
+      const q = new URLSearchParams({vendor: r.vendor, material: r.material, color: r.name});
+      const df = r.vendor && r.material ? await (await fetch("/api/lager/defaults?" + q)).json() : {values: {}};
+      const v = df.values || {};
+      r.weight = v.weight || ""; r.spool_weight = v.spool_weight || ""; r.et = v.extruder_temp || ""; r.bt = v.bed_temp || "";
+      r.diameter = v.diameter || 1.75; r.ext = v.external_id || "";
+      if (v.color && !p.hex_print) r.hex = v.color;
+    } catch {}
+    if (p.weight) r.weight = p.weight; if (p.spool_weight) r.spool_weight = p.spool_weight;
+    if (p.extruder_temp) r.et = p.extruder_temp; if (p.bed_temp) r.bt = p.bed_temp; if (p.diameter) r.diameter = p.diameter;
+    const i = d.db_info;
+    r.src = i ? (i.hit ? "🗄 SpoolmanDB" : `🗄 nicht in der SpoolmanDB – Werte: Etikett${(i.from || []).length ? ", " + i.from.join(", ") : ""}`) : "";
+    if (p.color_src === "base") r.warn = `nur Grundton „${r.name}“ erkannt – genaue Farbe prüfen`;
+  }
+  ST.push(r); stMsg(`📷 ${r.vendor} ${r.material} ${r.name} → ${r.fid ? "schon im Lager" : "neue Sorte"}`); stRender();
+}
+function stMsg(m) { $("st-scanst").dataset.last = esc(m); if (!stBusyN) $("st-scanst").innerHTML = esc(m); }
+function stStatus(r) {
+  if (!stValid(r)) return `<span class="st-bad">⚠ fehlt: ${[!r.vendor.trim() && "Hersteller", !r.material.trim() && "Material", !r.name.trim() && "Farbe"].filter(Boolean).join(", ")} – ✎ ergänzen oder 🗑 löschen</span>`;
+  if (r.fid) return "✓ schon im Lager – Rollen hinzufügen";
+  return "＋ neue Sorte" + (r.src ? " · " + esc(r.src) : "") + (r.warn ? `<br><span class="st-bad">⚠ ${esc(r.warn)}</span>` : "");
+}
+function stRender() {
+  const box = $("st-rows");
+  box.innerHTML = ST.length ? "" : `<div class="muted small" style="padding:8px 0">Noch keine Etiketten – oben fotografieren.</div>`;
+  ST.forEach(r => {
+    const ok = stValid(r); if (!ok) r.checked = false;
+    const el = document.createElement("div"); el.className = "strow" + (ok ? "" : " st-inv");
+    const chips = r.codes.map(c => `<span class="chip">🏷 ${esc(c)}</span>`).join("") + Object.entries(r.lots).map(([l, n]) => `<span class="chip">${esc(l)} ×${n}</span>`).join("");
+    el.innerHTML = `<label class="st-chk" title="${ok ? "übernehmen" : "erst ergänzen"}"><input type="checkbox" ${r.checked ? "checked" : ""} ${ok ? "" : "disabled"}></label>
+      <span class="dot" style="background:#${esc(r.hex)}"></span>
+      <div class="st-t"><b>${esc(r.vendor || "?")}</b> ${esc(r.material || "?")} · ${esc(r.name || "?")}
+        <div class="small muted">${stStatus(r)}</div>${chips ? `<div class="mu-l">${chips}</div>` : ""}</div>
+      <input class="st-k" type="number" min="1" value="${r.count}" inputmode="numeric" title="Anzahl Rollen">
+      <button type="button" class="small-btn st-e" title="Bearbeiten">✎</button>
+      <button type="button" class="small-btn st-d" title="Zeile löschen">🗑</button>
+      ${r.open ? stPanel(r) : ""}`;
+    el.querySelector("input[type=checkbox]").onchange = e => { r.checked = e.target.checked; stSum(); };
+    el.querySelector(".st-k").onchange = e => { r.count = Math.max(1, +e.target.value || 1); stSum(); };
+    el.querySelector(".st-e").onclick = () => { r.open = !r.open; stRender(); };
+    el.querySelector(".st-d").onclick = () => { ST = ST.filter(x => x !== r); stRender(); };
+    if (r.open) stPanelWire(el, r);
+    box.appendChild(el);
+  });
+  stSum();
+}
+function stPanel(r) {
+  const fo = D.filaments.map(f => `<option value="${f.id}" ${f.id === r.fid ? "selected" : ""}>${esc(f.vendor)} · ${esc(f.name)} ${esc(f.material)}</option>`).join("");
+  const nf = r.fid ? "disabled" : "";
+  return `<div class="st-p fgrid">
+    <div class="field" style="grid-column:1/-1"><span class="lab">Sorte</span><select data-k="fid"><option value="">＋ neue Sorte anlegen</option>${fo}</select></div>
+    <div class="field"><span class="lab">Hersteller</span><input data-k="vendor" list="st-vendors" value="${esc(r.vendor)}" ${nf}></div>
+    <div class="field"><span class="lab">Material</span><input data-k="material" value="${esc(r.material)}" ${nf}></div>
+    <div class="field"><span class="lab">Farbname</span><input data-k="name" value="${esc(r.name)}" ${nf}></div>
+    <div class="field"><span class="lab">Farbe</span><input data-k="hex" type="color" value="#${esc(r.hex)}" ${nf}></div>
+    <div class="field"><span class="lab">Netto je Rolle (g)</span><input data-k="weight" type="number" value="${esc(r.weight)}" ${nf}></div>
+    <div class="field"><span class="lab">Leere Spule (g)</span><input data-k="spool_weight" type="number" value="${esc(r.spool_weight)}" ${nf}></div>
+    <div class="field"><span class="lab">Düse (°C)</span><input data-k="et" type="number" value="${esc(r.et)}" ${nf}></div>
+    <div class="field"><span class="lab">Bett (°C)</span><input data-k="bt" type="number" value="${esc(r.bt)}" ${nf}></div>
+    <div class="field"><span class="lab">Preis je Rolle (€)</span><input data-k="price" type="number" step="0.01" value="${esc(r.price)}" placeholder="wie oben"></div>
+    <div class="field"><span class="lab">Lagerort</span><input data-k="location" value="${esc(r.location)}" placeholder="wie oben"></div>
+    <div style="grid-column:1/-1"><button type="button" class="small-btn st-ok">✓ Fertig</button></div></div>`;
+}
+function stPanelWire(el, r) {
+  el.querySelectorAll(".st-p [data-k]").forEach(i => {
+    const k = i.dataset.k;
+    i.onchange = () => {
+      if (k === "fid") {
+        const f = D.filaments.find(x => x.id === +i.value);
+        if (f) Object.assign(r, {fid: f.id, vendor: f.vendor, material: f.material, name: f.name, hex: (f.color || "#999999").slice(1), src: "", warn: ""});
+        else r.fid = null;
+        return stRender();
+      }
+      r[k] = k === "hex" ? i.value.slice(1) : i.value;
+      if (k === "name") r.warn = "";
+      const t = el.querySelector(".st-t .small"); if (t) t.innerHTML = stStatus(r);
+      const ok = stValid(r), cb = el.querySelector("input[type=checkbox]"); cb.disabled = !ok; if (!ok) { cb.checked = false; r.checked = false; }
+      el.classList.toggle("st-inv", !ok); stSum();
+    };
+  });
+  el.querySelector(".st-ok").onclick = () => { r.open = false; stRender(); };
+}
+function stSum() {
+  const ch = ST.filter(r => r.checked), bad = ST.filter(r => !stValid(r)).length;
+  $("st-sum").innerHTML = ST.length ? `${ch.length} von ${ST.length} Zeilen abgehakt · ${ch.reduce((a, r) => a + r.count, 0)} Rollen` +
+    (bad ? ` · <span class="st-bad">${bad} unvollständig</span>` : "") : "";
+}
+async function saveStack() {
+  if (!ST.length) return PH.toast("Noch keine Etiketten im Stapel", true);
+  const bad = ST.map((r, i) => stValid(r) ? 0 : i + 1).filter(Boolean);
+  if (bad.length) return PH.toast(`Zeile ${bad.join(", ")} unvollständig – ergänzen oder löschen, dann Anlegen`, true);
+  const ch = ST.filter(r => r.checked);
+  if (!ch.length) return PH.toast("Bitte die Zeilen abhaken, die angelegt werden sollen", true);
+  const rest = ST.length - ch.length;
+  if (rest && !confirm(`${rest} Zeile${rest > 1 ? "n sind" : " ist"} nicht abgehakt und wird nicht angelegt. Weiter?`)) return;
+  $("st-save").disabled = true;
+  try {
+    const d = await api("/api/lager/stack", "POST", {location: $("st-loc").value, price: $("st-price").value,
+      rows: ch.map(r => ({fid: r.fid, vendor_name: r.vendor, material: r.material, name: r.name, color: r.hex, external_id: r.ext,
+        weight: r.weight, spool_weight: r.spool_weight, extruder_temp: r.et, bed_temp: r.bt, diameter: r.diameter,
+        price: r.price, location: r.location, count: r.count,
+        lots: Object.entries(r.lots).map(([lot, n]) => ({lot, n})), codes: r.codes}))});
+    closeM(); PH.toast(`${d.new} Sorten neu${d.existing ? `, ${d.existing} ergänzt` : ""} – ${d.rolls} Rollen angelegt`); d.ids.forEach(i => open.add(i)); load();
+  } finally { $("st-save").disabled = false; }
+}
+
 // ---------- Gemeinsam bearbeiten ----------
 let bulkMode = false;
 const fsel = new Set();
@@ -1097,7 +1272,7 @@ function scanShow(d) {
     ${d.template ? `<label class="scopt"><input type="radio" name="scf" value="tpl" ${!opts || newPick ? "checked" : ""}> <span>＋ Neue Sorte wie <b>${esc(d.template.label)}</b> – Farbe <b>${esc(p.color || "?")}</b></span></label>` : ""}
     <label class="scopt"><input type="radio" name="scf" value="other"> Andere Sorte aus dem Lager …</label>
     <label class="scopt"><input type="radio" name="scf" value="new" ${(!opts || newPick) && !d.template ? "checked" : ""}> ＋ Neue Sorte mit diesen Daten anlegen</label>
-    <div class="mact"><button type="button" onclick="scanStart()">↺ Nochmal</button><button class="primary" type="button" onclick="scanNext()">Weiter</button></div>`;
+    <div class="mact"><button type="button" onclick="scanStart()">↺ Nochmal</button><button type="button" onclick="closeM();openStack(scanCtx)" title="Diese Rolle in einen Stapel übernehmen und weitere fotografieren">📚 Stapel</button><button class="primary" type="button" onclick="scanNext()">Weiter</button></div>`;
 }
 function scanNext() {
   const v = (document.querySelector("input[name=scf]:checked") || {}).value, p = scanCtx.parsed || {};

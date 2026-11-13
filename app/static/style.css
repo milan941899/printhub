@@ -1043,3 +1043,13 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .scopt > .dot { flex:none; }
 .scopt > span, .scopt > b { min-width:0; }
 .scchips .dot, .scopt .dot { flex:none; width:12px !important; height:12px !important; min-width:12px; max-width:12px; padding:0; }
+
+/* Stapel */
+.strow { display:grid; grid-template-columns:auto 16px minmax(0,1fr) 56px auto auto; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); }
+.strow .dot { width:16px; height:16px; border-radius:50%; border:1px solid var(--line); }
+.strow .st-t { min-width:0; overflow-wrap:anywhere; }
+.strow .st-t .mu-l { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+.strow .st-chk input { width:22px; height:22px; }
+.strow .st-p { grid-column:1/-1; padding:6px 0 4px; }
+.strow.st-inv { background:color-mix(in srgb, var(--warn, #e0a000) 8%, transparent); }
+.st-bad { color:var(--warn, #c98a00); }

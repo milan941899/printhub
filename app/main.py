@@ -960,6 +960,64 @@ def _multi(b):
     return {"ok": True, "ids": made + added, "new": len(made), "existing": len(added), "rolls": rolls}
 
 
+def _stack(b):
+    """Stapel: gemischte Rollen. Zeile: {fid} (vorhandene Sorte → nur Rollen) oder neue Sorte {vendor_name, material,
+    name, color, weight, spool_weight, extruder_temp, bed_temp, diameter, price, external_id}; dazu count, lots, codes,
+    location, price. Unvollständige Zeilen lehnt das Ganze ab (Variante A: erst korrigieren oder löschen)."""
+    rows = b.get("rows") or []
+    for i, r in enumerate(rows, 1):
+        if not r.get("fid") and not ((r.get("vendor_name") or "").strip() and (r.get("material") or "").strip()
+                                     and (r.get("name") or "").strip()):
+            raise ValueError(f"Zeile {i} ist unvollständig – Hersteller, Material und Farbe eintragen oder Zeile löschen")
+    vendors = {(v.get("name") or "").strip().lower(): v["id"] for v in spoolman._get("/vendor")}
+    loc0 = (b.get("location") or "").strip() or settings["storage_location"]
+    made, added, rolls = [], [], 0
+    for r in rows:
+        if r.get("fid"):
+            fid = int(r["fid"])
+            added.append(fid)
+        else:
+            vn = r["vendor_name"].strip()
+            vid = vendors.get(vn.lower())
+            if not vid:
+                vid = spoolman.create_vendor(vn, _num(r.get("spool_weight")))["id"]
+                vendors[vn.lower()] = vid
+            # gleiche Sorte im selben Stapel schon angelegt (oder inzwischen vorhanden) → wiederverwenden
+            mat, nm = _mat_norm(r["material"]), _tnorm(r["name"]).strip()
+            ex = next((f for f in spoolman._get("/filament")
+                       if ((f.get("vendor") or {}).get("id") == vid and _mat_norm(f.get("material")) == mat
+                           and _tnorm(f.get("name")).strip() == nm)), None)
+            if ex:
+                fid = ex["id"]
+                added.append(fid)
+            else:
+                fid = spoolman.create_filament(_fil_data(r, vid))["id"]
+                made.append(fid)
+        loc = (r.get("location") or "").strip() or loc0
+        price = _num(r.get("price")) or _num(b.get("price"))
+        lots = [(str(x.get("lot") or "").strip(), int(x.get("n") or 0)) for x in (r.get("lots") or [])]
+        lots = [(l, n) for l, n in lots if l and n > 0]
+        total = max(int(r.get("count") or 0), sum(n for _, n in lots))
+        for lot, n in lots:
+            spoolman.create_spools(fid, n, loc, None, price, lot)
+            _learn_code(lot, fid)
+        if total - sum(n for _, n in lots) > 0:
+            spoolman.create_spools(fid, total - sum(n for _, n in lots), loc, None, price)
+        for c in r.get("codes") or []:
+            if _code_ok(str(c)):
+                _learn_code(str(c), fid)
+        rolls += total
+    log.info("Lager: Stapel – %s Sorten neu, %s ergänzt, %s Rollen", len(made), len(set(added)), rolls)
+    return {"ok": True, "ids": made + added, "new": len(made), "existing": len(set(added)), "rolls": rolls}
+
+
+async def api_lager_stack(request):
+    try:
+        return JSONResponse(await run_in_threadpool(_stack, await request.json()))
+    except (ValueError, RuntimeError, KeyError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
 async def api_lager_multi(request):
     try:
         return JSONResponse(await run_in_threadpool(_multi, await request.json()))
@@ -4051,6 +4109,7 @@ app = Starlette(
         Route("/api/lager/codes", api_lager_codes, methods=["GET", "POST"]),
         Route("/api/lager/template", api_lager_template),
         Route("/api/lager/multi", api_lager_multi, methods=["POST"]),
+        Route("/api/lager/stack", api_lager_stack, methods=["POST"]),
         Route("/api/lager/bulk", api_lager_bulk, methods=["POST"]),
         Route("/api/lager/vendor/{vid:int}", api_lager_vendor, methods=["POST"]),
         Route("/api/lager/names", api_lager_names, methods=["GET", "POST"]),
