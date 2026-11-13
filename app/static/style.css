@@ -130,13 +130,14 @@ button.danger { color:var(--err); border-color:#f8717155; background:#f8717112; 
 .ring .ctr { position:absolute; inset:0; display:grid; place-items:center; text-align:center; }
 .ring .pct { font-size:26px; font-weight:800; line-height:1; }
 .ring .pct small { font-size:13px; color:var(--muted); }
-.ring .st { font-size:11px; color:var(--muted); font-weight:700; letter-spacing:.8px; text-transform:uppercase; margin-top:4px; }
+.ring .st { width:auto; height:auto; border-radius:0; display:block; font-size:11px; color:var(--muted); font-weight:700; letter-spacing:.8px; text-transform:uppercase; margin-top:4px; }
 .ringinfo { min-width:0; flex:1; display:flex; flex-direction:column; gap:8px; }
 .ringinfo .job { font-weight:700; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; word-break:break-word; }
 .kv { display:grid; grid-template-columns:auto 1fr; gap:3px 10px; font-size:13px; }
 .kv span { color:var(--muted); } .kv b { text-align:right; } .kv b.acc { color:var(--acc); }
 
 .etiles { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.etiles > :last-child:nth-child(odd) { grid-column:1 / -1; }   /* ungerade Anzahl: letzte Kachel volle Breite */
 .etile { background:var(--tile); border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-width:0; }
 .etile .v { font-size:18px; font-weight:800; margin-top:3px; white-space:nowrap; }
 .etile .v.y { color:var(--yellow); } .etile .v.acc { color:var(--acc); }
@@ -655,6 +656,7 @@ body:not(.editing) .kgrip, body:not(.editing) .krz, body:not(.editing) .kx { dis
 @container (max-width:600px) {
   .blk { grid-column:span 12; }
   .blk[data-b^="e"] { grid-column:span 6; }
+  .blk[data-b="e3"]:has(+ .blk:not([data-b="e4"])), .blk[data-b="e3"]:last-child { grid-column:span 12; }   /* ohne 4. Kachel volle Breite */
 }
 /* Griffe: Seite */
 .pgrip, .px { position:absolute; top:-11px; z-index:5; background:var(--card); border:1px solid var(--acc); border-radius:99px;

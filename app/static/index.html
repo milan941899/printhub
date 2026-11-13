@@ -361,7 +361,7 @@ function energyTilesHtml(p) {
     ${power}
     ${t("Heute", kwh(e.today_kwh), e.today_cost != null ? eur(e.today_cost) : "–")}
     ${t("Spulen", `${assigned} / ${p.slots.length}`, "zugewiesen")}
-    ${t(p.wifi ? "WLAN" : "Strompreis", p.wifi ? esc(p.wifi) : (e.price_kwh ? eur(e.price_kwh) + "/kWh" : "–"), p.wifi ? (e.price_kwh ? `${eur(e.price_kwh)}/kWh` : "") : "")}
+    ${p.wifi ? t("WLAN", esc(p.wifi), "") : ""}
   </div>`;
 }
 
@@ -437,7 +437,7 @@ function amsBody(p) {
 // Druckerkarte: Fortschritt, Düse, 4 Kacheln, Kamera, AMS, Temperaturverlauf, Wartung (Raster mit 12 Spalten)
 const BLK = {
   progress: {t: "Fortschritt", span: 6}, hotend: {t: "Düse", span: 6},
-  e1: {t: "Leistung", span: 3}, e2: {t: "Strom / Heute", span: 3}, e3: {t: "Filament / Spulen", span: 3}, e4: {t: "Kosten / Strompreis", span: 3},
+  e1: {t: "Leistung", span: 3}, e2: {t: "Strom / Heute", span: 3}, e3: {t: "Filament / Spulen", span: 3}, e4: {t: "Kosten / WLAN", span: 3},
   camera: {t: "Kamera", span: 4}, ams: {t: "Spulen", span: 12}, temps: {t: "Temperaturverlauf", span: 12}, maint: {t: "Wartung", span: 12},
 };
 const PAGE = {services: {t: "Dienste", span: 6}, queue: {t: "Warteschlange (Bambuddy)", span: 6}, history: {t: "Letzte Drucke", span: 6}};
@@ -712,9 +712,11 @@ function printerCard(p) {
   };
   const lightBtn = p.light === undefined ? "" :
     `<button class="small-btn lightbtn ${p.light ? "on" : ""}" title="Licht ${p.light ? "aus" : "an"}schalten" onclick="light('${p.id}', ${!p.light})">💡 ${p.light ? "An" : p.light === false ? "Aus" : "Licht"}</button>`;
-  const blocks = L.order.filter(k => !L.hidden.includes(k) && !(k === "camera" && !p.camera)).map(k => {
+  const blocks = L.order.filter(k => !L.hidden.includes(k) && !(k === "camera" && !p.camera) && !(k === "e4" && !tiles[3])).map(k => {
     const h = L.h[k] && k !== "temps" ? `--bh:${L.h[k]}px;` : "";
-    return `<div class="blk${h ? " hset" : ""}" data-b="${k}" style="--bs:${L.span[k] || BLK[k].span};${h}">${blkCtl(p.id, k)}${bodies[k]()}</div>`;
+    let bs = L.span[k] || BLK[k].span;
+    if (k === "e3" && !tiles[3]) bs = Math.min(12, bs + (L.span.e4 || BLK.e4.span));   // ohne 4. Kachel: „Spulen“ füllt die Lücke
+    return `<div class="blk${h ? " hset" : ""}" data-b="${k}" style="--bs:${bs};${h}">${blkCtl(p.id, k)}${bodies[k]()}</div>`;
   }).join("");
   return `<div class="head">
       <h2><span class="icon">${p.type === "moonraker" ? "U1" : "A1"}</span>${esc(p.name)}</h2>
