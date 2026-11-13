@@ -1,8 +1,4 @@
-"""TEST: Etikett mit einer Bild-KI lesen (Google Gemini, kostenloses Kontingent).
-
-Ganz entfernbar: diese Datei löschen, den Block „KI-Test“ in main._scan, die ai_*-Einstellungen
-in settings.py und die Karte „KI-Etiketterkennung (Test)“ in settings.html.
-"""
+"""Etikett mit einer Bild-KI lesen (Google Gemini, kostenloses Kontingent) – optional, in den Einstellungen abschaltbar."""
 import base64
 import io
 import json
@@ -38,6 +34,33 @@ def _jpeg(img, maxpx=1600):
 
 
 _PAUSE = {"until": 0, "why": ""}
+_COUNT = {"day": "", "n": 0, "err": 0}
+
+
+def _gday():
+    """Kalendertag bei Google (Kontingent wird um Mitternacht Pazifikzeit zurückgesetzt)."""
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
+    except Exception:
+        return time.strftime("%Y-%m-%d")
+
+
+def _count(ok):
+    d = _gday()
+    if _COUNT["day"] != d:
+        _COUNT.update(day=d, n=0, err=0)
+    _COUNT["n"] += 1
+    if not ok:
+        _COUNT["err"] += 1
+
+
+def today():
+    """Anfragen heute (Google-Tag): {n, err, paused}"""
+    if _COUNT["day"] != _gday():
+        return {"n": 0, "err": 0, "paused": paused()}
+    return {"n": _COUNT["n"], "err": _COUNT["err"], "paused": paused()}
 
 
 def paused():
@@ -84,6 +107,7 @@ def read(img, key, model="gemini-flash-lite-latest", timeout=20):
             try:
                 r = requests.post(URL.format(model=model or "gemini-flash-lite-latest"), json=body, timeout=timeout,
                                   headers={"x-goog-api-key": key})
+                _count(r.status_code == 200)
             except requests.RequestException:
                 if attempt == 2:
                     raise
@@ -103,7 +127,7 @@ def read(img, key, model="gemini-flash-lite-latest", timeout=20):
             day, wait = _quota(r)
             if day:
                 _PAUSE.update(until=_next_reset(), why="Gratis-Tageskontingent aufgebraucht – KI pausiert bis morgen 9 Uhr, nur Tower-Erkennung")
-                log.info("KI-Test: Tageskontingent aufgebraucht – pausiert bis zum Rücksetzen")
+                log.info("KI: Tageskontingent aufgebraucht – pausiert bis zum Rücksetzen")
                 return None, time.time() - t, _PAUSE["why"]
             return None, time.time() - t, f"Gratis-Minutenlimit erreicht – kurz warten ({wait or '?'} s), nur Tower-Erkennung"
         if r.status_code in (400, 401, 403):

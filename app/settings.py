@@ -54,7 +54,7 @@ SPEC = {
     "power_off_temp": (float, 45.0),       # erst aus, wenn die Düse darunter ist (°C)
     "power_after_min": (float, 10.0),      # Wartezeit nach Druckende (min)
     "power_idle_min": (float, 30.0),       # Leerlauf ohne Druck (z. B. von Hand eingeschaltet) (min)          # Fortschritt im Browser-Tab (Titel + Symbol)
-    "ai_enabled": (bool, False),           # TEST: Etikett zusätzlich mit Gemini lesen (entfernbar)
+    "ai_enabled": (bool, False),           # Etikett zusätzlich mit Gemini lesen
     "ai_key": (str, ""),
     "ai_model": (str, "gemini-flash-lite-latest"),
     "ai_mode": (str, "fallback"),          # fallback | always

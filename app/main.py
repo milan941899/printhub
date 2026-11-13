@@ -38,7 +38,7 @@ from .qr import QR
 from .settings import Settings
 from .shelly import Shelly
 from . import labelprint
-from . import aiscan          # TEST: KI-Etiketterkennung (entfernbar)
+from . import aiscan          # KI-Etiketterkennung (Google Gemini, optional)
 from concurrent.futures import ThreadPoolExecutor as _TPE
 _AI_POOL = _TPE(max_workers=2)
 from .spoolman import Spoolman
@@ -402,6 +402,7 @@ async def api_settings(request):
                      for p in printers.values()],
         "history_count": history.count(),
         "docker": os.path.exists(dockerctl.SOCK),
+        "ai_today": aiscan.today(),
         "version": os.environ.get("PRINTHUB_VERSION", "dev"),
     }
     return JSONResponse({"settings": settings.all(), "info": info})
@@ -971,7 +972,7 @@ def _stack(b):
             raise ValueError(f"Zeile {i} ist unvollständig – Hersteller, Material und Farbe eintragen oder Zeile löschen")
     vendors = {(v.get("name") or "").strip().lower(): v["id"] for v in spoolman._get("/vendor")}
     loc0 = (b.get("location") or "").strip() or settings["storage_location"]
-    made, added, rolls = [], [], 0
+    made, added, rolls, sids = [], [], 0, []
     for r in rows:
         if r.get("fid"):
             fid = int(r["fid"])
@@ -998,17 +999,24 @@ def _stack(b):
         lots = [(str(x.get("lot") or "").strip(), int(x.get("n") or 0)) for x in (r.get("lots") or [])]
         lots = [(l, n) for l, n in lots if l and n > 0]
         total = max(int(r.get("count") or 0), sum(n for _, n in lots))
+        new = []
         for lot, n in lots:
-            spoolman.create_spools(fid, n, loc, None, price, lot)
+            new += spoolman.create_spools(fid, n, loc, None, price, lot)
             _learn_code(lot, fid)
         if total - sum(n for _, n in lots) > 0:
-            spoolman.create_spools(fid, total - sum(n for _, n in lots), loc, None, price)
+            new += spoolman.create_spools(fid, total - sum(n for _, n in lots), loc, None, price)
         for c in r.get("codes") or []:
             if _code_ok(str(c)):
                 _learn_code(str(c), fid)
+        if _num(r.get("gross")) and new:               # eine Rolle davon ist angebrochen → Waage-Gewicht übernehmen
+            try:
+                _weigh(new[-1], {"gross": r["gross"], "empty": r.get("spool_weight")})
+            except ValueError as e:
+                log.info("Stapel: Rolle #%s nicht gewogen: %s", new[-1], e)
+        sids += new
         rolls += total
     log.info("Lager: Stapel – %s Sorten neu, %s ergänzt, %s Rollen", len(made), len(set(added)), rolls)
-    return {"ok": True, "ids": made + added, "new": len(made), "existing": len(set(added)), "rolls": rolls}
+    return {"ok": True, "ids": made + added, "spools": sids, "new": len(made), "existing": len(set(added)), "rolls": rolls}
 
 
 async def api_lager_stack(request):
@@ -1606,7 +1614,7 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                    or (base in _BASE and (_color_line(tj, _SYN.get(base, base), vendor) or _base_ok(_SYN.get(base, base), tj)))
                    or _db_color(tj, vendor or pv.get("brand") or _detect_vendor(tj), pv.get("material", "")))
             return bool(col and pv.get("material"))
-        # KI-Test: bei „Immer“ läuft die KI gleichzeitig mit der eigenen Erkennung (die dann nur die schnelle Stufe macht)
+        # KI: bei „Immer“ läuft die KI gleichzeitig mit der eigenen Erkennung (die dann nur die schnelle Stufe macht)
         ai_on = bool(settings.get("ai_enabled") and settings.get("ai_key"))
         ai_fut = (_AI_POOL.submit(aiscan.read, img, settings.get("ai_key"), settings.get("ai_model"))
                   if ai_on and settings.get("ai_mode") == "always" else None)
@@ -1658,7 +1666,7 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             scanmod.TRACE.append(("KI " + (settings.get("ai_model") or "") + (" (gleichzeitig)" if ai_fut else ""),
                                   1, round(sec, 2), round(sec, 2), 0))
             if err:
-                log.info("Scan: KI-Test fehlgeschlagen: %s", err)
+                log.info("Scan: KI fehlgeschlagen: %s", err)
             if d and d.get("brand"):
                 # KI liest oft die Produktlinie („Panchroma“) statt des Herstellers (Polymaker) → auf bekannten Hersteller abbilden
                 d["brand"] = _canon_vendor(d["brand"])
@@ -1786,7 +1794,9 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
     except Exception as e:
         log.debug("Scan: SpoolmanDB-Hinweis: %s", e)
     brand = res["parsed"].get("brand") or ""
-    if res["ean"] and not res["learned"]:
+    pq = res["parsed"]
+    complete = bool(pq.get("brand") and pq.get("material") and pq.get("color") and pq.get("color_src") != "base")
+    if res["ean"] and not res["learned"] and not complete:     # Etikett schon vollständig gelesen → Online-Suche sparen
         on = scanmod.online_lookup(requests, res["ean"])
         res["online"] = on
         if on and not on.get("error"):
@@ -2119,7 +2129,8 @@ async def api_lager_spools(request):
             raise ValueError("Anzahl 1–50")
         initial = _num(b.get("initial_weight"))
         gross, empty = _num(b.get("gross")), _num(b.get("empty"))
-        if gross:
+        opened = bool(b.get("opened")) and gross
+        if gross and not opened:
             if not empty:
                 raise ValueError("Für „brutto gewogen“ wird das Leergewicht der Spule gebraucht")
             initial = round(gross - empty, 1)
@@ -2136,6 +2147,9 @@ async def api_lager_spools(request):
         if empty and not b.get("empty_for_filament"):
             for i in ids:
                 await run_in_threadpool(spoolman.update_spool, i, {"spool_weight": empty})
+        if opened:                                    # angebrochene Rolle: Nenngewicht bleibt, Rest = Waage − Leerspule
+            for i in ids:
+                await run_in_threadpool(_weigh, i, {"gross": gross, "empty": empty})
     except (ValueError, KeyError, RuntimeError) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     log.info("Lager: %d neue Spule(n) angelegt: %s", len(ids), ids)

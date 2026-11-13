@@ -344,7 +344,7 @@
   </section>
 
   <section class="card">
-    <div class="label">KI-Etiketterkennung (Test)</div>
+    <div class="label">KI-Etiketterkennung</div>
     <div class="d muted small" style="margin:6px 0 4px">Liest das Etikett beim Rolle-Scannen zusätzlich mit Google Gemini – robuster bei unscharfen oder schattigen Fotos. Gratis-Schlüssel: <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey ↗</a>. Im Gratis-Kontingent kann Google die Fotos zur Verbesserung nutzen.</div>
     <div class="row">
       <div><div class="t">Einschalten</div><div class="d">Aus = wie bisher nur Texterkennung am Tower</div></div>
@@ -363,6 +363,8 @@
       <input type="text" data-k="ai_model" style="width:230px" list="ai-models">
       <datalist id="ai-models"><option value="gemini-flash-lite-latest"><option value="gemini-flash-latest"></datalist>
     </div>
+    <div class="row"><div><div class="t">Heute verbraucht</div><div class="d">Zählt seit dem letzten Neustart von PrintHub; Google setzt das Kontingent um 9 Uhr zurück</div></div>
+      <span id="ai-today" class="small">–</span></div>
   </section>
 
   <section class="card">
@@ -610,6 +612,8 @@ async function load() {
   S = d.settings; fill(); lblInit();
   $("saver").value = PH.saverMode();
   const i = d.info;
+  if (i.ai_today && $("ai-today")) $("ai-today").innerHTML = `<b>${i.ai_today.n}</b> Anfragen` +
+    (i.ai_today.err ? ` · ${i.ai_today.err} abgelehnt` : "") + (i.ai_today.paused ? `<br><span class="err">pausiert bis 9 Uhr</span>` : "");
   $("sys").innerHTML = `
     <div class="row"><div class="t">PrintHub-Version</div><b>${esc(i.version || "dev")}</b></div>
     <div class="row"><div class="t">Spoolman</div><a href="${esc(i.spoolman_url)}" target="_blank">${esc(i.spoolman_url)}</a></div>

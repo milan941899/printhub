@@ -36,6 +36,7 @@
       <details class="moremenu"><summary class="btn">⋯ Mehr</summary><div class="mm">
         <button onclick="this.closest('details').open=false;openMulti()">🎨 Serie: mehrere Farben einer Sorte</button>
         <button onclick="this.closest('details').open=false;openStack()">📚 Stapel: gemischte Rollen</button>
+        <button onclick="this.closest('details').open=false;openShop()">🛒 Einkaufsliste</button>
         <button onclick="this.closest('details').open=false;openNames()">Aa Namen vereinheitlichen</button>
         <button onclick="this.closest('details').open=false;fsel.clear();bulkMode=!bulkMode;render()">☑ Sorten auswählen (gemeinsam bearbeiten)</button>
       </div></details>
@@ -95,6 +96,7 @@
       <div class="field"><span class="lab">Brutto gewogen (g, optional)</span><input id="a-gross" type="number" min="1" step="1" placeholder="Waage"></div>
       <div class="field"><span class="lab">Leere Spule (g)</span><input id="a-empty" type="number" min="1" step="1" placeholder="aus Sorte"></div>
     </div>
+    <label class="chk"><input type="checkbox" id="a-opened" onchange="addCalc()"> Rolle ist angebrochen (Waage = Restmenge, Nenngewicht bleibt)</label>
     <label class="chk"><input type="checkbox" id="a-forfil" checked> Leergewicht für die Sorte merken</label>
     <div id="a-res" class="wres"></div>
     <label class="chk"><input type="checkbox" id="a-labels" checked> Danach gleich Etiketten drucken</label>
@@ -161,6 +163,16 @@
   </form>
 </div>
 
+<!-- Dialog: Einkaufsliste -->
+<div class="modal" id="m-shop">
+  <div class="mbox card">
+    <h2>🛒 Einkaufsliste</h2>
+    <div class="muted small">Sorten unter dem Mindestbestand (volle Rollen). Mindestbestand stellst du pro Sorte unter ✎ ein.</div>
+    <div id="shop-list"></div>
+    <div class="mact"><button type="button" onclick="shopCopy()">📋 Als Text kopieren</button><button type="button" onclick="closeM()">Schließen</button></div>
+  </div>
+</div>
+
 <!-- Dialog: Stapel (gemischte Rollen) -->
 <div class="modal" id="m-stack">
   <form class="mbox card" onsubmit="event.preventDefault();saveStack()">
@@ -185,6 +197,7 @@
       <pre id="st-log" style="white-space:pre-wrap;font-size:.8em;margin:6px 0"></pre>
       <button type="button" class="small-btn" onclick="stLogCopy()">📋 Protokoll kopieren</button></details>
     <datalist id="st-vendors"></datalist>
+    <label class="chk"><input type="checkbox" id="st-labels"> Danach gleich Etiketten für alle neuen Rollen drucken</label>
     <div class="mact"><button type="button" onclick="stCancel()" title="Stapel verwerfen und schließen">Abbrechen</button><button type="button" onclick="closeM();stResumeBtn()" title="Schließen – der Stapel bleibt gespeichert">Später weiter</button><button class="primary" type="submit" id="st-save">Anlegen</button></div>
   </form>
 </div>
@@ -644,7 +657,8 @@ async function unarchive(id) {
 function toggle(id) { open.has(id) ? open.delete(id) : open.add(id); render(); }
 function selOne(id, on) { on ? sel.add(id) : sel.delete(id); render(); }
 function selAll(fid, on) { for (const s of D.filaments.find(f => f.id === fid).spools) on ? sel.add(s.id) : sel.delete(s.id); render(); }
-function printLabels(ids) { location.href = "/etiketten?spools=" + [...(ids || sel)].join(","); }
+// nach closeM() baut der Zurück-Handler noch Verlaufs-Einträge ab (history.go) – das würde die Navigation abbrechen
+function printLabels(ids) { const u = "/etiketten?spools=" + [...(ids || sel)].join(","); setTimeout(() => { location.href = u; }, 400); }
 
 async function api(url, method, body) {
   const r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
@@ -907,6 +921,29 @@ async function saveMulti() {
   } finally { $("mu-save").disabled = false; }
 }
 
+// ---------- Einkaufsliste ----------
+function shopItems() {
+  return D.filaments.filter(isLow).map(f => ({f, need: f.min - f.full}))
+    .sort((a, b) => (a.f.vendor || "").localeCompare(b.f.vendor || "") || a.f.name.localeCompare(b.f.name));
+}
+function openShop() {
+  const it = shopItems(), sum = it.reduce((a, x) => a + (x.f.price ? x.f.price * x.need : 0), 0);
+  $("shop-list").innerHTML = it.length ? it.map(({f, need}) => `<div class="crow" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
+      <span class="dot" style="background:${f.color || "#999"};width:16px;height:16px;border-radius:50%;flex:none"></span>
+      <div style="flex:1;min-width:0"><b>${esc(f.vendor)}</b> ${esc(f.name)} <span class="muted">${esc(f.material)}</span>
+        <div class="small muted">${f.full} von ${f.min} vollen Rollen${f.price ? ` · zuletzt ${eur(f.price)} je Rolle` : ""}</div></div>
+      <b style="white-space:nowrap">${need}×</b></div>`).join("") +
+      (sum ? `<div class="small" style="margin-top:8px">Ungefähr <b>${eur(sum)}</b> (nach letztem Preis)</div>` : "")
+    : `<div class="muted" style="padding:10px 0">Alles da – keine Sorte unter dem Mindestbestand. 👍</div>`;
+  $("m-shop").classList.add("open");
+}
+function shopCopy() {
+  const txt = "Filament nachkaufen:\n" + shopItems().map(({f, need}) => `- ${need}× ${f.vendor} ${f.name} ${f.material}${f.price ? ` (ca. ${eur(f.price)})` : ""}`).join("\n");
+  const ta = document.createElement("textarea"); ta.value = txt; ta.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch {} ta.remove();
+  PH.toast(ok ? "Einkaufsliste kopiert" : "Kopieren nicht möglich", !ok);
+}
+
 // ---------- Stapel: gemischte Rollen ----------
 let ST = [], stN = 0, stBusyN = 0, stQueue = Promise.resolve(), stLast = {};
 const _sk = x => (x || "").toLowerCase().replace(/[^a-z0-9+]/g, "");
@@ -944,6 +981,7 @@ function openStack(first) {
   stLoaded = true; stDropped = false;
   ST = []; stLast = {}; stLog = []; stT0 = 0; stNo = 0; stFailed = []; $("st-log").textContent = "";
   $("st-loc").value = ""; $("st-loc").placeholder = D.storage || "Lager"; $("st-price").value = "";
+  try { $("st-labels").checked = localStorage.getItem("ph-st-labels") === "1"; } catch {}
   const sv = stSaved();
   if (sv && sv.ST.length && (!first || confirm(`Angefangenen Stapel mit ${sv.ST.length} Zeilen fortsetzen?`))) {
     ST = sv.ST; stLog = sv.stLog || []; stN = sv.stN || ST.length; stNo = sv.stNo || 0; $("st-loc").value = sv.loc || ""; $("st-price").value = sv.price || "";
@@ -1121,6 +1159,7 @@ function stPanel(r) {
     <div class="field"><span class="lab">Bett (°C)</span><input data-k="bt" type="number" value="${esc(r.bt)}" ${nf}></div>
     <div class="field"><span class="lab">Preis je Rolle (€)</span><input data-k="price" type="number" step="0.01" value="${esc(r.price)}" placeholder="wie oben"></div>
     <div class="field"><span class="lab">Lagerort</span><input data-k="location" value="${esc(r.location)}" placeholder="wie oben"></div>
+    <div class="field" style="grid-column:1/-1"><span class="lab">Angebrochen? Waage mit Spule (g)</span><input data-k="gross" type="number" min="1" value="${esc(r.gross || "")}" placeholder="leer = volle Rolle"></div>
     <div style="grid-column:1/-1"><button type="button" class="small-btn st-ok">✓ Fertig</button></div></div>`;
 }
 function stPanelWire(el, r) {
@@ -1161,10 +1200,13 @@ async function saveStack() {
     const d = await api("/api/lager/stack", "POST", {location: $("st-loc").value, price: $("st-price").value,
       rows: ch.map(r => ({fid: r.fid, vendor_name: r.vendor, material: r.material, name: r.name, color: r.hex, external_id: r.ext,
         weight: r.weight, spool_weight: r.spool_weight, extruder_temp: r.et, bed_temp: r.bt, diameter: r.diameter,
-        price: r.price, location: r.location, count: r.count,
+        price: r.price, location: r.location, count: r.count, gross: r.gross || "",
         lots: Object.entries(r.lots).map(([lot, n]) => ({lot, n})), codes: r.codes}))});
     ST = []; stLog = []; stFailed = []; stSave(); stqClear();
-    closeM(); PH.toast(`${d.new} Sorten neu${d.existing ? `, ${d.existing} ergänzt` : ""} – ${d.rolls} Rollen angelegt`); d.ids.forEach(i => open.add(i)); load();
+    closeM(); PH.toast(`${d.new} Sorten neu${d.existing ? `, ${d.existing} ergänzt` : ""} – ${d.rolls} Rollen angelegt`); d.ids.forEach(i => open.add(i));
+    try { localStorage.setItem("ph-st-labels", $("st-labels").checked ? "1" : ""); } catch {}
+    if ($("st-labels").checked && (d.spools || []).length) return printLabels(d.spools);
+    load();
   } finally { $("st-save").disabled = false; }
 }
 
@@ -1268,6 +1310,17 @@ async function scanFile(f) {
   scanSend(await uploadBlob(f));
 }
 // Foto hochladen mit Fortschritt (zeigt, ob das WLAN oder der Tower bremst) und Zeitlimit
+// Sorte schon im Lager → passende Rolle gleich in einen Drucker-Slot legen (angebrochene zuerst, dann älteste volle)
+function toPrinter(d) {
+  const f = d.exact_fid ? D.filaments.find(x => x.id === d.exact_fid) : null;
+  const free = f ? f.spools.filter(s => !s.in_printer) : [];
+  if (!free.length) return f && f.spools.length ? `<div class="small muted">🖨 Alle Rollen dieser Sorte sind schon im Drucker.</div>` : "";
+  const pick = free.filter(s => s.opened).sort((a, b) => (a.remaining ?? 1e9) - (b.remaining ?? 1e9))[0] || free.sort((a, b) => a.id - b.id)[0];
+  const opts = free.map(s => `<option value="${s.id}" ${s.id === pick.id ? "selected" : ""}>#${s.id} · ${s.opened ? `angebrochen, ${g(s.remaining)}` : "voll"}${s.location ? " · " + esc(s.location) : ""}</option>`).join("");
+  return `<div class="wres small" style="margin-top:8px">🖨 <b>In den Drucker einlegen?</b>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><select id="sc-tp" style="flex:1;min-width:180px">${opts}</select>
+    <button type="button" class="primary" onclick="const v=$('sc-tp').value;closeM();setTimeout(()=>location.href='/assign?spool='+v,400)">Slot wählen →</button></div></div>`;
+}
 function dbInfo(d) {
   const i = d.db_info; if (!i) return "";
   if (i.hit) return `<div class="small">🗄 SpoolmanDB: <b>${esc(i.label)}</b> gefunden – Farbe und Werte von dort.</div>`;
@@ -1378,7 +1431,7 @@ function scanShow(d) {
       <div>Laden ${d.timing.decode} s · Strichcode ${d.timing.barcode} s</div>
       ${(d.timing.steps || []).map(x => `<div>${esc(x.name)}: ${x.runs}× · ${x.sec} s (längster ${x.max} s, ${x.mpx} MP)</div>`).join("")}
     </details>` : ""}
-    ${d.ai ? `<div class="small ${d.ai.error ? "muted" : ""}">🤖 KI-Test: ${d.ai.error ? esc(d.ai.error) : `gelesen in ${d.ai.sec} s (${esc(d.ai.fields.join(", ") || "nichts")})`}</div>` : ""}
+    ${d.ai ? `<div class="small ${d.ai.error ? "muted" : ""}">🤖 KI: ${d.ai.error ? esc(d.ai.error) : `gelesen in ${d.ai.sec} s (${esc(d.ai.fields.join(", ") || "nichts")})`}</div>` : ""}
     ${dbInfo(d)}
     ${codeMsg(d)}
     ${p.color && !p.material && (d.matches || []).length > 1 && !d.exact_fid ? `<div class="wres small codemsg multi">⚠ Material auf dem Foto nicht erkannt – bitte unten die richtige Sorte wählen.</div>` : ""}
@@ -1388,6 +1441,7 @@ function scanShow(d) {
     ${d.template ? `<label class="scopt"><input type="radio" name="scf" value="tpl" ${!opts || newPick ? "checked" : ""}> <span>＋ Neue Sorte wie <b>${esc(d.template.label)}</b> – Farbe <b>${esc(p.color || "?")}</b></span></label>` : ""}
     <label class="scopt"><input type="radio" name="scf" value="other"> Andere Sorte aus dem Lager …</label>
     <label class="scopt"><input type="radio" name="scf" value="new" ${(!opts || newPick) && !d.template ? "checked" : ""}> ＋ Neue Sorte mit diesen Daten anlegen</label>
+    ${toPrinter(d)}
     <div class="mact"><button type="button" onclick="scanStart()">↺ Nochmal</button><button type="button" onclick="closeM();openStack(scanCtx)" title="Diese Rolle in einen Stapel übernehmen und weitere fotografieren">📚 Stapel</button><button class="primary" type="button" onclick="scanNext()">Weiter</button></div>`;
 }
 function scanNext() {
@@ -1510,12 +1564,13 @@ function addCalc() {
   if (!gr) { $("a-res").textContent = ""; return; }
   if (!em) { $("a-res").innerHTML = `<span class="err">Leergewicht der Spule fehlt</span>`; return; }
   const net = gr - em, nom = f.weight || 1000, d = net - nom;
+  if ($("a-opened").checked) { $("a-res").innerHTML = `= noch <b>${Math.round(net)} g</b> von ${nom} g auf der Rolle`; return; }
   $("a-res").innerHTML = `= <b>${Math.round(net)} g</b> Filament drauf` + (Math.abs(d) >= 5 ? ` <span class="${d < 0 ? "err" : "muted"}">(${d > 0 ? "+" : ""}${Math.round(d)} g zu ${nom} g Nenngewicht)</span>` : ` <span class="muted">✓ passt zu ${nom} g</span>`);
 }
 async function saveAdd() {
   const d = await api("/api/lager/spools", "POST", {filament_id: +$("a-fil").value, count: +$("a-count").value,
     initial_weight: $("a-weight").value, price: $("a-price").value, location: $("a-loc").value,
-    gross: $("a-gross").value, empty: $("a-empty").value, empty_for_filament: $("a-forfil").checked,
+    gross: $("a-gross").value, empty: $("a-empty").value, empty_for_filament: $("a-forfil").checked, opened: $("a-opened").checked,
     lot: scanCtx ? scanCtx.lot : "", ean: scanCtx ? (scanCtx.ean || scanCtx.sku || "") : ""});
   scanCtx = null;
   closeM(); PH.toast(`${d.ids.length} Rolle(n) angelegt: #${d.ids.join(", #")}`);
