@@ -7,6 +7,7 @@ import base64
 import io
 import json
 import logging
+import re
 import time
 
 import requests
@@ -21,7 +22,9 @@ Lies es und antworte NUR mit JSON in dieser Form (fehlende Werte = null, nichts 
  "color_hex": aufgedruckter Farbcode ohne # oder null,
  "weight": Nettogewicht in Gramm (Zahl), "diameter": mm (Zahl),
  "extruder_temp": empfohlene Düsentemperatur Mitte in °C (Zahl), "bed_temp": Bett °C (Zahl),
- "sku": Artikelnummer oder null, "batch": Chargen-/Batch-Nummer oder null}"""
+ "sku": Artikelnummer oder null, "batch": Chargen-/Batch-Nummer oder null,
+ "model": Modellnummer hinter „Model:“ (z.B. "A01-K1-1.75-1000-SPL") oder null}
+Lies nur das Etikett der vorderen/größten Rolle, nicht Etiketten im Hintergrund."""
 
 
 def _jpeg(img, maxpx=1600):
@@ -84,6 +87,11 @@ def read(img, key, model="gemini-flash-lite-latest", timeout=20):
     for k in ("brand", "color"):              # Etiketten in GROSSBUCHSTABEN → „Matte Fossil Grey“
         if out.get(k) and out[k].isupper() and len(out[k]) > 4:
             out[k] = " ".join(w.capitalize() for w in out[k].split())
+    mo = str(d.get("model") or "").strip().upper().replace(" ", "")
+    if re.fullmatch(r"[A-Z][A-Z0-9]{1,3}-[A-Z0-9]{1,3}-1\.75-\d{3,4}-[A-Z]{2,8}", mo):   # Bambu-Modellnummer, pro Farbe eindeutig
+        sk = mo.split("-")
+        sk[0] = sk[0][0] + sk[0][1:].replace("O", "0")
+        out["model"] = "-".join(sk)
     hx = str(d.get("color_hex") or "").lstrip("#").upper()
     if len(hx) == 6 and all(c in "0123456789ABCDEF" for c in hx):
         out["hex_print"] = hx

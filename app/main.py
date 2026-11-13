@@ -1521,6 +1521,9 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 ks = d.pop("sku", None)            # KI-Nummer nie als SKU (die zählt stark) – nur als normale Erkennungsnummer
                 if ks and not d.get("batch"):
                     d["batch"] = ks
+                mo = d.pop("model", None)          # Bambu-Modellnummer (strenges Muster) darf stark zählen
+                if mo and not p.get("sku"):
+                    d["sku"] = mo
             res["ai"] = {"sec": round(sec, 1), "error": err, "fields": sorted(d) if d else [], "parallel": bool(ai_fut)}
             scanmod.TRACE.append(("KI " + (settings.get("ai_model") or "") + (" (gleichzeitig)" if ai_fut else ""),
                                   1, round(sec, 2), round(sec, 2), 0))
