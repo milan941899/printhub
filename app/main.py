@@ -1365,6 +1365,34 @@ def _color_line(text, base, vendor=""):
     return best
 
 
+def _canon_vendor(b):
+    """Gelesenen Herstellernamen auf den bekannten Namen bringen: „SUNLU“ → Sunlu, „Bambu“ → Bambu Lab,
+    „Panchroma“ (Produktlinie) → Polymaker. Unbekannt → unverändert."""
+    b = (b or "").strip()
+    if not b:
+        return b
+    try:
+        mans = {(f.get("manufacturer") or "").strip() for f in spoolman.external_filaments()}
+    except Exception:
+        mans = set()
+    try:
+        mans |= {v.get("name") for v in spoolman._get("/vendor") if v.get("name")}
+    except Exception:
+        pass
+    key = re.sub(r"[^a-z0-9]", "", b.lower())
+    exact = [m for m in mans if m and re.sub(r"[^a-z0-9]", "", m.lower()) == key]
+    if exact:
+        return exact[0]
+    hit = _detect_vendor(b)
+    if hit:
+        return hit
+    if len(key) >= 4:                       # „Bambu“ → einziger Hersteller, der so anfängt („Bambu Lab“)
+        pre = {m for m in mans if m and re.sub(r"[^a-z0-9]", "", m.lower()).startswith(key)}
+        if len(pre) == 1:
+            return pre.pop()
+    return _vendor_by_words(b) or b
+
+
 def _detect_vendor(text):
     """Herstellername im Etikett-Text (aus der SpoolmanDB-Herstellerliste), längster Treffer."""
     tn = _tnorm(text)
@@ -1555,8 +1583,7 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 log.info("Scan: KI-Test fehlgeschlagen: %s", err)
             if d and d.get("brand"):
                 # KI liest oft die Produktlinie („Panchroma“) statt des Herstellers (Polymaker) → auf bekannten Hersteller abbilden
-                b = d["brand"]
-                d["brand"] = _detect_vendor(b) or _vendor_by_words(b) or b
+                d["brand"] = _canon_vendor(d["brand"])
             if d:
                 alltexts.append(aiscan.as_text(d))
                 if d.get("color") and not d.get("hex_print"):
@@ -1609,7 +1636,10 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             p["color"] = col
             alltexts.append(col)
     text = "\n".join(alltexts)
-    vend = (vendor or "").strip() or p.get("brand") or _detect_vendor(text)
+    if p.get("brand"):
+        p["brand"] = _canon_vendor(p["brand"])
+    res["label_brand"] = p.get("brand") or _detect_vendor(text) or ""     # was auf dem Etikett steht (ohne Vorgabe)
+    vend = _canon_vendor((vendor or "").strip()) or p.get("brand") or _detect_vendor(text)
     weak = "" if vend else _vendor_by_words(text)     # nur aus einem Wort geraten – entscheidet nicht allein
     vend = vend or weak
     if vend:

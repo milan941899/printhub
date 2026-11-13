@@ -668,7 +668,7 @@ function openMulti() {
   $("mu-newv").style.display = $("mu-vendor").value === "new" ? "" : "none";
   ["mu-mat", "mu-sw", "mu-price", "mu-et", "mu-bt", "mu-vname"].forEach(id => $(id).value = "");
   $("mu-weight").value = 1000; $("mu-diam").value = 1.75; $("mu-rows").innerHTML = ""; $("mu-db").innerHTML = "";
-  $("mu-tplhint").style.display = "none"; $("mu-scanst").innerHTML = ""; $("mu-scanst").dataset.last = "";
+  $("mu-tplhint").style.display = "none"; $("mu-scanst").innerHTML = ""; $("mu-scanst").dataset.last = ""; muRejected = [];
   srcReset(MU_MAP, ["mu-weight", "mu-diam"]);
   muRow(); muRow(); muRow();
   $("m-multi").classList.add("open");
@@ -773,13 +773,15 @@ async function muScanOne(f, row) {
   const p = d.parsed || {}, rows = [...$("mu-rows").children];
   // Serie gehört zu einem Hersteller + Material: fremde Etiketten nicht still übernehmen
   const nrm = x => (x || "").toLowerCase().replace(/[^a-z0-9+]/g, ""), sv = nrm(muVendorName()), sm = nrm($("mu-mat").value);
-  const lv = nrm(p.brand), lm = nrm(p.material);
+  const lb = d.label_brand || "", lv = nrm(lb), lm = nrm(p.material);
   const started = rows.some(x => x.querySelector(".mu-n").value.trim() || x.dataset.fid);
   const badV = started && sv && lv && !(lv.includes(sv) || sv.includes(lv)), badM = started && sm && lm && lm !== sm;
   if (badV || badM) {
-    const what = [badV ? p.brand : "", badM ? p.material : ""].filter(Boolean).join(" ");
-    const msg = `⚠ Etikett ist ${what} – passt nicht zu ${muVendorName()} ${$("mu-mat").value.trim()}. Nicht übernommen – bitte einzeln über „Rolle scannen“ erfassen.`;
-    $("mu-scanst").dataset.last = esc(msg); PH.toast(msg, true); return;
+    const what = [badV ? lb : "", badM ? p.material : ""].filter(Boolean).join(" ");
+    const msg = `⚠ Etikett ${esc(p.color ? what + " " + p.color : what)} passt nicht zu ${esc(muVendorName() + " " + $("mu-mat").value.trim())} – nicht übernommen`;
+    muRejected.push(msg);
+    $("mu-scanst").dataset.last = muRejected.map(x => `<div>${x}</div>`).join("") + (muRejected.length ? `<div class="muted small">Diese bitte einzeln über „Rolle scannen“ erfassen.</div>` : "");
+    PH.toast("Etikett passt nicht zur Serie – nicht übernommen", true); return;
   }
   // gemeinsame Felder einmal aus dem ersten Etikett
   if (p.brand && !rows.some(x => x.querySelector(".mu-n").value.trim())) {
@@ -812,8 +814,9 @@ async function muScanOne(f, row) {
   if (d.sku) { const sk = JSON.parse(r.dataset.skus || "[]"); if (!sk.includes(d.sku)) sk.push(d.sku); r.dataset.skus = JSON.stringify(sk); }
   if (d.lot && d.lot !== d.sku) muAddLot(r, d.lot); else muLots(r);
   const msg = `📷 ${name || "Etikett"}${d.sku ? " · Artikelnr. " + d.sku : ""}${d.lot && d.lot !== d.sku ? " · Charge " + d.lot : ""} → ${fresh ? "neue Zeile" : "Anzahl " + k.value}${f0 ? " (schon im Lager)" : ""}`;
-  $("mu-scanst").dataset.last = esc(msg); PH.toast(msg);
+  $("mu-scanst").dataset.last = esc(msg) + muRejected.map(x => `<div>${x}</div>`).join(""); PH.toast(msg);
 }
+let muRejected = [];
 let muT;
 function muTpl() {
   clearTimeout(muT);
