@@ -266,7 +266,25 @@ def _fast_lang():
     return _FAST
 
 
-TRACE = []        # Zeitmessung für den laufenden Scan (Diagnose): [(name, Läufe, Sekunden, längster Lauf, Pixel)]
+import threading as _th
+
+
+class _Trace(_th.local):
+    """Zeitmessung pro laufendem Scan (pro Thread – Stapel liest 2 Fotos gleichzeitig): [(name, Läufe, s, längster, Pixel)]"""
+    def __init__(self):
+        self.items = []
+
+    def clear(self):
+        self.items = []
+
+    def append(self, x):
+        self.items.append(x)
+
+    def __iter__(self):
+        return iter(list(self.items))
+
+
+TRACE = _Trace()
 
 
 def run_ocr(jobs, name="ocr"):

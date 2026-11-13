@@ -37,9 +37,43 @@ def _jpeg(img, maxpx=1600):
     return b.getvalue()
 
 
+_PAUSE = {"until": 0, "why": ""}
+
+
+def paused():
+    """Tageskontingent aufgebraucht → bis zum Rücksetzen (Mitternacht Pazifikzeit) gar nicht erst fragen."""
+    return _PAUSE["why"] if time.time() < _PAUSE["until"] else ""
+
+
+def _next_reset():
+    try:
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/Los_Angeles"))
+        return (now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).timestamp() + 60
+    except Exception:
+        return time.time() + 6 * 3600
+
+
+def _quota(r):
+    """429 auswerten: (Tageslimit?, Wartezeit in s)"""
+    try:
+        e = r.json().get("error") or {}
+    except ValueError:
+        return False, 0
+    txt = json.dumps(e)
+    wait = 0
+    m = re.search(r'"retryDelay":\s*"(\d+)(?:\.\d+)?s"', txt)
+    if m:
+        wait = int(m.group(1))
+    return ("PerDay" in txt or "per day" in txt.lower()), wait
+
+
 def read(img, key, model="gemini-flash-lite-latest", timeout=20):
     """→ (dict mit Etikett-Werten oder None, Sekunden, Fehlertext oder None)"""
     t = time.time()
+    if paused():
+        return None, 0, paused()
     body = {
         "contents": [{"parts": [{"text": PROMPT},
                                 {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(_jpeg(img)).decode()}}]}],
@@ -55,13 +89,23 @@ def read(img, key, model="gemini-flash-lite-latest", timeout=20):
                     raise
                 time.sleep(0.5)
                 continue
+            if r.status_code == 429 and attempt == 1:
+                day, wait = _quota(r)
+                if not day and wait <= 30:               # Minutenlimit: Google sagt, wie lange warten → einmal nachholen
+                    time.sleep(max(wait, 2))
+                    continue
             if r.status_code < 500 or attempt == 2:
                 break
             time.sleep(0.5)
         if r.status_code >= 500:
             return None, time.time() - t, f"Google gerade überlastet/gestört ({r.status_code}) – eigene Erkennung verwendet"
         if r.status_code == 429:
-            return None, time.time() - t, "Gratis-Kontingent für heute aufgebraucht"
+            day, wait = _quota(r)
+            if day:
+                _PAUSE.update(until=_next_reset(), why="Gratis-Tageskontingent aufgebraucht – KI pausiert bis morgen 9 Uhr, nur Tower-Erkennung")
+                log.info("KI-Test: Tageskontingent aufgebraucht – pausiert bis zum Rücksetzen")
+                return None, time.time() - t, _PAUSE["why"]
+            return None, time.time() - t, f"Gratis-Minutenlimit erreicht – kurz warten ({wait or '?'} s), nur Tower-Erkennung"
         if r.status_code in (400, 401, 403):
             msg = (r.json().get("error") or {}).get("message", "") if r.headers.get("content-type", "").startswith("application/json") else ""
             return None, time.time() - t, f"Schlüssel/Modell abgelehnt ({r.status_code}) {msg[:120]}"
