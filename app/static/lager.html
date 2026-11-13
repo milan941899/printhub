@@ -1060,6 +1060,7 @@ function scanShow(d) {
       ${(d.timing.steps || []).map(x => `<div>${esc(x.name)}: ${x.runs}× · ${x.sec} s (längster ${x.max} s, ${x.mpx} MP)</div>`).join("")}
     </details>` : ""}
     ${codeMsg(d)}
+    ${p.color && !p.material && (d.matches || []).length > 1 && !d.exact_fid ? `<div class="wres small codemsg multi">⚠ Material auf dem Foto nicht erkannt – bitte unten die richtige Sorte wählen.</div>` : ""}
     ${!p.color ? `<div class="wres small codemsg multi">⚠ Farbe auf dem Foto nicht erkannt – bitte unten die Sorte wählen oder <a href="#" onclick="event.preventDefault();scanStart()">nochmal fotografieren</a> (gerade, ohne Schatten, Etikett groß im Bild).</div>` : ""}
     <div class="label" style="margin-top:10px">Welche Sorte?</div>
     ${opts || `<div class="muted small">Keine passende Sorte im Lager.</div>`}

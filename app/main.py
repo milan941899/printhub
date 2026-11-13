@@ -1191,7 +1191,7 @@ def _scan_match(parsed, brand=""):
             else:
                 sc -= 2
         if parsed.get("color"):
-            fn, pn = _tnorm(f.get("name")).strip(), _tnorm(parsed["color"]).strip()
+            fn, pn = _core(f.get("name")).strip(), _core(parsed["color"]).strip()
             if fn == pn and parsed.get("color_src") != "base":
                 sc += 12; why.append("Farbname")
             elif parsed.get("color_src") != "base" and fn and pn and fn not in pn and pn not in fn:
@@ -1216,6 +1216,11 @@ _BASE = ["black", "white", "grey", "gray", "silver", "red", "blue", "green", "ye
 
 
 _SYN = {"grey": "gray", "colour": "color", "transparant": "transparent"}
+
+
+def _core(name):
+    """Farbname ohne Material-Wörter („Black PLA+“ → „ black “), zum Vergleich von Sortennamen."""
+    return " " + " ".join(w for w in _tnorm(name).split() if w not in _MAT_WORDS) + " "
 
 
 def _tnorm(t):
@@ -1248,8 +1253,8 @@ def _vendor_by_words(text):
                 own.setdefault(w, set()).add(v)
     hits = {}
     for w in set(_tnorm(text).split()):
-        if w in _BASE or w in _MAT_WORDS:
-            continue
+        if w in _BASE or w in _MAT_WORDS or w in _color_words():
+            continue                     # Farbwörter („Vibrant“, „Mystic“) gibt es bei vielen Herstellern
         m = own.get(w)
         v = next(iter(m)) if m and len(m) == 1 else _VWORDS.get(w)
         if v:
@@ -1322,7 +1327,7 @@ def _detect_vendor(text):
         mans |= {v.get("name") for v in spoolman._get("/vendor") if v.get("name")}
     except Exception:
         pass
-    hits = [m for m in mans if m and len(m) >= 3 and _tnorm(m) in tn]
+    hits = [m for m in mans if m and len(m) >= 3 and _tnorm(m).strip() and _tnorm(m) in tn]   # ganze Wörter („ jayo “)
     return max(hits, key=len) if hits else ""
 
 
@@ -1398,9 +1403,13 @@ def _own_color(text, material="", vendor=""):
             continue
         key = (len(core), f" {core} " in tn)
         if not best or key > best[0]:
-            best = (key, f, fv)
+            best, ties = (key, f, fv), [f]
+        elif key == best[0]:
+            ties.append(f)
     if not best:
         return None
+    if not mat and len({(_mat_norm(t.get("material")), ((t.get("vendor") or {}).get("name") or "").lower()) for t in ties}) > 1:
+        return None          # z. B. „Black“ gibt es als JAYO PETG und Sunlu PLA+ – ohne Material nicht entscheidbar
     f, fv = best[1], best[2]
     return {"id": f["id"], "name": f["name"], "hex": (f.get("color_hex") or "999999")[:6].upper(), "vendor": fv}
 
@@ -1505,13 +1514,15 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
     # Hersteller + Farbe: SpoolmanDB zuerst, dann eingebaute Farbliste, sonst nur Grundton („Red“) → Vorschläge
     p = res["parsed"]
     text = "\n".join(alltexts)
-    vend = (vendor or "").strip() or p.get("brand") or _detect_vendor(text) or _vendor_by_words(text)
+    vend = (vendor or "").strip() or p.get("brand") or _detect_vendor(text)
+    weak = "" if vend else _vendor_by_words(text)     # nur aus einem Wort geraten – entscheidet nicht allein
+    vend = vend or weak
     if vend:
         p.setdefault("brand", vend)
     if material and not p.get("material"):
         p["material"] = material
     # 1. eigene Sorte, deren Name auf dem Etikett steht (z. B. „PETG White“ → JAYO PETG White) – auch ohne Hersteller
-    own = _own_color(text, p.get("material") or material, vend) if text.strip() else None
+    own = _own_color(text, p.get("material") or material, "" if weak else vend) if text.strip() else None
     if own:
         p["color"], p["color_hex"], p["color_src"] = own["name"], own["hex"], "own"
         if not vend and own.get("vendor"):
@@ -1550,7 +1561,7 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             res["parsed"] = {**scanmod.parse_text(on.get("text") or ""), **{k: v for k, v in res["parsed"].items() if v}}
             res["parsed"]["brand"] = brand
     try:
-        res["matches"] = _scan_match(res["parsed"], brand)
+        res["matches"] = _scan_match(res["parsed"], "" if weak and brand == weak else brand)
     except Exception as e:
         log.info("Scan: Abgleich mit dem Lager fehlgeschlagen: %s", e)
     # gleiche Sorte (Hersteller/Material) gibt es, aber nicht in dieser Farbe → „Neue Sorte wie …“
@@ -1610,12 +1621,12 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
     # genau diese Sorte schon im Lager? (gelernte Nummer, sonst Hersteller + Material + Name gleich)
     res["exact_fid"] = res.get("own_fid") or res["learned"]
     if not res["exact_fid"] and res["parsed"].get("color") and res["parsed"].get("color_src") != "base":
-        pn, pmn, br = _tnorm(res["parsed"]["color"]).strip(), _mat_norm(res["parsed"].get("material")), brand.lower()
-        for f in spoolman.inventory()["filaments"]:
-            if (_tnorm(f.get("name")).strip() == pn and (not pmn or _mat_norm(f.get("material")) == pmn)
-                    and (not br or ((f.get("vendor") or {}).get("name") or "").lower() == br)):
-                res["exact_fid"] = f["id"]
-                break
+        pn, pmn, br = _core(res["parsed"]["color"]).strip(), _mat_norm(res["parsed"].get("material")), brand.lower()
+        same = [f for f in spoolman.inventory()["filaments"]
+                if _core(f.get("name")).strip() == pn and (not pmn or _mat_norm(f.get("material")) == pmn)
+                and (not br or weak or ((f.get("vendor") or {}).get("name") or "").lower() == br)]
+        if len(same) == 1:                 # mehrere gleichnamige (Black PETG/PLA+) ohne Material → selbst wählen
+            res["exact_fid"] = same[0]["id"]
     if res.get("timing"):
         tm = res["timing"]
         log.info("Scan: Foto %.1f MB (%s), dekodiert %.1fs, Strichcode %.1fs, gesamt %.1fs, %s Kerne, schnelles Modell: %s | %s",
