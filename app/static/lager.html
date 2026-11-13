@@ -185,7 +185,7 @@
       <pre id="st-log" style="white-space:pre-wrap;font-size:.8em;margin:6px 0"></pre>
       <button type="button" class="small-btn" onclick="stLogCopy()">📋 Protokoll kopieren</button></details>
     <datalist id="st-vendors"></datalist>
-    <div class="mact"><button type="button" onclick="stClear()" title="Alle Zeilen verwerfen">🗑 Leeren</button><button type="button" onclick="closeM();stResumeBtn()" title="Schließen – der Stapel bleibt gespeichert">Später weiter</button><button class="primary" type="submit" id="st-save">Anlegen</button></div>
+    <div class="mact"><button type="button" onclick="stCancel()" title="Stapel verwerfen und schließen">Abbrechen</button><button type="button" onclick="closeM();stResumeBtn()" title="Schließen – der Stapel bleibt gespeichert">Später weiter</button><button class="primary" type="submit" id="st-save">Anlegen</button></div>
   </form>
 </div>
 
@@ -924,11 +924,24 @@ function stResumeBtn() {
     b.textContent = `📚 Stapel fortsetzen (${n}${q ? ` + ${q} wartend` : ""})`;
   });
 }
+function stCancel() {
+  const q = stBusyN;
+  if ((ST.length || q) && !confirm(`Stapel verwerfen?${ST.length ? ` ${ST.length} erkannte Zeilen` : ""}${q ? ` und ${q} wartende Fotos` : ""} gehen verloren.\n(„Später weiter“ behält alles.)`)) return;
+  stWaitQ = []; stGen++; stBusyN = 0; $("st-scanst").innerHTML = ""; ST = []; stLog = []; stFailed = []; stDropped = true; $("st-log").textContent = ""; stqClear(); stSave(); stRender(); stFailedShow();
+  closeM(); stResumeBtn();
+}
 function stClear() {
   if (ST.length && !confirm(`Stapel mit ${ST.length} Zeilen wirklich verwerfen?`)) return;
   ST = []; stLog = []; stFailed = []; $("st-log").textContent = ""; stqClear(); stSave(); stRender(); stFailedShow(); stResumeBtn();
 }
+let stLoaded = false, stDropped = false, stGen = 0;
 function openStack(first) {
+  if (stLoaded && !stDropped) {                       // in dieser Seite schon offen gewesen → einfach weitermachen
+    $("m-stack").classList.add("open"); stRender(); stFailedShow();
+    if (first) stAdd(first);
+    return;
+  }
+  stLoaded = true; stDropped = false;
   ST = []; stLast = {}; stLog = []; stT0 = 0; stNo = 0; stFailed = []; $("st-log").textContent = "";
   $("st-loc").value = ""; $("st-loc").placeholder = D.storage || "Lager"; $("st-price").value = "";
   const sv = stSaved();
@@ -946,7 +959,7 @@ function openStack(first) {
   if (first) stAdd(first);
 }
 function stBusy(n) {
-  stBusyN += n;
+  stBusyN = Math.max(0, stBusyN + n);
   $("st-scanst").innerHTML = stBusyN > 0 ? `<span class="spin"></span> ${stBusyN} Etikett${stBusyN > 1 ? "en werden" : " wird"} gelesen … du kannst schon das nächste fotografieren` : ($("st-scanst").dataset.last || "");
 }
 $("st-loc").oninput = $("st-price").oninput = () => stSave();
@@ -1004,7 +1017,7 @@ function stScanFile(f, resumeNo) {
   stBusy(+1); stRun(() => stScanOne(f, no, tq).catch(e => stLogAdd(`#${no} Fehler: ${e}`))).finally(() => stBusy(-1));
 }
 async function stScanOne(f, no, tq) {
-  const t0 = performance.now();
+  const t0 = performance.now(), gen = stGen;
   const blob = await uploadBlob(f);
   const t1 = performance.now();
   let d;
@@ -1020,6 +1033,7 @@ async function stScanOne(f, no, tq) {
     (tm.server != null ? ` = unterwegs ${tm.recv}s + Tower ${tm.server}s (Bild ${tm.size || "?"}, ${steps || "–"})` : "") +
     (d.ai ? ` · KI ${d.ai.sec}s${d.ai.error ? " FEHLER " + d.ai.error : ""}` : "") +
     (d.error ? ` · FEHLER ${d.error}` : ` → ${[d.parsed?.brand, d.parsed?.material, d.parsed?.color].filter(Boolean).join(" ") || "nichts erkannt"}`));
+  if (gen !== stGen) return;                          // Stapel inzwischen verworfen
   if (d.error) { stqDel(no); PH.toast("Etikett: " + d.error, true); return; }
   const add = stAddQ.then(() => stAdd(d)); stAddQ = add.catch(() => {}); await add; stqDel(no);
   stLogAdd(`#${no} fertig nach ${sec(performance.now() - tq)}s ab Auswahl`);
