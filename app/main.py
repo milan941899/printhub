@@ -3425,7 +3425,11 @@ async def api_plate_snapshot(request):
         p = _cam_printer(request.path_params["pid"])
         jpg = await run_in_threadpool(p.camera.snapshot)
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=503)
+        msg = str(e)
+        if not msg.startswith(("Drucker", "Kamera")):
+            from .camera import friendly
+            msg = friendly(e)
+        return JSONResponse({"error": msg}, status_code=503)
     return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 

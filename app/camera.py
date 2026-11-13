@@ -10,6 +10,18 @@ from urllib.parse import urljoin
 import requests
 
 log = logging.getLogger("camera")
+
+
+def friendly(e):
+    """Kamera-Fehler verständlich (statt „[Errno 113] No route to host“)."""
+    t = f"{type(e).__name__} {e}".lower()
+    if any(x in t for x in ("no route", "refused", "timed out", "timeout", "unreachable", "errno 113", "errno 111", "name or service")):
+        return "Drucker nicht erreichbar – ausgeschaltet oder nicht im WLAN"
+    if any(x in t for x in ("401", "403", "auth", "denied", "unauthorized")):
+        return "Kamera-Zugang abgelehnt – Zugangscode prüfen (Einstellungen → Drucker)"
+    if "ssl" in t or "eof" in t or "reset" in t:
+        return "Kamera-Verbindung abgebrochen – versuche es gleich wieder"
+    return f"Kamera gerade nicht verfügbar ({e})"
 IDLE_STOP = 30  # Stream beenden, wenn so lange niemand zuschaut
 
 
@@ -61,7 +73,7 @@ class BambuCamera:
                                     self.frame, self.frame_time, self.error = jpg, time.time(), ""
                                     self.new_frame.notify_all()
             except Exception as e:
-                self.error = f"Kamera: {e}"
+                self.error = friendly(e)
                 log.debug("Bambu-Kamera %s: %s", self.host, e)
                 time.sleep(3)
         self.thread = None

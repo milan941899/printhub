@@ -1055,3 +1055,11 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .strow .st-p { grid-column:1/-1; padding:6px 0 4px; }
 .strow.st-inv { background:color-mix(in srgb, var(--warn, #e0a000) 8%, transparent); }
 .st-bad { color:var(--warn, #c98a00); }
+
+/* Kamera, wenn der Drucker offline ist: schmale Leiste statt schwarzem Bild */
+.camthumb.off, .blk[data-b="camera"] .camthumb.off { width:100%; aspect-ratio:auto; min-height:0; height:auto; padding:10px 12px; background:var(--card2, var(--bg)); cursor:default; place-items:start; }
+.camthumb.off img, .camthumb.off .live, .camthumb.off .zoom { display:none; }
+.camthumb.off:hover { border-color:var(--line); box-shadow:none; }
+.camthumb.off .msg { font-size:13px; }
+.blk[data-b="camera"]:has(.camthumb.off) { min-height:0 !important; }
+.camrow:has(.camthumb.off) .camhint { display:none; }

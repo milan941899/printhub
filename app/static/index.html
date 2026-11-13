@@ -54,7 +54,7 @@ function camEl(id) {
     const live = document.createElement("span"); live.className = "live"; live.textContent = "LIVE";
     const zoom = document.createElement("span"); zoom.className = "zoom"; zoom.textContent = "⤢";
     wrap.append(img, msg, live, zoom);
-    wrap.onclick = () => openCam(id);
+    wrap.onclick = () => { if (!wrap.classList.contains("off")) openCam(id); };
     cams[id] = {wrap, img, msg, busy: false, url: null, last: 0, visible: true};
     if ("IntersectionObserver" in window)        // nur aktualisieren, solange das Bild im sichtbaren Bereich ist
       new IntersectionObserver(es => es.forEach(e => { cams[id].visible = e.isIntersecting; if (e.isIntersecting) cams[id].last = 0; })).observe(wrap);
@@ -90,6 +90,12 @@ async function camTick() {
   const now = Date.now();
   for (const [id, c] of Object.entries(cams)) {
     const big = bigCam === id;
+    // Drucker offline → schmale Leiste statt schwarzem Bild, nicht abfragen
+    const pr = (typeof lastPrinters !== "undefined" ? lastPrinters : []).find(p => p.id === id);
+    const off = pr && !pr.online;
+    c.wrap.classList.toggle("off", !!off);
+    if (off) { c.msg.textContent = "📷 Kamera aus – Drucker offline"; if (c.img.src) { c.img.removeAttribute("src"); c.url = null; } continue; }
+    if (c.msg.textContent.startsWith("📷 Kamera aus")) c.msg.textContent = "verbinde …";
     // klein: alle 3 s (Mobilfunk 10 s, Datensparmodus nur auf Antippen), nur wenn sichtbar · groß: so schnell wie möglich
     const every = PH.saving() ? Infinity : PH.cellular() ? 10000 : 3000;
     if (c.busy || (!big && (now - c.last < every || !c.wrap.isConnected || !c.visible))) {
