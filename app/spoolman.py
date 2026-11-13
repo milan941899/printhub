@@ -202,6 +202,7 @@ class Spoolman:
             "filament_id": fil.get("id"),
             "used": sp.get("used_weight") or 0,
             "first_used": sp.get("first_used"),
+            "last_used": sp.get("last_used"),
             "initial": sp.get("initial_weight") or fil.get("weight"),
             "price": sp.get("price") or fil.get("price"),
             "extruder_temp": fil.get("settings_extruder_temp"),

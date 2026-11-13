@@ -40,6 +40,7 @@
   <div class="mbox card pick">
     <h2 id="pk-title">Spule wählen</h2>
     <input id="pk-q" type="search" placeholder="Suchen: Hersteller, Farbe, Material …" autocomplete="off">
+    <div id="pk-mats" class="pk-mats"></div>
     <div id="pk-list"></div>
     <div class="mact"><button type="button" onclick="pickScan()">📷 Etikett scannen</button>
       <button type="button" onclick="pickSet(null)">— leer —</button><button type="button" onclick="pickClose()">Abbrechen</button></div>
@@ -209,7 +210,7 @@ function colorNear(a, b) { const x = hexRgb(a), y = hexRgb(b); if (!x || !y) ret
 function openPick(pid, key) {
   const p = lastPrinters.find(x => x.id === pid), s = p && p.slots.find(x => x.key === key);
   if (!s) return;
-  PK = {pid, key, s, open: null};
+  PK = {pid, key, s, open: null, mat: ""};
   document.getElementById("pk-title").textContent = `${s.label} – Spule wählen`;
   document.getElementById("pk-q").value = ""; pickRender();
   document.getElementById("m-pick").classList.add("open"); editing = true;
@@ -233,6 +234,7 @@ function pickGroups() {
     g.best = g.cur || opened[0] || fresh[0] || null;
     g.free = free; g.opened = opened; g.fresh = fresh;
     g.busy = !free.length ? g.rolls.filter(r => r.slot).map(r => r.slot) : [];
+    g.last = g.rolls.reduce((a, r) => Math.max(a, Date.parse(r.last_used || r.first_used || "") || 0), 0);
     g.score = (PK.s.material && sameMaterial(PK.s.material, g.material) ? 2 : 0) + colorNear(PK.s.color, g.color);
     return g;
   });
@@ -257,13 +259,24 @@ function pickRender() {
   if (!PK) return;
   const q = document.getElementById("pk-q").value.trim();
   let gs = pickGroups().sort((a, b) => a.name.localeCompare(b.name, "de"));
+  // Material-Chips zum Eingrenzen
+  const mats = [...new Set(gs.map(g => g.material).filter(Boolean))].sort();
+  document.getElementById("pk-mats").innerHTML = mats.length > 1 ? ["", ...mats].map(m =>
+    `<button type="button" class="${PK.mat === m ? "on" : ""}" onclick="PK.mat='${esc(m)}';pickRender()">${m ? esc(m) : "Alle"}</button>`).join("") : "";
+  if (PK.mat) gs = gs.filter(g => g.material === PK.mat);
   if (q) gs = gs.filter(g => pkMatch(q, `${g.name} ${g.material}`));
-  const top = q ? [] : gs.filter(g => g.score >= 2 && !g.busy.length && !g.cur).sort((a, b) => b.score - a.score).slice(0, 5);
+  let top = q ? [] : gs.filter(g => g.score >= 2 && !g.busy.length && !g.cur).sort((a, b) => b.score - a.score).slice(0, 5);
+  let topTitle = `Passt zu diesem Slot${PK.s.material ? ` (${esc(PK.s.material)})` : ""}`;
+  if (!q && !top.length) {          // Drucker meldet nichts (leerer Slot, fremde Rolle) → zuletzt benutzte / angebrochene zuerst
+    top = gs.filter(g => !g.busy.length && !g.cur && (g.last || g.opened.length))
+      .sort((a, b) => (b.last - a.last) || (b.opened.length - a.opened.length)).slice(0, 5);
+    topTitle = "Zuletzt benutzt";
+  }
   const cur = gs.filter(g => g.cur);
   const rest = gs.filter(g => !top.includes(g) && !g.cur).sort((a, b) => (a.busy.length ? 1 : 0) - (b.busy.length ? 1 : 0));
   const sec = (t, list) => list.length ? `<div class="pk-sec">${t}</div>${list.map(pickRow).join("")}` : "";
   document.getElementById("pk-list").innerHTML = (cur.length ? sec("Jetzt eingelegt", cur) : "") +
-    sec(`Passt zu diesem Slot${PK.s.material ? ` (${esc(PK.s.material)})` : ""}`, top) +
+    sec(topTitle, top) +
     sec(q ? "Treffer" : "Alle Sorten", rest) ||
     `<div class="muted" style="padding:12px 0">Nichts gefunden.</div>`;
 }
