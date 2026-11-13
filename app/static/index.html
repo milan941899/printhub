@@ -217,6 +217,22 @@ function openPick(pid, key) {
   if (!matchMedia("(pointer:coarse)").matches) setTimeout(() => document.getElementById("pk-q").focus(), 50);
   loadSpools(true).then(() => PK && pickRender());
 }
+// Antippen eines Slots: Die Übersicht zeichnet sich alle paar Sekunden neu. Fällt das genau zwischen Finger-runter und
+// Finger-hoch, geht der Klick verloren. Darum beim Berühren das Neuzeichnen kurz anhalten und den Slot selbst merken.
+let pkDown = null;
+document.addEventListener("pointerdown", e => {
+  const b = e.target.closest && e.target.closest(".aspool .overlay[data-key]");
+  if (!b) return;
+  pkDown = {pid: b.dataset.pid, key: b.dataset.key, x: e.clientX, y: e.clientY, t: Date.now()};
+  editing = true;
+  setTimeout(() => { if (!PK) editing = false; }, 1500);
+}, true);
+document.addEventListener("pointerup", e => {
+  const d = pkDown; pkDown = null;
+  if (!d || Date.now() - d.t > 1200 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12) return;   // war Scrollen
+  e.preventDefault(); openPick(d.pid, d.key);
+}, true);
+document.addEventListener("pointercancel", () => { pkDown = null; if (!PK) editing = false; }, true);
 function pickClose() { document.getElementById("m-pick").classList.remove("open"); editing = false; PK = null; }
 document.getElementById("pk-q").oninput = () => pickRender();
 function pickGroups() {
@@ -530,7 +546,7 @@ function aspool(p, s, i) {
     <div class="a-name">${name}</div>
     ${extra}
     ${p._first && p._first.has(s.key) ? `<div class="a-first" title="Gleiche Sorte liegt mehrfach im AMS – diese zuerst aufbrauchen (beim Sync diesen Slot wählen)">▲ zuerst</div>` : ""}
-    <button type="button" class="overlay" aria-label="${esc(s.label)}: Spule wählen" onclick="openPick('${p.id}','${s.key}')"></button>
+    <button type="button" class="overlay" aria-label="${esc(s.label)}: Spule wählen" data-pid="${p.id}" data-key="${esc(s.key)}"></button>
   </div>`;
 }
 
