@@ -1639,8 +1639,8 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 ft = scanmod.ocr_texts(img, small=False)
                 alltexts.extend(ft)
                 p = {**scanmod.parse_votes(ft), **p}
-        if not (ai and ai[0]):
-            local_rest()                            # ohne KI (oder KI fehlgeschlagen): eigene Erkennung komplett
+        if not (ai and ai[0]) or not (ai[0].get("material") and ai[0].get("color")):
+            local_rest()                            # ohne KI, KI fehlgeschlagen oder lückenhaft: eigene Erkennung komplett
         # „Nur wenn nötig“: KI erst, wenn Material oder Farbe fehlen
         if ai is None and ai_on and not (p.get("material") and p.get("color")):
             ai = aiscan.read(img, settings.get("ai_key"), settings.get("ai_model"))
@@ -1667,7 +1667,7 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 if d.get("color") and not d.get("hex_print"):
                     hx, _ = colormod.from_list(d["color"])
                     d["color_hex"] = hx or p.get("color_hex") or "999999"
-                p = {**p, **d}                     # KI-Werte haben Vorrang vor der eigenen Texterkennung
+                p = {**p, **{k: v for k, v in d.items() if v not in (None, "")}}   # KI-Werte haben Vorrang
         res["parsed"] = p
     if res.get("timing"):
         res["timing"]["total_ocr"] = round(time.time() - t1, 2)
@@ -1676,11 +1676,13 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         res["timing"]["cpus"] = scanmod._WORKERS
         res["timing"]["fast"] = bool(scanmod._fast_lang())
     # Nummern vom Etikett (Charge/Artikel, z. B. „04260702AJ“) – auch ohne Strichcode
-    res["ocr_codes"] = [c for c in scanmod.find_codes(alltexts) if _code_ok(c)][:3]
+    res["ocr_codes"] = [c for c in scanmod.find_codes(alltexts) if _code_ok(c) and c.count("-") < 3][:3]
     pp = res["parsed"]
     for k in ("sku", "batch"):                        # Datum/Uhrzeit („31/10/2019 01:54:40“) o. ä. ist keine Nummer
         if pp.get(k) and not _code_ok(str(pp[k])):
             pp.pop(k)
+    if pp.get("batch") and str(pp["batch"]).count("-") >= 3:
+        pp.pop("batch")                               # „A801-03-…-1000-0K“ ist eine Modellnummer (oft vom Karton dahinter), keine Charge
     res["sku"] = pp.get("sku")                       # Artikelnummer: pro Farbe eindeutig → starkes Merkmal
     if pp.get("batch") and not res["lot"]:
         b = pp["batch"]                              # „Batch number“ = Charge (Lesefehler „AJ“→„A)“ über find_codes korrigiert)
