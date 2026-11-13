@@ -1059,6 +1059,7 @@ function scanShow(d) {
       <div>Laden ${d.timing.decode} s · Strichcode ${d.timing.barcode} s</div>
       ${(d.timing.steps || []).map(x => `<div>${esc(x.name)}: ${x.runs}× · ${x.sec} s (längster ${x.max} s, ${x.mpx} MP)</div>`).join("")}
     </details>` : ""}
+    ${d.ai ? `<div class="small ${d.ai.error ? "muted" : ""}">🤖 KI-Test: ${d.ai.error ? esc(d.ai.error) : `gelesen in ${d.ai.sec} s (${esc(d.ai.fields.join(", ") || "nichts")})`}</div>` : ""}
     ${codeMsg(d)}
     ${p.color && !p.material && (d.matches || []).length > 1 && !d.exact_fid ? `<div class="wres small codemsg multi">⚠ Material auf dem Foto nicht erkannt – bitte unten die richtige Sorte wählen.</div>` : ""}
     ${!p.color ? `<div class="wres small codemsg multi">⚠ Farbe auf dem Foto nicht erkannt – bitte unten die Sorte wählen oder <a href="#" onclick="event.preventDefault();scanStart()">nochmal fotografieren</a> (gerade, ohne Schatten, Etikett groß im Bild).</div>` : ""}

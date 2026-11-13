@@ -344,6 +344,28 @@
   </section>
 
   <section class="card">
+    <div class="label">KI-Etiketterkennung (Test)</div>
+    <div class="d muted small" style="margin:6px 0 4px">Liest das Etikett beim Rolle-Scannen zusätzlich mit Google Gemini – robuster bei unscharfen oder schattigen Fotos. Gratis-Schlüssel: <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey ↗</a>. Im Gratis-Kontingent kann Google die Fotos zur Verbesserung nutzen.</div>
+    <div class="row">
+      <div><div class="t">Einschalten</div><div class="d">Aus = wie bisher nur Texterkennung am Tower</div></div>
+      <label class="switch"><input type="checkbox" data-k="ai_enabled"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">API-Schlüssel</div><div class="d">Google AI Studio</div></div>
+      <input type="password" data-k="ai_key" data-secret autocomplete="off" style="width:230px">
+    </div>
+    <div class="row">
+      <div><div class="t">Wann</div><div class="d">„Nur wenn nötig“ spart Kontingent</div></div>
+      <select data-k="ai_mode" style="width:180px"><option value="fallback">Nur wenn nötig</option><option value="always">Immer</option></select>
+    </div>
+    <div class="row">
+      <div><div class="t">Modell</div><div class="d">Lite = mehr Gratis-Anfragen pro Tag</div></div>
+      <input type="text" data-k="ai_model" style="width:230px" list="ai-models">
+      <datalist id="ai-models"><option value="gemini-flash-lite-latest"><option value="gemini-flash-latest"></datalist>
+    </div>
+  </section>
+
+  <section class="card">
     <div class="label">Gelernte Bambu-Profile</div>
     <div class="d muted small" style="margin:6px 0 4px">Wählst du in Bambu Studio (Gerät → Slot) ein eigenes Profil, merkt PrintHub es sich pro Filamentsorte und stellt es bei der nächsten Zuweisung automatisch ein.</div>
     <div id="profiles" class="muted small">Lade …</div>

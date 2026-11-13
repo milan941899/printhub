@@ -38,6 +38,7 @@ from .qr import QR
 from .settings import Settings
 from .shelly import Shelly
 from . import labelprint
+from . import aiscan          # TEST: KI-Etiketterkennung (entfernbar)
 from .spoolman import Spoolman
 from .telegram import Telegram
 from .power import Power
@@ -1476,6 +1477,20 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             alltexts += ft
             full = scanmod.parse_votes(ft)
             p = {**full, **p}
+        # --- KI-Test (Gemini): nur wenn eingeschaltet; „fallback“ = nur wenn Material oder Farbe fehlen ---
+        if (settings.get("ai_enabled") and settings.get("ai_key")
+                and (settings.get("ai_mode") == "always" or not (p.get("material") and p.get("color")))):
+            d, sec, err = aiscan.read(img, settings.get("ai_key"), settings.get("ai_model"))
+            res["ai"] = {"sec": round(sec, 1), "error": err, "fields": sorted(d) if d else []}
+            scanmod.TRACE.append(("KI " + (settings.get("ai_model") or ""), 1, round(sec, 2), round(sec, 2), 0))
+            if err:
+                log.info("Scan: KI-Test fehlgeschlagen: %s", err)
+            if d:
+                alltexts.append(aiscan.as_text(d))
+                if d.get("color") and not d.get("hex_print"):
+                    hx, _ = colormod.from_list(d["color"])
+                    d["color_hex"] = hx or p.get("color_hex") or "999999"
+                p = {**p, **d}                     # KI-Werte haben Vorrang vor der eigenen Texterkennung
         res["parsed"] = p
     if res.get("timing"):
         res["timing"]["total_ocr"] = round(time.time() - t1, 2)
@@ -3251,7 +3266,7 @@ STARTED_AT = time.time()
 
 
 def _secret_values():
-    vals = [settings.get(k) for k in ("tg_token", "ntfy_token", "bambuddy_key", "pin_hash")]
+    vals = [settings.get(k) for k in ("tg_token", "ntfy_token", "bambuddy_key", "ai_key", "pin_hash")]
     for pc in cfg.get("printers", []):
         vals += [pc.get("access_code"), pc.get("api_key")]
     return [v for v in vals if v]

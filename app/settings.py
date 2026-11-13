@@ -8,7 +8,7 @@ from .notify import DEFAULT_EVENTS, EVENTS, PHOTO_EVENTS
 ALLOWED = {"notify_events": EVENTS, "photo_events": ["finish", "fail"], "notify_photo": PHOTO_EVENTS, "tg_events": EVENTS}
 NEW_IN_V2 = ["offline", "waiting", "plate", "power", "service", "maintenance"]   # neue Standard-Ereignisse
 HIDDEN = {"pin_hash", "pin_salt", "auth_secret"}   # nie an den Browser geben
-SECRET = {"bambuddy_key", "ntfy_token", "tg_token"}              # setzbar, aber nur als „gesetzt“ zurückgeben
+SECRET = {"bambuddy_key", "ntfy_token", "tg_token", "ai_key"}              # setzbar, aber nur als „gesetzt“ zurückgeben
 
 # Schlüssel: (Typ, Standardwert)
 SPEC = {
@@ -54,6 +54,10 @@ SPEC = {
     "power_off_temp": (float, 45.0),       # erst aus, wenn die Düse darunter ist (°C)
     "power_after_min": (float, 10.0),      # Wartezeit nach Druckende (min)
     "power_idle_min": (float, 30.0),       # Leerlauf ohne Druck (z. B. von Hand eingeschaltet) (min)          # Fortschritt im Browser-Tab (Titel + Symbol)
+    "ai_enabled": (bool, False),           # TEST: Etikett zusätzlich mit Gemini lesen (entfernbar)
+    "ai_key": (str, ""),
+    "ai_model": (str, "gemini-flash-lite-latest"),
+    "ai_mode": (str, "fallback"),          # fallback | always
     "backup_auto": (str, "off"),           # off | daily | weekly
     "backup_hour": (int, 3),
     "backup_keep": (int, 14),
