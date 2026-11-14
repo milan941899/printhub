@@ -1616,7 +1616,8 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             return bool(col and pv.get("material"))
         # KI: bei „Immer“ läuft die KI gleichzeitig mit der eigenen Erkennung (die dann nur die schnelle Stufe macht)
         ai_on = bool(settings.get("ai_enabled") and settings.get("ai_key"))
-        ai_fut = (_AI_POOL.submit(aiscan.read, img, settings.get("ai_key"), settings.get("ai_model"))
+        ai_info = {}
+        ai_fut = (_AI_POOL.submit(aiscan.read, img, settings.get("ai_key"), settings.get("ai_model"), info=ai_info)
                   if ai_on and settings.get("ai_mode") == "always" else None)
         for c in codes:
             if c.get("box"):
@@ -1651,7 +1652,7 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             local_rest()                            # ohne KI, KI fehlgeschlagen oder lückenhaft: eigene Erkennung komplett
         # „Nur wenn nötig“: KI erst, wenn Material oder Farbe fehlen
         if ai is None and ai_on and not (p.get("material") and p.get("color")):
-            ai = aiscan.read(img, settings.get("ai_key"), settings.get("ai_model"))
+            ai = aiscan.read(img, settings.get("ai_key"), settings.get("ai_model"), info=ai_info)
         if ai is not None:
             d, sec, err = ai
             if d:
@@ -1663,7 +1664,13 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
                 if mo and not p.get("sku"):
                     d["sku"] = mo
             res["ai"] = {"sec": round(sec, 1), "error": err, "fields": sorted(d) if d else [], "parallel": bool(ai_fut)}
-            scanmod.TRACE.append(("KI " + (settings.get("ai_model") or "") + (" (gleichzeitig)" if ai_fut else ""),
+            extra = [f"Bild {ai_info['size']} {ai_info['kb']} kB"] if ai_info.get("size") else []
+            if ai_info.get("open", 0) > 1:
+                extra.append(f"{ai_info['open']} KI-Anfragen gleichzeitig")
+            if ai_info.get("retries"):
+                extra.append(f"{ai_info['retries']}× wiederholt" + (f" ({ai_info['waited']} s Minutenlimit)" if ai_info.get("waited") else ""))
+            scanmod.TRACE.append(("KI " + (settings.get("ai_model") or "") + (" (gleichzeitig)" if ai_fut else "")
+                                  + (" [" + ", ".join(extra) + "]" if extra else ""),
                                   1, round(sec, 2), round(sec, 2), 0))
             if err:
                 log.info("Scan: KI fehlgeschlagen: %s", err)

@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import re
+import threading
 import time
 
 import requests
@@ -25,12 +26,22 @@ Lies es und antworte NUR mit JSON in dieser Form (fehlende Werte = null, nichts 
 Lies nur das Etikett der vorderen/größten Rolle, nicht Etiketten im Hintergrund."""
 
 
-def _jpeg(img, maxpx=1600):
+MAXPX = 1280          # lange Seite fürs KI-Bild: Etikettschrift bleibt lesbar, Google rechnet weniger Bildkacheln (schneller)
+
+
+def _jpeg(img, maxpx=MAXPX, info=None):
     im = img.convert("RGB")
     im.thumbnail((maxpx, maxpx))
     b = io.BytesIO()
-    im.save(b, "JPEG", quality=85)
+    im.save(b, "JPEG", quality=80)
+    if info is not None:
+        info["size"] = f"{im.width}×{im.height}"
+        info["kb"] = round(len(b.getvalue()) / 1024)
     return b.getvalue()
+
+
+_OPEN = []                    # laufende KI-Anfragen (ihre info-Dicts) – Stapel schickt bis zu 2 gleichzeitig
+_OPEN_LOCK = threading.Lock()
 
 
 _PAUSE = {"until": 0, "why": ""}
@@ -92,14 +103,30 @@ def _quota(r):
     return ("PerDay" in txt or "per day" in txt.lower()), wait
 
 
-def read(img, key, model="gemini-flash-lite-latest", timeout=20):
-    """→ (dict mit Etikett-Werten oder None, Sekunden, Fehlertext oder None)"""
-    t = time.time()
+def read(img, key, model="gemini-flash-lite-latest", timeout=20, info=None):
+    """→ (dict mit Etikett-Werten oder None, Sekunden, Fehlertext oder None)
+    info (optional): wird gefüllt mit size, kb, open (KI-Anfragen gleichzeitig offen), retries – fürs Protokoll"""
+    if info is None:
+        info = {}
     if paused():
         return None, 0, paused()
+    with _OPEN_LOCK:
+        _OPEN.append(info)
+        for i in _OPEN:                       # höchste Zahl gleichzeitig offener Anfragen während dieser Anfrage
+            i["open"] = max(i.get("open", 0), len(_OPEN))
+    try:
+        return _read(img, key, model, timeout, info)
+    finally:
+        with _OPEN_LOCK:
+            _OPEN.remove(info)
+
+
+def _read(img, key, model, timeout, info):
+    t = time.time()
+    info["retries"] = 0
     body = {
         "contents": [{"parts": [{"text": PROMPT},
-                                {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(_jpeg(img)).decode()}}]}],
+                                {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(_jpeg(img, info=info)).decode()}}]}],
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
     try:
@@ -111,15 +138,19 @@ def read(img, key, model="gemini-flash-lite-latest", timeout=20):
             except requests.RequestException:
                 if attempt == 2:
                     raise
+                info["retries"] += 1
                 time.sleep(0.5)
                 continue
             if r.status_code == 429 and attempt == 1:
                 day, wait = _quota(r)
                 if not day and wait <= 30:               # Minutenlimit: Google sagt, wie lange warten → einmal nachholen
+                    info["retries"] += 1
+                    info["waited"] = max(wait, 2)
                     time.sleep(max(wait, 2))
                     continue
             if r.status_code < 500 or attempt == 2:
                 break
+            info["retries"] += 1
             time.sleep(0.5)
         if r.status_code >= 500:
             return None, time.time() - t, f"Google gerade überlastet/gestört ({r.status_code}) – eigene Erkennung verwendet"
