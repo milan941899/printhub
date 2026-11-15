@@ -265,9 +265,10 @@ function pickRow(g) {
     : [g.fresh.length ? `${g.fresh.length} voll` : "", g.opened.length ? `${g.opened.length} angebrochen (${Math.round(g.opened[0].remaining)} g übrig)` : ""].filter(Boolean).join(" · ");
   const id = g.name.replace(/[^a-z0-9]/gi, "_");
   const more = g.free.length > 1 && PK.open === id;
-  return `<div class="pk-row${g.busy.length ? " busy" : ""}${g.cur ? " cur" : ""}">
+  const fill = g.best && g.best.remaining != null && g.best.initial ? g.best.remaining / g.best.initial : 1;
+  return `<div class="pk-row${g.busy.length ? " busy" : ""}${g.cur ? " cur" : ""}" style="--c:${g.color || "#64748b"}">
     <button type="button" class="pk-main" ${g.best ? `onclick="pickSet(${g.best.id})"` : "disabled"}>
-      <span class="dot" style="background:${g.color || "#64748b"}"></span>
+      ${PH.spool(g.color, fill, 34)}
       <span class="pk-t"><span class="pk-n">${esc(stripMat(g.name, g.material))}</span> <span class="pk-m">${esc(g.material)}</span>
       <span class="pk-i">${info}</span></span></button>
     ${g.free.length > 1 ? `<button type="button" class="pk-more" onclick="PK.open=PK.open==='${id}'?null:'${id}';pickRender()" title="Bestimmte Rolle wählen">${more ? "▾" : "▸"}</button>` : ""}

@@ -1108,3 +1108,16 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .rlog summary { cursor:pointer; font-size:13px; color:var(--muted); margin:6px 0; }
 .rlog-i { padding:4px 0; border-bottom:1px solid var(--line); }
 .rlog #e-log { max-height:240px; overflow:auto; }
+
+/* Spulen-Grafik, farbiger Streifen, große Restanzeige */
+.spl { flex:none; display:block; filter:drop-shadow(0 1px 1.5px #0005); }
+.pk-row { position:relative; border-left:4px solid var(--c); padding-left:6px; border-radius:2px; }
+.bigrest { margin:6px 0 12px; }
+.br-top { display:flex; gap:16px; align-items:center; }
+.br-g { font-size:44px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums; }
+.br-g small { font-size:18px; font-weight:600; color:var(--muted); }
+.br-scale { display:flex; justify-content:space-between; align-items:flex-end; height:22px; margin-top:12px; }
+.br-scale i { width:2px; height:10px; background:var(--line); border-radius:1px; }
+.br-scale i.big { height:20px; }
+.br-scale i.on { background:var(--c); }
+.br-lab { display:flex; justify-content:space-between; font-variant-numeric:tabular-nums; }

@@ -37,6 +37,7 @@
         <button onclick="this.closest('details').open=false;openMulti()">🎨 Serie: mehrere Farben einer Sorte</button>
         <button onclick="this.closest('details').open=false;openStack()">📚 Stapel: gemischte Rollen</button>
         <button onclick="this.closest('details').open=false;openShop()">🛒 Einkaufsliste</button>
+        <button class="nfcread" style="display:none" onclick="this.closest('details').open=false;nfcRead()">📡 NFC-Tag lesen</button>
         <button onclick="this.closest('details').open=false;openNames()">Aa Namen vereinheitlichen</button>
         <button onclick="this.closest('details').open=false;fsel.clear();bulkMode=!bulkMode;render()">☑ Sorten auswählen (gemeinsam bearbeiten)</button>
       </div></details>
@@ -163,6 +164,31 @@
   </form>
 </div>
 
+<!-- Dialog: NFC-Tag -->
+<div class="modal" id="m-nfc">
+  <div class="mbox card">
+    <h2 id="n-title">NFC-Tag</h2>
+    <div class="muted small">Auf den Tag (NTAG215) kommen die <b>Filamentdaten im OpenSpool-Format</b> – lesbar für OpenSpool-Geräte wie die
+      SpoolStation am Snapmaker U1 – und der <b>Link zu PrintHub</b> („Welcher Slot?“).</div>
+    <label class="chk"><input type="checkbox" id="n-urlfirst" onchange="nfcFill()"> Link zuerst – das Handy öffnet PrintHub beim Antippen des Tags
+      <span class="muted">(dann lesen manche OpenSpool-Geräte den Tag nicht)</span></label>
+    <div id="n-direct"></div>
+    <details id="n-manual"><summary class="small">Mit der App „NFC Tools“ beschreiben</summary>
+      <ol class="small" style="padding-left:18px;margin:8px 0">
+        <li>NFC Tools → <b>Schreiben</b> → <b>Datensatz hinzufügen</b>.</li>
+        <li id="n-step1"></li>
+        <li id="n-step2"></li>
+        <li><b>Schreiben</b> tippen und den Tag ans Handy halten.</li>
+      </ol>
+      <div class="field"><span class="lab">OpenSpool-Daten (JSON)</span><textarea id="n-json" rows="4" readonly style="font-family:monospace;font-size:12px"></textarea></div>
+      <button type="button" class="small-btn" onclick="nfcCopy('n-json')">📋 Daten kopieren</button>
+      <div class="field" style="margin-top:8px"><span class="lab">Link</span><input id="n-url" readonly></div>
+      <button type="button" class="small-btn" onclick="nfcCopy('n-url')">📋 Link kopieren</button>
+    </details>
+    <div class="mact"><button type="button" onclick="closeM()">Schließen</button></div>
+  </div>
+</div>
+
 <!-- Dialog: Einkaufsliste -->
 <div class="modal" id="m-shop">
   <div class="mbox card">
@@ -265,6 +291,7 @@
 <div class="modal" id="m-spool">
   <form class="mbox card" onsubmit="event.preventDefault();saveSpool()">
     <h2 id="e-title">Rolle bearbeiten</h2>
+    <div class="bigrest" id="e-big"></div>
     <div class="fgrid">
       <div class="field"><span class="lab">Filament neu (g)</span><input id="e-initial" type="number" min="1" step="1"></div>
       <div class="field"><span class="lab">Filament übrig (g)</span><input id="e-rest" type="number" min="0" step="1"></div>
@@ -345,6 +372,7 @@ async function load() {
   const cur = $("mat").value;
   $("mat").innerHTML = `<option value="">Alle</option>` + mats.map(m => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join("");
   render(); stResumeBtn();
+  if ("NDEFReader" in window) document.querySelectorAll(".nfcread").forEach(b => b.style.display = "");
   if (location.hash === "#scan" && !window._scanHash) { window._scanHash = 1; history.replaceState(null, "", location.pathname + location.search); scanStart(); }
   // Link aus der Meldung „Spule leer“: /lager?wiegen=12 öffnet gleich den Wiegen-Dialog
   const w = +new URLSearchParams(location.search).get("wiegen");
@@ -472,13 +500,17 @@ function spoolList(f, sp) {
   </div>`;
 }
 function selList(ids, on) { ids.forEach(i => on ? sel.add(i) : sel.delete(i)); render(); }
+function sortFill(f, sp) {          // Füllstand einer Sorte (Rest / Neu über alle Rollen)
+  const init = sp.reduce((a, s) => a + (s.initial || f.weight || 1000), 0);
+  return init ? sp.reduce((a, s) => a + (s.remaining ?? (s.initial || f.weight || 1000)), 0) / init : 0;
+}
 function compactRow(f, sp) {
   const isOpen = open.has(f.id) || !!V.status;
   const rem = sp.reduce((a, s) => a + (s.remaining || 0), 0);
   return `<div class="crow ${isLow(f) ? "low" : ""} ${isOpen ? "open" : ""}">
     <div class="crow-top" onclick="toggle(${f.id})">
       ${bulkMode ? `<input type="checkbox" class="fselbox" ${fsel.has(f.id) ? "checked" : ""} onclick="event.stopPropagation();fselToggle(${f.id}, this.checked)">` : ""}
-      <span class="csw" style="background:${f.color || "transparent"}"></span>
+      ${PH.spool(f.color, sortFill(f, sp), 30)}
       <span class="cname">${esc(f.name)} <span class="mtag">${esc(f.material)}</span>${V.group !== "vendor" ? ` <span class="muted small">${esc(f.vendor || "")}</span>` : ""}${badges(f, sp)}</span>
       <span class="ccount"><b>${sp.length}</b> <span class="muted">· ${g(rem)}</span></span>
       <span class="chev">${isOpen ? "▾" : "▸"}</span>
@@ -491,7 +523,7 @@ function filRow(f, sp = f.spools) {
   return `<div class="fil ${isLow(f) ? "low" : ""}">
     <div class="fil-top" onclick="toggle(${f.id})">
       ${bulkMode ? `<input type="checkbox" class="fselbox" ${fsel.has(f.id) ? "checked" : ""} onclick="event.stopPropagation();fselToggle(${f.id}, this.checked)">` : ""}
-      <span class="sw" style="background:${f.color || "transparent"}"></span>
+      ${PH.spool(f.color, sortFill(f, sp), 40)}
       <div class="fil-main">
         <div class="fil-name">${esc(f.name)} <span class="mtag">${esc(f.material)}</span>${V.group !== "vendor" ? ` <span class="muted small">${esc(f.vendor || "")}</span>` : ""}${badges(f, sp)}</div>
         <div class="muted small">${infoLine(f, sp)}</div>
@@ -633,7 +665,7 @@ function spoolRow(f, s) {
       ${s.dry ? `<button class="small-btn" title="Gerade getrocknet (z. B. im SH02) – Zähler zurücksetzen" onclick="dried(${s.id})">🔥</button>` : ""}
       <button class="small-btn" title="Wiegen: Bruttogewicht eingeben" onclick="openWeigh(${s.id})">⚖</button>
       <button class="small-btn" title="Rolle bearbeiten" onclick="openSpool(${s.id})">✎</button>
-      <button class="small-btn" title="NFC-/QR-Link kopieren" onclick="copyLink(${s.id})">🔗</button>
+      <button class="small-btn" title="NFC-Tag beschreiben / Link" onclick="openNfc(${s.id})">📡</button>
       <a class="small-btn" title="In Spoolman öffnen" target="_blank" href="${D.spoolman_url}/spool/show/${s.id}">↗</a>
       <button class="small-btn" title="Leer – archivieren (bleibt in Spoolman für die Statistik)" onclick="archive(${s.id})">📦</button>
       <button class="small-btn danger" title="Endgültig löschen (z. B. Fehleingabe)" onclick="delSpools([${s.id}])">✕</button>
@@ -690,6 +722,76 @@ async function delSpools(ids) {
   d.deleted.forEach(i => sel.delete(i));
   PH.toast(`${d.deleted.length} gelöscht` + (d.skipped.length ? ` – übersprungen (steckt im Drucker): #${d.skipped.join(", #")}` : ""), !!d.skipped.length);
   load();
+}
+// ---------- NFC (OpenSpool + Link) ----------
+let NFC = null;
+async function openNfc(id) {
+  const s = _spool(id), f = _fil(id);
+  const d = await (await fetch("/api/labels?spools=" + id)).json();
+  const url = d.labels[0]?.url || `${location.origin}/assign?spool=${id}`;
+  const os = {protocol: "openspool", version: "1.0", brand: f.vendor || "Generic", type: f.material || "PLA",
+    color_hex: (f.color || "#FFFFFF").replace("#", "").toUpperCase().slice(0, 6), spool_id: String(id)};
+  const et = +f.extruder_temp, bt = +f.bed_temp;
+  if (et) { os.min_temp = String(et - 10); os.max_temp = String(et + 10); }
+  if (bt) { os.bed_min_temp = String(bt); os.bed_max_temp = String(bt); }
+  const sub = (f.name || "").replace(new RegExp("\\b" + (f.material || "").replace(/[+]/g, "\\+") + "\\b", "i"), "").trim();
+  if (sub) os.subtype = sub.slice(0, 24);
+  NFC = {id, url, json: JSON.stringify(os)};
+  $("n-title").textContent = `NFC-Tag – Rolle #${id} ${f.vendor} ${f.name}`;
+  try { $("n-urlfirst").checked = localStorage.getItem("ph-nfc-urlfirst") === "1"; } catch {}
+  nfcFill();
+  $("m-nfc").classList.add("open");
+}
+function nfcFill() {
+  const uf = $("n-urlfirst").checked;
+  try { localStorage.setItem("ph-nfc-urlfirst", uf ? "1" : ""); } catch {}
+  $("n-json").value = NFC.json; $("n-url").value = NFC.url;
+  const a = `<b>Daten → Benutzerdefinierter Datensatz</b>, Typ <code>application/json</code>, Inhalt = OpenSpool-Daten (unten kopieren).`;
+  const b = `<b>URL / URI</b> → Link (unten kopieren).`;
+  $("n-step1").innerHTML = uf ? b : a; $("n-step2").innerHTML = uf ? a : b;
+  $("n-direct").innerHTML = "NDEFReader" in window
+    ? `<button type="button" class="primary" style="margin:8px 0" onclick="nfcWrite(this)">📡 Jetzt auf Tag schreiben</button>
+       <div class="muted small" id="n-st"></div>`
+    : `<div class="wres small" style="margin:8px 0">Direkt aus PrintHub schreiben geht nur in Chrome auf Android über <b>https</b>
+       (z. B. Tailscale). Hier bitte mit „NFC Tools“ (unten).</div>`;
+  $("n-manual").open = !("NDEFReader" in window);
+}
+async function nfcWrite(b) {
+  b.disabled = true; $("n-st").textContent = "Tag jetzt ans Handy halten …";
+  try {
+    const recs = [{recordType: "mime", mediaType: "application/json", data: new TextEncoder().encode(NFC.json)}, {recordType: "url", data: NFC.url}];
+    await new NDEFReader().write({records: $("n-urlfirst").checked ? recs.reverse() : recs});
+    $("n-st").textContent = ""; PH.toast(`Tag für Rolle #${NFC.id} geschrieben ✓`);
+  } catch (e) { $("n-st").textContent = "Fehlgeschlagen: " + (e.message || e); }
+  finally { b.disabled = false; }
+}
+function nfcCopy(id) {
+  const el = $(id); el.select(); el.setSelectionRange(0, 9999);
+  let ok = false; try { ok = document.execCommand("copy"); } catch {}
+  PH.toast(ok ? "Kopiert" : "Bitte markieren und kopieren", !ok);
+}
+// Tag lesen (nur Chrome/Android über https): OpenSpool → Rolle/Sorte finden
+async function nfcRead() {
+  try {
+    const r = new NDEFReader(); await r.scan(); PH.toast("Tag ans Handy halten …");
+    r.onreading = ev => {
+      let os = null, url = null;
+      for (const rec of ev.message.records) {
+        const txt = new TextDecoder().decode(rec.data);
+        if (rec.recordType === "url") url = txt;
+        else { try { const j = JSON.parse(txt); if (j.protocol === "openspool" || j.type) os = j; } catch {} }
+      }
+      const sid = os && +os.spool_id;
+      if (sid && _spool(sid)) return location.href = `/assign?spool=${sid}`;
+      if (url && url.includes("/assign?spool=")) return location.href = url;
+      if (os) {
+        const f = D.filaments.find(x => (x.vendor || "").toLowerCase() === (os.brand || "").toLowerCase() && x.material.toUpperCase() === (os.type || "").toUpperCase()
+          && (x.color || "").replace("#", "").toUpperCase() === (os.color_hex || "").toUpperCase().slice(0, 6));
+        if (f) { PH.toast(`Tag: ${f.vendor} ${f.name} – Rollen hinzufügen`); return openAdd(f.id); }
+        PH.toast(`Tag: ${os.brand || ""} ${os.type || ""} #${os.color_hex || ""} – nicht im Lager`, true);
+      } else PH.toast("Kein OpenSpool-/PrintHub-Tag", true);
+    };
+  } catch (e) { PH.toast("NFC lesen geht nicht: " + (e.message || e), true); }
 }
 async function copyLink(id) {
   const d = await (await fetch("/api/labels?spools=" + id)).json();
@@ -935,7 +1037,7 @@ function shopItems() {
 function openShop() {
   const it = shopItems(), sum = it.reduce((a, x) => a + (x.f.price ? x.f.price * x.need : 0), 0);
   $("shop-list").innerHTML = it.length ? it.map(({f, need}) => `<div class="crow" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
-      <span class="dot" style="background:${f.color || "#999"};width:16px;height:16px;border-radius:50%;flex:none"></span>
+      ${PH.spool(f.color, sortFill(f, f.spools), 30)}
       <div style="flex:1;min-width:0"><b>${esc(f.vendor)}</b> ${esc(f.name)} <span class="muted">${esc(f.material)}</span>
         <div class="small muted">${f.full} von ${f.min} vollen Rollen${f.price ? ` · zuletzt ${eur(f.price)} je Rolle` : ""}</div></div>
       <b style="white-space:nowrap">${need}×</b></div>`).join("") +
@@ -1547,8 +1649,23 @@ function openSpool(id) {
   $("e-lot").value = s.lot || ""; $("e-comment").value = s.comment || ""; $("e-forfil").checked = false;
   $("e-hint").textContent = s.in_printer ? "Der Ort wird von PrintHub gesetzt, solange die Rolle im Drucker steckt." : "";
   $("e-logbox").open = false; $("e-log").innerHTML = "";
+  bigRest(f, s);
   $("m-spool").classList.add("open");
 }
+function bigRest(f, s) {
+  const init = s.initial || f.weight || 1000, rest = s.remaining ?? init, used = Math.max(0, init - rest);
+  const ticks = Array.from({length: 41}, (_, i) => `<i class="${i / 40 <= rest / init ? "on" : ""}${i % 10 === 0 ? " big" : ""}"></i>`).join("");
+  $("e-big").innerHTML = `<div class="br-top">${PH.spool(f.color, rest / init, 96)}
+      <div><div class="br-g">${Math.round(rest).toLocaleString("de-DE")}<small> g</small></div>
+      <div class="muted">von ${Math.round(init).toLocaleString("de-DE")} g · ${Math.round(used).toLocaleString("de-DE")} g verbraucht</div>
+      ${s.in_printer ? `<div class="small" style="margin-top:4px">🖨 ${esc(s.location)}</div>` : ""}</div></div>
+    <div class="br-scale" style="--c:${f.color || "#94a3b8"}">${ticks}</div>
+    <div class="br-lab muted small"><span>0</span><span>${Math.round(init / 2)}</span><span>${Math.round(init)} g</span></div>`;
+}
+document.addEventListener("input", e => { if (e.target.id === "e-rest" || e.target.id === "e-initial") {
+  const id = +$("m-spool").dataset.id, f = _fil(id), s = {..._spool(id)};
+  if ($("e-rest").value !== "") s.remaining = +$("e-rest").value; if ($("e-initial").value) s.initial = +$("e-initial").value;
+  bigRest(f, s); } });
 async function spoolLog() {
   const id = +$("m-spool").dataset.id;
   $("e-log").innerHTML = `<span class="muted">lädt …</span>`;

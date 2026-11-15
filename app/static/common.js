@@ -1,6 +1,20 @@
 // Gemeinsam für alle PrintHub-Seiten: Theme, Navigation, Formatierung, Hinweise
 (function () {
   window.PH = {
+    // Spule in Seitenansicht: Wicklung in Filamentfarbe, Dicke = Restmenge (fill 0…1)
+    spool(color, fill = 1, h = 34) {
+      const c = /^#?[0-9a-f]{6}$/i.test(color || "") ? (color[0] === "#" ? color : "#" + color) : "#9aa4b2";
+      const f = Math.max(0, Math.min(1, +fill || 0)), r = 8 + 18 * f, y0 = 32 - r, y1 = 32 + r;
+      const wind = f > 0.02 ? `<rect x="15" y="${y0}" width="28" height="${2 * r}" fill="${c}"/>
+        <rect x="15" y="${y0}" width="28" height="${(2 * r) * 0.28}" fill="#fff" opacity=".22"/>
+        <rect x="15" y="${y1 - 2 * r * 0.25}" width="28" height="${2 * r * 0.25}" fill="#000" opacity=".2"/>
+        <ellipse cx="43" cy="32" rx="${r * 0.27}" ry="${r}" fill="${c}"/>` : "";
+      return `<svg class="spl" viewBox="0 0 60 64" width="${Math.round(h * 0.94)}" height="${h}" aria-hidden="true">
+        <ellipse cx="15" cy="32" rx="8.5" ry="30" fill="#8a6440"/><ellipse cx="15" cy="32" rx="7" ry="28" fill="#a87b4f"/>
+        <rect x="15" y="24" width="28" height="16" fill="#6b4c31"/>${wind}
+        <ellipse cx="44" cy="32" rx="8.5" ry="30" fill="#c99a62"/><ellipse cx="44" cy="32" rx="6.5" ry="26" fill="#d6a971"/>
+        <ellipse cx="44" cy="32" rx="2.6" ry="7" fill="#2a1e14"/></svg>`;
+    },
     esc: s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])),
     eur: v => v == null ? "–" : Number(v).toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €",
     kwh: v => v == null ? "–" : Number(v).toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " kWh",
