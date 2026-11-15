@@ -1250,3 +1250,16 @@ table.list tr.dayrow td { background:var(--well); padding:8px 10px; font-size:13
   .he-opt span { font-size:12px; }
 }
 .fanspin { transform-box:fill-box; transform-origin:center; will-change:transform; }
+
+/* Benachrichtigungen: Wege je Meldung als Text-Schalter */
+.evr { cursor:default; justify-content:space-between; flex-wrap:wrap; }
+.evr > span:first-child { flex:1 1 180px; }
+.evcs { display:flex; gap:5px; flex:none; align-items:center; }
+.evc { border:1px solid var(--line); background:transparent; color:var(--muted); border-radius:99px; padding:3px 10px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+.evc:hover { border-color:var(--acc); }
+.evc.on.tg { background:color-mix(in srgb, #2aa3e0 22%, transparent); border-color:#2aa3e0; color:var(--fg); }
+.evc.on.nt { background:color-mix(in srgb, #4caf8a 22%, transparent); border-color:#4caf8a; color:var(--fg); }
+.evc.ph { padding:3px 8px; opacity:.45; filter:grayscale(1); } .evc.ph.on { opacity:1; filter:none; border-color:var(--acc); }
+.evc-sp { width:34px; flex:none; }
+.evall { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.evall-g { display:flex; align-items:center; gap:4px; font-size:12px; } .evall-g b { margin-right:2px; }

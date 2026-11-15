@@ -567,29 +567,31 @@
 <div data-tab="meldungen">
   <div class="set-grid">
   <section class="card">
-    <div class="label">Wochenbericht</div>
-    <div class="d muted small" style="margin:6px 0 4px">Einmal pro Woche per Telegram/ntfy: Drucke, Druckzeit, Filament, Strom, Kosten und was nachzukaufen ist (letzte 7 Tage).</div>
-    <div class="row">
-      <div><div class="t">Wann</div></div>
-      <div style="display:flex;gap:6px"><select data-k="weekly_day" style="width:140px"><option value="off">aus</option><option value="0">Montag</option><option value="1">Dienstag</option>
-        <option value="2">Mittwoch</option><option value="3">Donnerstag</option><option value="4">Freitag</option><option value="5">Samstag</option><option value="6">Sonntag</option></select>
-      <select data-k="weekly_hour" style="width:90px"><option value="0">00:00</option><option value="1">01:00</option><option value="2">02:00</option><option value="3">03:00</option><option value="4">04:00</option><option value="5">05:00</option><option value="6">06:00</option><option value="7">07:00</option><option value="8">08:00</option><option value="9">09:00</option><option value="10">10:00</option><option value="11">11:00</option><option value="12">12:00</option><option value="13">13:00</option><option value="14">14:00</option><option value="15">15:00</option><option value="16">16:00</option><option value="17">17:00</option><option value="18">18:00</option><option value="19">19:00</option><option value="20">20:00</option><option value="21">21:00</option><option value="22">22:00</option><option value="23">23:00</option></select></div>
-    </div>
-    <div class="row"><div><div class="t">Inhalt</div><div class="d">Diese Zeilen kommen in den Bericht</div></div>
-      <div class="checks" id="weekly_lines">
-        <label><input type="checkbox" value="prints"> Drucke</label><label><input type="checkbox" value="time"> Druckzeit</label>
-        <label><input type="checkbox" value="filament"> Filament</label><label><input type="checkbox" value="cost"> Strom &amp; Kosten</label>
-        <label><input type="checkbox" value="shop"> Nachkaufen</label><label><input type="checkbox" value="soon"> Bald leer</label>
-        <label><input type="checkbox" value="dry"> Trocknen fällig</label></div></div>
-    <div class="row"><div><div class="t">Jetzt senden</div><div class="d">Zum Ausprobieren – geht sofort raus</div></div>
-      <button type="button" onclick="weeklyTest(this)">📊 Bericht senden</button></div>
-  </section>
-  <section class="card">
     <div class="label">Versand über</div>
     <div class="row">
       <div><div class="t">Benachrichtigungen schicken über</div><div class="d">Der abgeschaltete Weg bleibt eingerichtet, schickt aber nichts – auch der Druckwächter nicht</div></div>
       <div class="seg" id="notify_via"><button data-v="both">Beides</button><button data-v="ntfy">nur ntfy</button><button data-v="telegram">nur Telegram</button><button data-v="off">aus</button></div>
     </div>
+  </section>
+  <section class="card ch-card" data-ch="telegram">
+    <div class="label">Telegram <span class="ch-off">abgeschaltet</span></div>
+    <div class="d muted small" style="margin:6px 0 4px">Eigener Bot – kommt zuverlässig an, mit Foto und Antwort-Knöpfen (z. B. „Platte belegt“). Welche Meldungen über Telegram kommen, wählst du unten unter „Was willst du bekommen?“.</div>
+    <div id="tg-steps" class="tg-steps">
+      <div><b>1.</b> In Telegram <a href="https://t.me/BotFather" target="_blank">@BotFather</a> öffnen, <code>/newbot</code> schicken, Namen vergeben – du bekommst einen <b>Token</b>.</div>
+      <div><b>2.</b> Token hier eintragen.</div>
+      <div><b>3.</b> „Verbinden“ drücken und dem Bot innerhalb von 10 Minuten irgendeine Nachricht schreiben (z. B. <code>/start</code>).</div>
+    </div>
+    <div class="row">
+      <div><div class="t">Bot-Token</div><div class="d">z. B. 123456789:AA…</div></div>
+      <input type="password" data-k="tg_token" data-secret autocomplete="off" style="width:260px" onchange="setTimeout(tgLoad, 800)">
+    </div>
+    <div class="row">
+      <div><div class="t">Verbindung</div><div class="d" id="tg-state">–</div></div>
+      <div class="unit-in"><button class="small-btn" id="tg-pair" onclick="tgPair()">🔗 Verbinden</button>
+        <button class="small-btn" id="tg-unpair" onclick="tgUnpair()" hidden>Trennen</button></div>
+    </div>
+    <div class="row"><div class="d">Im Chat zeigt <code>/status</code> jederzeit den Stand der Drucker.</div>
+      <button onclick="testNotify('telegram')">🔔 Testnachricht</button></div>
   </section>
   <section class="card ch-card" data-ch="ntfy">
     <div class="label">ntfy <span class="ch-off">abgeschaltet</span></div>
@@ -609,25 +611,31 @@
       <div class="unit-in"><select id="test-prio" style="width:120px"><option value="5">dringend</option><option value="4">hoch</option><option value="3" selected>normal</option></select>
       <button onclick="testNotify()">🔔 Testnachricht</button></div></div>
   </section>
-  <section class="card ch-card" data-ch="telegram">
-    <div class="label">Telegram <span class="ch-off">abgeschaltet</span></div>
-    <div class="d muted small" style="margin:6px 0 4px">Eigener Bot – kommt zuverlässig an, mit Foto und Antwort-Knöpfen (z. B. „Platte belegt“). Läuft parallel zu ntfy; welche Meldungen wohin gehen, wählst du unten mit ✈️.</div>
-    <div id="tg-steps" class="tg-steps">
-      <div><b>1.</b> In Telegram <a href="https://t.me/BotFather" target="_blank">@BotFather</a> öffnen, <code>/newbot</code> schicken, Namen vergeben – du bekommst einen <b>Token</b>.</div>
-      <div><b>2.</b> Token hier eintragen.</div>
-      <div><b>3.</b> „Verbinden“ drücken und dem Bot innerhalb von 10 Minuten irgendeine Nachricht schreiben (z. B. <code>/start</code>).</div>
-    </div>
+  </div>
+  <section class="card" style="margin:16px 0">
+    <div class="section-h"><div><span class="label">Was willst du bekommen?</span>
+      <div class="d muted small" style="margin-top:4px">Je Meldung antippen, über welchen Weg sie kommt · 📷 = mit Kamerafoto · Doppelte Meldungen von PrintHub und Druckwächter werden zusammengefasst</div></div>
+      <div class="evall" id="evall"></div></div>
+    <div id="evgroups" class="evgroups"></div>
+  </section>
+  <div class="set-grid">
+  <section class="card">
+    <div class="label">Wochenbericht</div>
+    <div class="d muted small" style="margin:6px 0 4px">Einmal pro Woche per Telegram/ntfy: Drucke, Druckzeit, Filament, Strom, Kosten und was nachzukaufen ist (letzte 7 Tage).</div>
     <div class="row">
-      <div><div class="t">Bot-Token</div><div class="d">z. B. 123456789:AA…</div></div>
-      <input type="password" data-k="tg_token" data-secret autocomplete="off" style="width:260px" onchange="setTimeout(tgLoad, 800)">
+      <div><div class="t">Wann</div></div>
+      <div style="display:flex;gap:6px"><select data-k="weekly_day" style="width:140px"><option value="off">aus</option><option value="0">Montag</option><option value="1">Dienstag</option>
+        <option value="2">Mittwoch</option><option value="3">Donnerstag</option><option value="4">Freitag</option><option value="5">Samstag</option><option value="6">Sonntag</option></select>
+      <select data-k="weekly_hour" style="width:90px"><option value="0">00:00</option><option value="1">01:00</option><option value="2">02:00</option><option value="3">03:00</option><option value="4">04:00</option><option value="5">05:00</option><option value="6">06:00</option><option value="7">07:00</option><option value="8">08:00</option><option value="9">09:00</option><option value="10">10:00</option><option value="11">11:00</option><option value="12">12:00</option><option value="13">13:00</option><option value="14">14:00</option><option value="15">15:00</option><option value="16">16:00</option><option value="17">17:00</option><option value="18">18:00</option><option value="19">19:00</option><option value="20">20:00</option><option value="21">21:00</option><option value="22">22:00</option><option value="23">23:00</option></select></div>
     </div>
-    <div class="row">
-      <div><div class="t">Verbindung</div><div class="d" id="tg-state">–</div></div>
-      <div class="unit-in"><button class="small-btn" id="tg-pair" onclick="tgPair()">🔗 Verbinden</button>
-        <button class="small-btn" id="tg-unpair" onclick="tgUnpair()" hidden>Trennen</button></div>
-    </div>
-    <div class="row"><div class="d">Im Chat zeigt <code>/status</code> jederzeit den Stand der Drucker.</div>
-      <button onclick="testNotify('telegram')">✈️ Testnachricht</button></div>
+    <div class="row"><div><div class="t">Inhalt</div><div class="d">Diese Zeilen kommen in den Bericht</div></div>
+      <div class="checks" id="weekly_lines">
+        <label><input type="checkbox" value="prints"> Drucke</label><label><input type="checkbox" value="time"> Druckzeit</label>
+        <label><input type="checkbox" value="filament"> Filament</label><label><input type="checkbox" value="cost"> Strom &amp; Kosten</label>
+        <label><input type="checkbox" value="shop"> Nachkaufen</label><label><input type="checkbox" value="soon"> Bald leer</label>
+        <label><input type="checkbox" value="dry"> Trocknen fällig</label></div></div>
+    <div class="row"><div><div class="t">Jetzt senden</div><div class="d">Zum Ausprobieren – geht sofort raus</div></div>
+      <button type="button" onclick="weeklyTest(this)">📊 Bericht senden</button></div>
   </section>
   <section class="card">
     <div class="label">Feineinstellungen</div>
@@ -647,12 +655,6 @@
     </details>
   </section>
   </div>
-  <section class="card" style="margin-top:16px">
-    <div class="section-h"><div><span class="label">Was willst du bekommen?</span>
-      <div class="d muted small" style="margin-top:4px">Kästchen = an ntfy · ✈️ = an Telegram · 📷 = mit Kamerafoto · Doppelte Meldungen von PrintHub und Druckwächter werden zusammengefasst</div></div>
-      <div class="unit-in small"><button class="small-btn" onclick="evAll(true)">Alle an</button><button class="small-btn" onclick="evAll(false)">Alle aus</button></div></div>
-    <div id="evgroups" class="evgroups"></div>
-  </section>
 </div>
 
 <!-- ============ Zugriff ============ -->
@@ -956,6 +958,7 @@ function fill() {
   const via = S.notify_via || "both";
   document.querySelectorAll("#notify_via button").forEach(b => b.classList.toggle("on", b.dataset.v === via));
   document.querySelectorAll(".ch-card").forEach(c => c.classList.toggle("off", !(via === "both" || via === c.dataset.ch)));
+  if ($("evgroups")) drawEvents();
   document.querySelectorAll("[data-if]").forEach(el => el.hidden = !S[el.dataset.if]);
   dryDraw(); rstDraw();
   document.querySelectorAll("#pin_mode button").forEach(b => b.classList.toggle("on", b.dataset.v === S.pin_mode));
@@ -1615,11 +1618,25 @@ function prioReset() { if (confirm("Dringlichkeit aller Meldungen auf den Standa
 function drawEvents() {
   if ($("prio-list")) drawPrio();
   const on = new Set(S.notify_events || []), ph = new Set(S.notify_photo || []), tg = new Set(S.tg_events || []);
-  $("evgroups").innerHTML = EVG.map(([g, ic, evs]) => `<div class="evg"><div class="evh">${ic} ${g}
-      <button class="lnkbtn" onclick="evGroup('${g}')">${evs.every(e => on.has(e[0])) ? "alle aus" : "alle an"}</button></div>
-    ${evs.map(([k, l, foto]) => `<label class="evr ${on.has(k) ? "on" : ""}"><input type="checkbox" ${on.has(k) ? "checked" : ""} onchange="evSet('${k}', this.checked)"><span>${l}</span>
-      <button type="button" class="ph tgb ${tg.has(k) ? "on" : ""}" title="auch an Telegram" onclick="event.preventDefault();tgSet('${k}')">✈️</button>
-      ${foto ? `<button type="button" class="ph ${ph.has(k) ? "on" : ""}" title="Kamerafoto anhängen" onclick="event.preventDefault();phSet('${k}')">📷</button>` : `<span class="ph-sp"></span>`}</label>`).join("")}</div>`).join("");
+  const via = S.notify_via || "both", useTg = via === "both" || via === "telegram", useNt = via === "both" || via === "ntfy";
+  if (via === "off") {
+    $("evall").innerHTML = "";
+    $("evgroups").innerHTML = `<div class="muted small">Benachrichtigungen sind oben unter „Versand über“ ausgeschaltet.</div>`;
+    return;
+  }
+  const chip = (cls, isOn, label, fn, title) => `<button type="button" class="evc ${cls} ${isOn ? "on" : ""}" title="${title}" onclick="event.preventDefault();${fn}">${label}</button>`;
+  $("evall").innerHTML = (useTg ? `<span class="evall-g"><b>Telegram</b><button class="small-btn" onclick="chAll('tg',true)">alle</button><button class="small-btn" onclick="chAll('tg',false)">keine</button></span>` : "") +
+    (useNt ? `<span class="evall-g"><b>ntfy</b><button class="small-btn" onclick="chAll('nt',true)">alle</button><button class="small-btn" onclick="chAll('nt',false)">keine</button></span>` : "");
+  $("evgroups").innerHTML = EVG.map(([g, ic, evs]) => `<div class="evg"><div class="evh">${ic} ${g}</div>
+    ${evs.map(([k, l, foto]) => { const any = (useTg && tg.has(k)) || (useNt && on.has(k));
+      return `<div class="evr ${any ? "on" : ""}"><span>${l}</span><span class="evcs">
+        ${useTg ? chip("tg", tg.has(k), "Telegram", `tgSet('${k}')`, "über Telegram") : ""}
+        ${useNt ? chip("nt", on.has(k), "ntfy", `evSet('${k}', ${!on.has(k)})`, "über ntfy") : ""}
+        ${foto ? chip("ph", ph.has(k), "📷", `phSet('${k}')`, "Kamerafoto anhängen") : `<span class="evc-sp"></span>`}</span></div>`; }).join("")}</div>`).join("");
+}
+function chAll(ch, v) {
+  const all = EVG.flatMap(g => g[2].map(e => e[0]));
+  save(ch === "tg" ? {tg_events: v ? all : []} : {notify_events: v ? all : []});
 }
 function evSet(k, v) { const s = new Set(S.notify_events || []); v ? s.add(k) : s.delete(k); save({notify_events: [...s]}); }
 function tgSet(k) { const s = new Set(S.tg_events || []); s.has(k) ? s.delete(k) : s.add(k); save({tg_events: [...s]}); }
