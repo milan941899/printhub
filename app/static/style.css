@@ -1263,3 +1263,11 @@ table.list tr.dayrow td { background:var(--well); padding:8px 10px; font-size:13
 .evc-sp { width:34px; flex:none; }
 .evall { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
 .evall-g { display:flex; align-items:center; gap:4px; font-size:12px; } .evall-g b { margin-right:2px; }
+
+/* Telegram / ntfy zuklappbar */
+.ch-card .ch-h { cursor:pointer; display:flex; align-items:center; gap:6px; user-select:none; }
+.ch-card .ch-chev { margin-left:auto; font-size:13px; color:var(--muted); }
+.ch-card .ch-chev::before { content:"▾"; }
+.ch-card.fold .ch-chev::before { content:"▸"; }
+.ch-card.fold > :not(.label) { display:none !important; }
+.ch-card.fold { padding-bottom:14px; }

@@ -574,7 +574,7 @@
     </div>
   </section>
   <section class="card ch-card" data-ch="telegram">
-    <div class="label">Telegram <span class="ch-off">abgeschaltet</span></div>
+    <div class="label ch-h" onclick="chFold('telegram')">Telegram <span class="ch-off">abgeschaltet</span><span class="ch-chev"></span></div>
     <div class="d muted small" style="margin:6px 0 4px">Eigener Bot – kommt zuverlässig an, mit Foto und Antwort-Knöpfen (z. B. „Platte belegt“). Welche Meldungen über Telegram kommen, wählst du unten unter „Was willst du bekommen?“.</div>
     <div id="tg-steps" class="tg-steps">
       <div><b>1.</b> In Telegram <a href="https://t.me/BotFather" target="_blank">@BotFather</a> öffnen, <code>/newbot</code> schicken, Namen vergeben – du bekommst einen <b>Token</b>.</div>
@@ -594,7 +594,7 @@
       <button onclick="testNotify('telegram')">🔔 Testnachricht</button></div>
   </section>
   <section class="card ch-card" data-ch="ntfy">
-    <div class="label">ntfy <span class="ch-off">abgeschaltet</span></div>
+    <div class="label ch-h" onclick="chFold('ntfy')">ntfy <span class="ch-off">abgeschaltet</span><span class="ch-chev"></span></div>
     <div class="row">
       <div><div class="t">ntfy-Adresse</div><div class="d">Server + Thema, z. B. https://ntfy.sh/mein-thema. Leer = aus. Gilt auch für den Druckwächter</div></div>
       <input type="url" data-k="ntfy_url" placeholder="https://ntfy.sh/…" style="width:260px">
@@ -957,7 +957,13 @@ function fill() {
   document.querySelectorAll("#weekly_lines input").forEach(c => c.checked = (S.weekly_lines || []).includes(c.value));
   const via = S.notify_via || "both";
   document.querySelectorAll("#notify_via button").forEach(b => b.classList.toggle("on", b.dataset.v === via));
-  document.querySelectorAll(".ch-card").forEach(c => c.classList.toggle("off", !(via === "both" || via === c.dataset.ch)));
+  document.querySelectorAll(".ch-card").forEach(c => {
+    const off = !(via === "both" || via === c.dataset.ch);
+    c.classList.toggle("off", off);
+    // zugeklappt: wie zuletzt auf diesem Gerät gewählt, sonst automatisch, wenn der Weg abgeschaltet ist
+    const f = PH.pref("fold_" + c.dataset.ch, null);
+    c.classList.toggle("fold", f === null ? off : !!f);
+  });
   if ($("evgroups")) drawEvents();
   document.querySelectorAll("[data-if]").forEach(el => el.hidden = !S[el.dataset.if]);
   dryDraw(); rstDraw();
@@ -1633,6 +1639,10 @@ function drawEvents() {
         ${useTg ? chip("tg", tg.has(k), "Telegram", `tgSet('${k}')`, "über Telegram") : ""}
         ${useNt ? chip("nt", on.has(k), "ntfy", `evSet('${k}', ${!on.has(k)})`, "über ntfy") : ""}
         ${foto ? chip("ph", ph.has(k), "📷", `phSet('${k}')`, "Kamerafoto anhängen") : `<span class="evc-sp"></span>`}</span></div>`; }).join("")}</div>`).join("");
+}
+function chFold(ch) {
+  const c = document.querySelector(`.ch-card[data-ch="${ch}"]`);
+  PH.pref("fold_" + ch, null, !c.classList.contains("fold")); c.classList.toggle("fold");
 }
 function chAll(ch, v) {
   const all = EVG.flatMap(g => g[2].map(e => e[0]));
