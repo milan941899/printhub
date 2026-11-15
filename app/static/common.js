@@ -6,10 +6,10 @@
       const c = /^#?[0-9a-f]{6}$/i.test(color || "") ? (color[0] === "#" ? color : "#" + color) : "#9aa4b2";
       const id = "sp" + (PH._sp = (PH._sp || 0) + 1);
       const f = Math.max(0, Math.min(1, +fill || 0)), k = f < 0.02 ? 0 : Math.max(1, Math.round(f * 10));
-      return `<svg class="spl" viewBox="0 0 174 218" width="${Math.round(h * 174 / 218)}" height="${h}" aria-hidden="true">
+      return `<svg class="spl" viewBox="0 0 174 212" width="${Math.round(h * 174 / 212)}" height="${h}" aria-hidden="true">
         <filter id="${id}" color-interpolation-filters="sRGB"><feFlood flood-color="${c}"/><feComposite in2="SourceGraphic" operator="arithmetic" k1="1"/></filter>
-        ${k ? `<image href="/static/spool/f${k}.webp" width="174" height="218" filter="url(#${id})"/>` : ""}
-        <image href="/static/spool/b${k}.webp" width="174" height="218"/></svg>`;
+        ${k ? `<image href="/static/spool/f${k}.webp?v=2" width="174" height="212" filter="url(#${id})"/>` : ""}
+        <image href="/static/spool/b${k}.webp?v=2" width="174" height="212"/></svg>`;
     },
     esc: s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])),
     eur: v => v == null ? "–" : Number(v).toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €",
