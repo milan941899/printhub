@@ -846,6 +846,28 @@ function dryAdd() {
 function dryDel(i) { const r = dryParse(S.dry_days); r.splice(i, 1); drySave(r); }
 function dryReset() { if (confirm("Trocknungsgrenzen auf die Standardwerte zurücksetzen?")) save({dry_days: DEF.dry_days}); }
 
+// ---------- Zuklappbare Karten (Lager, Drucker, Wartung) – Zustand pro Gerät ----------
+function foldInit(root, sel, keyOf) {
+  root.querySelectorAll(sel).forEach(card => {
+    const head = card.querySelector(":scope > .section-h, :scope > .label");
+    if (!head) return;
+    const key = keyOf(card, head);
+    card.classList.add("foldable"); card.dataset.fold = key; head.classList.add("fold-h");
+    card.classList.toggle("fold", !!PH.pref("fold:" + key, false));
+  });
+}
+document.addEventListener("click", e => {
+  const h = e.target.closest(".fold-h");
+  if (!h || e.target.closest("button, input, select, textarea, a, label")) return;
+  const card = h.closest(".foldable"); if (!card) return;
+  card.classList.toggle("fold"); PH.pref("fold:" + card.dataset.fold, null, card.classList.contains("fold"));
+});
+const labelKey = (c, h) => (h.querySelector(".label") || h).textContent.trim().slice(0, 40);
+function foldStatic() {
+  foldInit(document.querySelector('[data-tab="lager"]'), "section.card", (c, h) => "lager:" + labelKey(c, h));
+  foldInit(document.querySelector('[data-tab="wartung"]'), ":scope > section.card", (c, h) => "wartung:" + (h.textContent.trim().slice(0, 30)));
+}
+
 // ---------- Einstellungen nur für dieses Gerät (data-p → PH.pref) ----------
 function prefInit() {
   document.querySelectorAll("select[data-p=hist_range], select[data-p=stats_range]").forEach(sel =>
@@ -986,7 +1008,7 @@ function fill() {
 async function load() {
   const d = await (await fetch("/api/settings")).json();
   DEF = (d.info && d.info.defaults) || {};
-  S = d.settings; fill(); lblInit(); splInit(); prefInit();
+  S = d.settings; fill(); lblInit(); splInit(); prefInit(); foldStatic();
   $("saver").value = PH.saverMode();
   const i = d.info;
   if (i.ai_today && $("ai-today")) $("ai-today").innerHTML = `<b>${i.ai_today.n}</b> Anfragen` +
@@ -1053,6 +1075,7 @@ async function loadMaint(quiet) {
       ${off.length ? `<details class="moff"><summary>${off.length} ausgeschaltete Aufgaben</summary>${off.map(row).join("")}</details>` : ""}
     </section>`;
   }).join("");
+  foldInit($("mprinters"), "section.mcard", (c, h) => "m:" + h.querySelector("h2").textContent.trim());
   $("mtypes").innerHTML = M.types.map(t => `<div class="mtype">
       <span class="mic">${esc(t.icon || "🔧")}</span>
       <div style="flex:1;min-width:0"><b>${esc(t.name)}</b><div class="d">⏱ ${fmtN(t.interval)} ${unitL(t.unit)}${t.system ? "" : " · eigene"}</div></div>
@@ -1537,7 +1560,7 @@ const pcf = (i, k, label, desc, attrs = "", type = "text") => `<div class="row">
 function pcDraw() {
   $("pc-list").innerHTML = PC.map((p, i) => {
     const bambu = p.type !== "moonraker";
-    return `<section class="card pc-card"><div class="section-h"><h2 style="margin:0;font-size:17px">${esc(p.name || p.id || "Neuer Drucker")}</h2>
+    return `<section class="card pc-card"><div class="section-h"><h2 style="margin:0;font-size:17px">${esc(p.name || p.id || "Neuer Drucker")}<span class="muted small" style="font-weight:500;margin-left:8px">${esc(p.host || "")}</span></h2>
         <div class="unit-in"><button class="small-btn" onclick="pcTest(${i})">🔌 Verbindung testen</button><button class="small-btn" onclick="pcDel(${i})">🗑 Entfernen</button></div></div>
       <div class="set-grid" style="gap:0 24px">
         <div>
@@ -1559,6 +1582,7 @@ function pcDraw() {
         </div>
       </div></section>`;
   }).join("") || `<div class="muted">Noch kein Drucker – „＋ Drucker hinzufügen“.</div>`;
+  foldInit($("pc-list"), "section.pc-card", (c, h) => "pc:" + (h.querySelector("h2").firstChild.textContent || "").trim());
 }
 function pcAdd() { PC.push({type: "bambu", id: "", name: "", host: "", track_usage: true}); pcDraw(); }
 function pcDel(i) { if (confirm(`„${PC[i].name || PC[i].id}“ entfernen? Verlauf und Statistik bleiben erhalten.`)) { PC.splice(i, 1); pcDraw(); } }

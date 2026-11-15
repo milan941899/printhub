@@ -1286,3 +1286,11 @@ body.tg-on #tg-steps { display:none; }   /* verbunden: Einrichtungs-Schritte aus
 .nr-savebar button { white-space:nowrap; }
 .nr-savebar[hidden] { display:none; }
 @media (min-width:701px) { .nr-savebar { bottom:24px; } }
+
+/* Zuklappbare Karten */
+.foldable > .fold-h { cursor:pointer; user-select:none; position:relative; padding-right:26px; }
+.foldable > .fold-h::after { content:"▾"; position:absolute; right:0; top:50%; transform:translateY(-50%); color:var(--muted); font-size:13px; }
+.foldable.fold > .fold-h::after { content:"▸"; }
+.foldable.fold > :not(.fold-h):not(.keep) { display:none !important; }
+.foldable > .section-h.fold-h { margin-bottom:0; }
+.foldable:not(.fold) > .section-h.fold-h { margin-bottom:8px; }
