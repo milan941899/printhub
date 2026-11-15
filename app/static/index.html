@@ -547,7 +547,7 @@ function aspool(p, s, i) {
   }
   const name = sp ? esc(stripMat(sp.name, sp.material)) : (color || s.material ? "frei" : "leer");
   return `<div class="aspool ${p.current_slot === s.key ? "active" : ""}" title="${esc(s.label)} – tippen zum Zuweisen">
-    <div class="reel ${sp || color ? "" : "empty"} ${isDark(color) ? "dark" : ""}" style="--c:${color || "#64748b"};--p:${pct}"><div class="hub">${hub}</div></div>
+    <div class="reel3d ${sp || color ? "" : "empty"}">${PH.spool(color || "#64748b", sp || color ? pct / 100 : 0, 60)}<span class="slotno">${hub}</span></div>
     <div class="a-mat">${esc(mat)}</div>
     <div class="a-g">${sp && sp.remaining != null ? `<b>${Math.round(sp.remaining)} g</b>` : (sp ? `#${sp.id}` : "&nbsp;")}</div>
     <div class="a-name">${name}</div>
@@ -977,6 +977,11 @@ async function svcRestart(id, name) {
   setTimeout(loadServices, 4000);
 }
 let queueOn = false;
+async function qAssign(printer, key, id) {
+  if (!confirm(`Rolle #${id} in diesen Slot einlegen? Die bisherige Rolle kommt zurück ins Lager.`)) return;
+  await assign(printer, key, id);
+  loadQueue();
+}
 async function loadQueue() {
   const card = document.getElementById("queuecard");
   if (!card || !queueOn) return;
@@ -996,12 +1001,18 @@ async function loadQueue() {
       const pl = q.status === "pending" && (pq.text || q.sched_text) ? `<div class="qplan ${pq.start ? "" : "no"}">🕘 ${esc(pq.text || "")}${q.sched_text && !(pq.note === "geplant") ? ` <span class="muted">· geplant ${esc(q.sched_text)}</span>` : ""}${q.forced ? ` <span class="qtag">trotz Druckfenster</span>` : ""}</div>` : "";
       const c = q.check || {};
       const chk = q.status === "pending" && c.text ? `<div class="qchk ${c.state}" title="${esc((c.lines || []).map(l => `${l.type} ${l.grams} g → ${l.slot || "?"}${l.have != null ? ` (${Math.round(l.have)} g da)` : ""}${l.msg ? " – " + l.msg : ""}`).join("\n"))}">${CI[c.state] || ""} ${esc(c.text)}</div>` : "";
+      const tips = q.status === "pending" ? (c.lines || []).map(l => {
+        const o = l.swap || l.tip;
+        if (!o) return "";
+        return `<div class="qtip ${l.swap ? "bad" : ""}">${l.swap ? "→ Im Lager reicht" : "♻ Rest aufbrauchen:"} Rolle #${o.id} (${o.rest} g${o.location ? ", " + esc(o.location) : ""})${l.tip ? ` reicht für die ${Math.round(l.grams)} g` : ""}
+          <button type="button" class="small-btn" onclick="qAssign('${esc(o.printer)}','${esc(o.key)}',${o.id})">In ${esc(l.slot || "Slot")} einlegen</button></div>`;
+      }).join("") : "";
       return `<div class="qi" data-q="${q.id}">
       ${q.status === "pending" ? `<span class="qgrip" title="Ziehen: Reihenfolge ändern">⠿</span>` : `<span class="qgrip off"></span>`}
       <div class="qimg" style="${q.thumb ? `background-image:url('/api/bambuddy/thumb?p=${encodeURIComponent(q.thumb)}')` : ""}">${q.thumb ? "" : "🧊"}</div>
       <div style="min-width:0"><div class="qn">${esc(q.name)}${q.status === "printing" ? `<span class="qtag">druckt</span>` : q.manual ? `<span class="qtag">wartet auf Start</span>` : ""}</div>
         <div class="qm">${esc(q.printer)}${q.seconds ? " · ⏱ " + PH.dur(q.seconds) : ""}${q.grams ? " · " + PH.g(q.grams) : ""}${q.plate ? " · " + esc(q.plate) : ""}
-          ${q.waiting && q.status === "pending" ? ` · <span class="w">${esc(q.waiting)}</span>` : ""}</div>${chk}${pl}</div>
+          ${q.waiting && q.status === "pending" ? ` · <span class="w">${esc(q.waiting)}</span>` : ""}</div>${chk}${tips}${pl}</div>
       <div class="qb">${q.status === "pending" ? `<button class="small-btn primary" onclick="qAct(${q.id},'jetzt')" title="${d.waechter ? "Über den Druckwächter: einschalten, Licht, Plattenprüfung, dann Start" : "Bambuddy startet sofort"}">▶ Jetzt</button>
         <button class="small-btn${q.scheduled ? " on" : ""}" onclick="qPlan(${q.id})" title="Startzeit planen">🕘</button>
         <button class="small-btn" onclick="qAct(${q.id},'top')" title="Nach vorne holen">⬆</button>

@@ -32,6 +32,9 @@ SPEC = {
     "low_spool_g": (float, 100.0),
     "runout_tol_g": (float, 15.0),
     "dry_days": (str, "PLA=60, PETG=21, ABS=30, ASA=30, TPU=7, PA=3, PC=7, PVA=2, *=30"),   # Tage offen bis „trocknen“
+    "dry_all": (bool, False),              # Trocknen auch für offene Rollen im Lager melden (nicht nur im Drucker)
+    "rest_tip": (bool, True),              # Warteschlange: kleinen Rest derselben Sorte zum Aufbrauchen vorschlagen
+    "rest_tip_max": (float, 350.0),        # … als „Rest“ gilt eine Rolle bis zu diesem Gewicht (g)
     "oe_restart": (bool, False),
     "oe_container": (str, "octoeverywhere"),
     "oe_delay": (int, 20),

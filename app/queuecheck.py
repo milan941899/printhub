@@ -32,9 +32,10 @@ def same_material(a, b):
 
 
 class QueueCheck:
-    def __init__(self, bambuddy, store, spool_map_fn, reserve_fn=lambda: 10):
+    def __init__(self, bambuddy, store, spool_map_fn, reserve_fn=lambda: 10, tip_fn=lambda: 0):
         self.bb, self.store, self.spool_map = bambuddy, store, spool_map_fn
         self.reserve = reserve_fn
+        self.tip_max = tip_fn       # Reste-Tipp: Rolle bis zu so viel g gilt als Rest (0 = aus)
         self._req = {}            # (archive/library, id, plate) -> (zeit, filaments)
 
     def requirements(self, item):
@@ -125,6 +126,16 @@ class QueueCheck:
                     if alt:
                         ln["swap"] = {"id": alt[0]["id"], "rest": round(alt[0]["remaining"]), "key": key, "printer": printer.id}
                         ln["msg"] += f" – im Lager reicht Rolle #{alt[0]['id']} ({alt[0]['remaining']:.0f} g)"
+                elif need and (lim := float(self.tip_max() or 0)) > 0:
+                    # Reste aufbrauchen: kleiner angebrochener Rest derselben Sorte im Lager, der für diesen Druck reicht
+                    rest = sorted((o for o in spools.values() if o.get("filament_id") == sp.get("filament_id") and o["id"] != sp["id"]
+                                   and not self.store.slot_of_spool(o["id"]) and o.get("remaining") is not None
+                                   and need + reserve <= o["remaining"] <= lim and o["remaining"] < (sp.get("remaining") or 0)),
+                                  key=lambda o: o["remaining"])
+                    if rest:
+                        o = rest[0]
+                        ln["tip"] = {"id": o["id"], "rest": round(o["remaining"]), "key": key, "printer": printer.id,
+                                     "location": o.get("location") or ""}
             elif ln["state"] == "ok":
                 ln.update(state="warn", msg=f"{ln['slot']}: keine Spule aus dem Lager zugeordnet – Rest unbekannt")
             lines.append(ln)

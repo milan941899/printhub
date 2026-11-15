@@ -293,8 +293,12 @@
       <div class="unit-in"><input type="number" min="0" max="200" step="1" data-k="runout_tol_g" style="width:90px"> g</div>
     </div>
     <div class="row">
-      <div><div class="t">Trocknen empfohlen nach … Tagen offen</div><div class="d">Pro Material, gezählt ab Öffnen bzw. letztem Trocknen (🔥 im Lager). Gemeldet wird für Rollen im Drucker. „*“ = alle anderen</div></div>
+      <div><div class="t">Trocknen empfohlen nach … Tagen offen</div><div class="d">Pro Material, gezählt ab Öffnen bzw. letztem Trocknen (🔥 im Lager). Gemeldet wird für Rollen im Drucker (Schalter darunter: auch offene im Lager). „*“ = alle anderen</div></div>
       <input type="text" data-k="dry_days" style="width:100%;max-width:420px">
+    </div>
+    <div class="row">
+      <div><div class="t">Trocknen auch für Rollen im Lager melden</div><div class="d">Aus: nur Rollen, die gerade im Drucker stecken. An: jede offene Rolle (z. B. wenn sie nicht in der Trockenbox liegen)</div></div>
+      <label class="switch"><input type="checkbox" data-k="dry_all"><span></span></label>
     </div>
     <div class="row">
       <div><div class="t">Adresse für QR-Codes &amp; NFC</div><div class="d">Leer = so wie gerade im Browser. Am besten die feste Adresse im WLAN</div></div>
@@ -311,6 +315,14 @@
     <div class="row">
       <div><div class="t">Sicherheitsreserve</div><div class="d">So viel soll mindestens übrig bleiben</div></div>
       <div class="unit-in"><input type="number" min="0" step="5" data-k="short_reserve_g" style="width:90px"> g</div>
+    </div>
+    <div class="row">
+      <div><div class="t">Reste aufbrauchen</div><div class="d">Warteschlange: liegt im Lager ein Rest derselben Sorte, der für den Auftrag reicht, wird er zum Einlegen vorgeschlagen</div></div>
+      <label class="switch"><input type="checkbox" data-k="rest_tip"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Als Rest gilt eine Rolle bis</div><div class="d">Nur Rollen bis zu diesem Gewicht werden als Rest vorgeschlagen</div></div>
+      <div class="unit-in"><input type="number" min="50" step="50" data-k="rest_tip_max" style="width:90px"> g</div>
     </div>
     <div class="row">
       <div><div class="t">Foto nach dem Druck</div><div class="d">Kamerabild vom fertigen Teil im Verlauf speichern</div></div>

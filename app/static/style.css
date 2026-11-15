@@ -823,6 +823,8 @@ body:not(.tg-on) .evr .tgb.on { opacity:.45; }
 .qgrip { cursor:grab; color:var(--muted); padding:4px 2px; touch-action:none; user-select:none; align-self:center; }
 .qgrip.off { cursor:default; width:12px; }
 .qchk { font-size:12px; margin-top:3px; color:var(--muted); }
+.qtip { font-size:12px; margin-top:4px; color:var(--ok, #34d399); display:flex; flex-wrap:wrap; gap:4px 8px; align-items:center; }
+.qtip.bad { color:var(--warn); }
 .qchk.bad { color:var(--err); } .qchk.warn { color:var(--warn); }
 .qi .qb { display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; }
 .qh { display:flex; flex-direction:column; margin-top:8px; }
@@ -989,6 +991,12 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .lgroup.closed .ghead { margin-bottom:0; }
 .btag { font-size:11px; padding:0 5px; border-radius:99px; background:var(--tile2); margin-left:3px; white-space:nowrap; }
 .btag.ne { color:#f97316; }
+.btag.soon { color:var(--warn); }
+/* AMS-Slot mit 3D-Spule */
+.reel3d { position:relative; width:min(60px, 100%); display:grid; place-items:center; }
+.reel3d .spl { width:100%; height:auto; }
+.reel3d.empty .spl { opacity:.35; filter:grayscale(1); }
+.reel3d .slotno { position:absolute; left:-2px; top:-2px; min-width:18px; height:18px; padding:0 4px; border-radius:99px; background:var(--well); border:1.5px solid var(--rim); font-size:11px; font-weight:800; display:grid; place-items:center; color:var(--fg); }
 /* Kompakt */
 .crow { border-bottom:1px solid var(--line); }
 .crow:last-child { border-bottom:0; }

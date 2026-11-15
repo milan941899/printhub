@@ -185,7 +185,8 @@ def _tg_status():
 
 telegram = Telegram(settings, TG_INBOX, _tg_status)
 power = Power(settings, printers, bambuddy, notifier, os.path.join(DATA_DIR, "nachtruhe", "zustand.json"))
-qcheck = QueueCheck(bambuddy, store, lambda: _spool_map(), lambda: settings.get("short_reserve_g") or 10)
+qcheck = QueueCheck(bambuddy, store, lambda: _spool_map(), lambda: settings.get("short_reserve_g") or 10,
+                    lambda: (settings.get("rest_tip_max") or 0) if settings.get("rest_tip") else 0)
 QEVENTS = os.path.join(DATA_DIR, "nachtruhe", "auftraege.jsonl")
 notifier.telegram = telegram
 
@@ -2040,24 +2041,26 @@ async def api_lager_dried(request):
 
 
 def _watch_dry():
-    """Spulen im Drucker, die zu lange offen sind: einmal melden, bis getrocknet."""
+    """Spulen im Drucker (auf Wunsch auch offene im Lager), die zu lange offen sind: einmal melden, bis getrocknet."""
     if "dry" not in notifier.events and "dry" not in (settings.get("tg_events") or []):
         return
     in_slot = _slot_names()
-    if not in_slot:
+    every = bool(settings.get("dry_all"))
+    if not in_slot and not every:
         return
     inv = spoolman.inventory()
     fil = {f["id"]: f for f in inv["filaments"]}
     msgs, knoepfe = [], []
     for sp in inv["spools"]:
-        if sp["id"] not in in_slot:
+        if sp["id"] not in in_slot and not every:
             continue
         f = fil.get((sp.get("filament") or {}).get("id")) or sp.get("filament") or {}
         info = _dry_info(sp, f.get("material"))
         d = (store.data.get("dry") or {}).get(str(sp["id"])) or {}
         if info and info["due"] and not d.get("notified"):
             name = " ".join(x for x in [(f.get("vendor") or {}).get("name", ""), f.get("name") or "", f.get("material") or ""] if x)
-            msgs.append(f"{name} (#{sp['id']}, {in_slot[sp['id']]}): seit {int(info['days'])} Tagen offen"
+            wo = in_slot.get(sp["id"]) or sp.get("location") or "Lager"
+            msgs.append(f"{name} (#{sp['id']}, {wo}): seit {int(info['days'])} Tagen offen"
                         f"{' bzw. seit dem letzten Trocknen' if info['dried'] else ''} (Grenze {int(info['limit'])} Tage)")
             knoepfe.append([(f"🔥 #{sp['id']} getrocknet", f"ph:dry:{sp['id']}")])
             with store.lock:
@@ -2069,11 +2072,58 @@ def _watch_dry():
                       "droplet", buttons=knoepfe + [[("Später", "noop")]])
 
 
+_SPFIL = {"t": 0, "map": {}}
+_FC = {"t": 0, "data": {}}
+FC_DAYS = 60
+
+
+def _spool_fil_map():
+    """Spule → Filament (inkl. archivierter Spulen, damit leer gedruckte Rollen in der Prognose zählen); stündlich neu"""
+    if time.time() - _SPFIL["t"] > 3600:
+        try:
+            _SPFIL["map"] = {sp["id"]: (sp.get("filament") or {}).get("id")
+                             for sp in spoolman._get("/spool", allow_archived="true")}
+            _SPFIL["t"] = time.time()
+        except Exception as e:
+            log.debug("Prognose: Spulenliste: %s", e)
+    return _SPFIL["map"]
+
+
+def _forecast():
+    """Verbrauch je Filament in g/Woche (Durchschnitt der letzten 60 Tage bzw. seit dem ersten Druck, mind. 14 Tage)."""
+    if time.time() - _FC["t"] < 600:
+        return _FC["data"]
+    now = time.time()
+    try:
+        grams, first = history.spool_grams(now - FC_DAYS * 86400)
+    except Exception as e:
+        log.debug("Prognose: %s", e)
+        return {}
+    if not first:
+        return {}
+    span = min(FC_DAYS, max(14, (now - first) / 86400))
+    m, out = _spool_fil_map(), {}
+    for sid, g in grams.items():
+        fid = m.get(sid)
+        if fid is not None:
+            out[fid] = out.get(fid, 0) + g
+    _FC.update(t=now, data={fid: g / span * 7 for fid, g in out.items()})
+    return _FC["data"]
+
+
+def _weeks_left(fid, remaining):
+    rate = _forecast().get(fid) or 0
+    if rate < 5:                                      # kaum benutzt → keine Aussage
+        return round(rate), None
+    return round(rate), round((remaining or 0) / rate, 1)
+
+
 async def api_lager(request):
     try:
         inv = await run_in_threadpool(spoolman.inventory, request.query_params.get("archived") == "1")
     except Exception as e:
         return JSONResponse({"error": f"Spoolman nicht erreichbar: {e}"}, status_code=502)
+    await run_in_threadpool(_forecast)                # Prognose vorab laden (DB/Spoolman nicht im Event-Loop)
     mins = store.data.get("min_stock", {})
     in_slot = _slot_names()
     by_fil, arch_fil = {}, {}
@@ -2105,6 +2155,7 @@ async def api_lager(request):
             "full": sum(1 for x in sp if not x["opened"]), "remaining": round(sum(x["remaining"] or 0 for x in sp)),
             "archived": sorted(arch_fil.get(f["id"], []), key=lambda x: -(x["id"])),
         })
+        fils[-1]["per_week"], fils[-1]["weeks"] = _weeks_left(f["id"], fils[-1]["remaining"])
     fils.sort(key=lambda f: (f["vendor"].lower(), f["material"], f["name"].lower()))
     return JSONResponse({"filaments": fils, "vendors": [{"id": v["id"], "name": v["name"],
                          "empty_spool_weight": v.get("empty_spool_weight")} for v in inv["vendors"]],
@@ -2633,6 +2684,10 @@ async def api_spool_log(request):
     return JSONResponse({"events": ev[::-1], "prints": prints, "count": r["n"] or 0, "total_g": round(r["g"] or 0, 1)})
 
 
+def _wk_text(w):
+    return "unter 1 Woche" if w < 1 else "≈ 1 Woche" if w < 1.5 else f"≈ {round(w)} Wochen"
+
+
 def _weekly_report(force=False):
     """Wochenbericht (Telegram/ntfy): Drucke, Stunden, Filament, Kosten, Nachkaufen."""
     day, hour = settings.get("weekly_day"), settings.get("weekly_hour")
@@ -2682,6 +2737,32 @@ def _weekly_report(force=False):
                 lines.append("🛒 Nachkaufen: " + ", ".join(low))
     except Exception as e:
         log.debug("Wochenbericht Lager: %s", e)
+    try:
+        inv = spoolman.inventory()
+        names = {f["id"]: " ".join(x for x in [(f.get("vendor") or {}).get("name", ""), f.get("name") or "",
+                                               "" if (f.get("material") or "").lower() in (f.get("name") or "").lower() else f.get("material") or ""] if x)
+                 for f in inv["filaments"]}
+        mats = {f["id"]: f.get("material") for f in inv["filaments"]}
+        rest = {}
+        for sp in inv["spools"]:
+            fid = (sp.get("filament") or {}).get("id")
+            rest[fid] = rest.get(fid, 0) + (sp.get("remaining_weight") or 0)
+        soon = []
+        for fid, r in rest.items():
+            _, wk = _weeks_left(fid, r)
+            if wk is not None and wk <= 4:
+                soon.append((wk, names.get(fid, f"#{fid}")))
+        if soon:
+            lines.append("⏳ Bald leer: " + ", ".join(f"{n} ({_wk_text(w)})" for w, n in sorted(soon)[:5]))
+        due = []
+        for sp in inv["spools"]:
+            info = _dry_info(sp, mats.get((sp.get("filament") or {}).get("id")))
+            if info and info["due"]:
+                due.append(f"{names.get((sp.get('filament') or {}).get('id'), '?')} #{sp['id']}")
+        if due:
+            lines.append("💧 Trocknen fällig: " + ", ".join(due[:6]) + (f" (+{len(due) - 6})" if len(due) > 6 else ""))
+    except Exception as e:
+        log.debug("Wochenbericht Prognose/Trocknen: %s", e)
     notifier.send("weekly", "Wochenbericht 📊", "\n".join(lines), "bar_chart", force=force)
     return lines
 

@@ -179,6 +179,15 @@ class History:
                 f" FROM prints p{where} GROUP BY m ORDER BY m DESC LIMIT ?", args + [int(months)]).fetchall()
         return [dict(r) for r in reversed(rows)]
 
+    def spool_grams(self, since):
+        """Verbrauch je Spule seit `since` und Zeitpunkt des ältesten Drucks → ({spool: g}, erster_druck)"""
+        with self._db() as db:
+            g = {r[0]: r[1] or 0 for r in db.execute(
+                "SELECT u.spool, SUM(u.grams) FROM usage u JOIN prints p ON p.id=u.print_id"
+                " WHERE p.time >= ? AND u.spool IS NOT NULL GROUP BY u.spool", (int(since),))}
+            first = db.execute("SELECT MIN(time) FROM prints").fetchone()[0]
+        return g, first
+
     def facets(self):
         with self._db() as db:
             printers = [r[0] for r in db.execute("SELECT DISTINCT printer FROM prints WHERE printer IS NOT NULL ORDER BY 1")]

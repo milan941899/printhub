@@ -478,13 +478,17 @@ function buildGroups(fl) {
   return keys.map(k => { const items = G.get(k); const order = sortFils(items.map(x => x.f)); return {key: V.group + ":" + k, title: k,
     items: order.map(f => items.find(x => x.f === f))}; });
 }
+// Prognose aus dem Verbrauch der letzten Wochen
+function wkText(w) { return w == null ? "" : w < 1 ? "unter 1 Woche" : w < 1.5 ? "≈ 1 Woche" : w > 52 ? "über 1 Jahr" : `≈ ${Math.round(w)} Wochen`; }
+function wkTitle(f) { return f.weeks == null ? "" : `Verbrauch zuletzt ca. ${f.per_week} g pro Woche – der Bestand reicht noch ${wkText(f.weeks)}`; }
 function infoLine(f, sp) {
   const opened = sp.filter(s => s.opened).length, rem = sp.reduce((a, s) => a + (s.remaining || 0), 0);
-  return `${sp.length - opened} voll · ${opened} angebrochen · ${g(rem)}${f.price ? ` · ${eur(f.price)}/Rolle` : ""}${f.extruder_temp ? ` · ${f.extruder_temp} °C` : ""}${f.min ? ` · min ${f.min}` : ""}`;
+  return `${sp.length - opened} voll · ${opened} angebrochen · ${g(rem)}${f.price ? ` · ${eur(f.price)}/Rolle` : ""}${f.extruder_temp ? ` · ${f.extruder_temp} °C` : ""}${f.min ? ` · min ${f.min}` : ""}${f.weeks != null && sp === f.spools ? ` · <span title="${wkTitle(f)}">⏳ ${wkText(f.weeks)}</span>` : ""}`;
 }
 function badges(f, sp) {
   const dry = sp.filter(s => s.dry && s.dry.due).length, inp = sp.filter(s => s.in_printer).length, ne = sp.filter(s => nearEmpty(f, s)).length;
   return (isLow(f) ? ` <span class="lowtag">nachkaufen</span>` : "") + (inp ? ` <span class="btag inp" title="im Drucker">🖨${inp > 1 ? inp : ""}</span>` : "") +
+    (f.weeks != null && f.weeks <= 3 && sp === f.spools ? ` <span class="btag soon" title="${wkTitle(f)}">⏳ ${f.weeks < 1 ? "<1" : Math.round(f.weeks)} Wo.</span>` : "") +
     (dry ? ` <span class="btag dry" title="Trocknen fällig">💧${dry > 1 ? dry : ""}</span>` : "") + (ne ? ` <span class="btag ne" title="fast leer">◔${ne > 1 ? ne : ""}</span>` : "");
 }
 function actBtns(f) {
@@ -1039,14 +1043,14 @@ function openShop() {
   $("shop-list").innerHTML = it.length ? it.map(({f, need}) => `<div class="crow" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
       ${PH.spool(f.color, sortFill(f, f.spools), 30)}
       <div style="flex:1;min-width:0"><b>${esc(f.vendor)}</b> ${esc(f.name)} <span class="muted">${esc(f.material)}</span>
-        <div class="small muted">${f.full} von ${f.min} vollen Rollen${f.price ? ` · zuletzt ${eur(f.price)} je Rolle` : ""}</div></div>
+        <div class="small muted">${f.full} von ${f.min} vollen Rollen${f.price ? ` · zuletzt ${eur(f.price)} je Rolle` : ""}${f.weeks != null ? ` · reicht ${wkText(f.weeks)}` : ""}</div></div>
       <b style="white-space:nowrap">${need}×</b></div>`).join("") +
       (sum ? `<div class="small" style="margin-top:8px">Ungefähr <b>${eur(sum)}</b> (nach letztem Preis)</div>` : "")
     : `<div class="muted" style="padding:10px 0">Alles da – keine Sorte unter dem Mindestbestand. 👍</div>`;
   $("m-shop").classList.add("open");
 }
 function shopCopy() {
-  const txt = "Filament nachkaufen:\n" + shopItems().map(({f, need}) => `- ${need}× ${f.vendor} ${f.name} ${f.material}${f.price ? ` (ca. ${eur(f.price)})` : ""}`).join("\n");
+  const txt = "Filament nachkaufen:\n" + shopItems().map(({f, need}) => `- ${need}× ${f.vendor} ${f.name} ${f.material}${f.price ? ` (ca. ${eur(f.price)})` : ""}${f.weeks != null ? ` – reicht noch ${wkText(f.weeks)}` : ""}`).join("\n");
   const ta = document.createElement("textarea"); ta.value = txt; ta.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(ta); ta.select();
   let ok = false; try { ok = document.execCommand("copy"); } catch {} ta.remove();
   PH.toast(ok ? "Einkaufsliste kopiert" : "Kopieren nicht möglich", !ok);

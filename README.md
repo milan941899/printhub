@@ -429,7 +429,11 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
 - **✎ Rolle bearbeiten:** Filament neu, übrig, Leergewicht, Preis, Ort, Charge, Notiz – ohne Spoolman öffnen zu müssen.
 - **💧 Trocknen:** Jede angebrochene Rolle zeigt, wie viele Tage sie offen ist. Nach dem Trocknen auf **🔥** tippen.
   Grenzen pro Material einstellbar (Standard: PLA 60, PETG 21, TPU 7, PA 3 Tage …). Steckt eine zu lange offene Rolle im
-  Drucker, kommt eine Meldung mit Knopf „getrocknet“.
+  Drucker, kommt eine Meldung mit Knopf „getrocknet“ – auf Wunsch auch für offene Rollen im Lager.
+- **⏳ Reicht noch:** Aus dem Verbrauch der letzten 60 Tage schätzt PrintHub, wie lange der Bestand einer Sorte reicht
+  („⏳ ≈ 3 Wochen“). Knappe Sorten bekommen ein Abzeichen, die Einkaufsliste und der Wochenbericht zeigen es mit an.
+- **♻ Reste aufbrauchen:** Liegt im Lager ein kleiner Rest derselben Sorte, der für einen Auftrag in der Warteschlange reicht,
+  schlägt PrintHub ihn vor – mit Knopf „einlegen“. Grenze für „Rest“ einstellbar (Standard 350 g).
 - Leere Spulen ins **Archiv** (📦 an jeder Rolle, auch wenn sie noch einem Slot zugeordnet ist).
 - **Erkennungsnummern** (Chargen, Artikelnummern) siehst und bearbeitest du bei jeder Sorte unter ✎ als Chips.
 - **🕘 Verlauf dieser Rolle** (Rolle ✎): wann sie in welchem Slot eingelegt bzw. herausgenommen wurde und in welchen
