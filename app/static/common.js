@@ -1,36 +1,15 @@
 // Gemeinsam für alle PrintHub-Seiten: Theme, Navigation, Formatierung, Hinweise
 (function () {
   window.PH = {
-    // Spule in Seitenansicht: Pappspule mit Wicklung in Filamentfarbe, Dicke der Wicklung = Restmenge (fill 0…1)
+    // Spule (gerenderte 3D-Bilder, Jayo/Sunlu-Lochspule): f*.webp = Wicklung in Graustufen, wird per Filter eingefärbt; b*.webp = Spule darüber
     spool(color, fill = 1, h = 34) {
       const c = /^#?[0-9a-f]{6}$/i.test(color || "") ? (color[0] === "#" ? color : "#" + color) : "#9aa4b2";
       const id = "sp" + (PH._sp = (PH._sp || 0) + 1);
-      const v = parseInt(c.slice(1), 16), lum = (0.299 * (v >> 16) + 0.587 * (v >> 8 & 255) + 0.114 * (v & 255)) / 255;
-      const f = Math.max(0, Math.min(1, +fill || 0)), core = 9, r = core + 18 * f, y0 = 32 - r, X0 = 17, X1 = 53;
-      const nl = Math.max(2, Math.round(r / 2.4));
-      const lines = Array.from({length: nl}, (_, i) => { const y = (y0 + (i + .5) * 2 * r / nl).toFixed(1); return `<line x1="${X0}" y1="${y}" x2="${X1}" y2="${y}"/>`; }).join("");
-      return `<svg class="spl" viewBox="0 0 70 64" width="${Math.round(h * 70 / 64)}" height="${h}" aria-hidden="true">
-        <defs>
-          <linearGradient id="${id}s" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#000" stop-opacity=".25"/><stop offset=".18" stop-color="#fff" stop-opacity="${lum > .8 ? .25 : .45}"/>
-            <stop offset=".4" stop-color="#fff" stop-opacity="0"/><stop offset=".75" stop-color="#000" stop-opacity="0"/>
-            <stop offset="1" stop-color="#000" stop-opacity=".5"/></linearGradient>
-          <linearGradient id="${id}b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b98b55"/><stop offset="1" stop-color="#7c5530"/></linearGradient>
-          <radialGradient id="${id}r" cx=".38" cy=".32" r=".8"><stop offset="0" stop-color="#ecc994"/><stop offset=".65" stop-color="#d4a66c"/><stop offset="1" stop-color="#b07f45"/></radialGradient>
-          <radialGradient id="${id}h" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#140d07"/><stop offset=".7" stop-color="#36261a"/><stop offset="1" stop-color="#8a6136"/></radialGradient>
-        </defs>
-        <ellipse cx="${X0}" cy="32" rx="10.5" ry="30" fill="#5e4126"/>
-        <ellipse cx="${X0 + 1.2}" cy="32" rx="9.4" ry="28.6" fill="url(#${id}b)"/>
-        <rect x="${X0}" y="${32 - core}" width="${X1 - X0}" height="${2 * core}" fill="#8f653c"/>
-        <rect x="${X0}" y="${32 - core}" width="${X1 - X0}" height="${2 * core}" fill="url(#${id}s)"/>
-        ${f > 0.02 ? `<rect x="${X0}" y="${y0.toFixed(1)}" width="${X1 - X0}" height="${(2 * r).toFixed(1)}" fill="${c}"/>
-          <g stroke="${lum > .5 ? "#000" : "#fff"}" stroke-opacity="${lum > .5 ? .09 : .07}" stroke-width=".6">${lines}</g>
-          <rect x="${X0}" y="${y0.toFixed(1)}" width="${X1 - X0}" height="${(2 * r).toFixed(1)}" fill="url(#${id}s)"/>` : ""}
-        <ellipse cx="${X1 + 1.6}" cy="32" rx="10.5" ry="30" fill="#7c5530"/>
-        <ellipse cx="${X1}" cy="32" rx="10" ry="29.4" fill="url(#${id}r)"/>
-        <ellipse cx="${X1}" cy="32" rx="7.2" ry="21.5" fill="none" stroke="#9c6f3c" stroke-opacity=".45" stroke-width=".8"/>
-        <ellipse cx="${X1}" cy="32" rx="3.6" ry="8.6" fill="url(#${id}h)"/>
-        <ellipse cx="${X1 - 3.4}" cy="18" rx="1.8" ry="6.5" fill="#fff" opacity=".2"/></svg>`;
+      const f = Math.max(0, Math.min(1, +fill || 0)), k = f < 0.02 ? 0 : Math.max(1, Math.round(f * 10));
+      return `<svg class="spl" viewBox="0 0 174 218" width="${Math.round(h * 174 / 218)}" height="${h}" aria-hidden="true">
+        <filter id="${id}" color-interpolation-filters="sRGB"><feFlood flood-color="${c}"/><feComposite in2="SourceGraphic" operator="arithmetic" k1="1"/></filter>
+        ${k ? `<image href="/static/spool/f${k}.webp" width="174" height="218" filter="url(#${id})"/>` : ""}
+        <image href="/static/spool/b${k}.webp" width="174" height="218"/></svg>`;
     },
     esc: s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])),
     eur: v => v == null ? "–" : Number(v).toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €",
