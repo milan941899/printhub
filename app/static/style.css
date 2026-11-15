@@ -1298,3 +1298,13 @@ body.tg-on #tg-steps { display:none; }   /* verbunden: Einrichtungs-Schritte aus
 /* Einstellungen: Mauerwerk (zwei Spalten, Karten rücken nach oben) */
 .set-grid.masonry { grid-auto-rows:4px; row-gap:0; align-items:start; }
 .set-grid.masonry > * { margin-bottom:16px; }
+
+/* Lager: Farbstreifen links – Filamentfarbe auf einen Blick (heller Rand, damit Weiß/Schwarz sichtbar bleiben) */
+.crow, .fil { position:relative; }
+.crow::before, .fil::before { content:""; position:absolute; left:0; top:6px; bottom:6px; width:7px; border-radius:4px;
+  background:var(--fc, transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--fg) 22%, transparent); pointer-events:none; }
+.crow-top { padding-left:16px; }
+.fil::before { top:0; bottom:0; border-radius:12px 0 0 12px; width:8px; }
+.fil-top { padding-left:18px; }
+.dtab tbody tr:not(.dexp) td.dname { box-shadow:inset 7px 0 0 var(--fc, transparent); padding-left:14px; }
+.btile { border-left:6px solid var(--fc, var(--line)); }

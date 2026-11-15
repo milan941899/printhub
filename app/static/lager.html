@@ -519,7 +519,7 @@ function sortFill(f, sp) {          // Füllstand einer Sorte (Rest / Neu über 
 function compactRow(f, sp) {
   const isOpen = open.has(f.id) || !!V.status;
   const rem = sp.reduce((a, s) => a + (s.remaining || 0), 0);
-  return `<div class="crow ${isLow(f) ? "low" : ""} ${isOpen ? "open" : ""}">
+  return `<div class="crow ${isLow(f) ? "low" : ""} ${isOpen ? "open" : ""}" style="--fc:${f.color || "transparent"}">
     <div class="crow-top" onclick="toggle(${f.id})">
       ${bulkMode ? `<input type="checkbox" class="fselbox" ${fsel.has(f.id) ? "checked" : ""} onclick="event.stopPropagation();fselToggle(${f.id}, this.checked)">` : ""}
       ${PH.spool(f.color, sortFill(f, sp), 30)}
@@ -532,7 +532,7 @@ function compactRow(f, sp) {
 }
 function filRow(f, sp = f.spools) {
   const isOpen = open.has(f.id) || !!V.status;
-  return `<div class="fil ${isLow(f) ? "low" : ""}">
+  return `<div class="fil ${isLow(f) ? "low" : ""}" style="--fc:${f.color || "transparent"}">
     <div class="fil-top" onclick="toggle(${f.id})">
       ${bulkMode ? `<input type="checkbox" class="fselbox" ${fsel.has(f.id) ? "checked" : ""} onclick="event.stopPropagation();fselToggle(${f.id}, this.checked)">` : ""}
       ${PH.spool(f.color, sortFill(f, sp), 40)}
@@ -557,7 +557,7 @@ function tileCard(f, sp) {
 // Große Kacheln: Spulenbild, Name, Rollen und Rest
 function bigCard(f, sp) {
   const rem = sp.reduce((a, s) => a + (s.remaining || 0), 0);
-  return `<button type="button" class="btile ${isLow(f) ? "low" : ""}" onclick="tileOpen(${f.id})" title="${esc(f.vendor)} ${esc(f.name)} ${esc(f.material)}">
+  return `<button type="button" class="btile ${isLow(f) ? "low" : ""}" style="--fc:${f.color || "transparent"}" onclick="tileOpen(${f.id})" title="${esc(f.vendor)} ${esc(f.name)} ${esc(f.material)}">
     <span class="bt-img">${PH.spool(f.color, sortFill(f, sp), 84)}</span>
     <span class="bt-name">${esc(f.name)}</span>
     <span class="muted small">${esc(f.material)}${V.group !== "vendor" ? " · " + esc(f.vendor || "") : ""}</span>
@@ -589,7 +589,7 @@ function detailsTable(items) {
   const th = (k, l, cls = "") => `<th class="${cls}" onclick="event.stopPropagation();tSort('${k}')">${l}${ts.k === k ? (ts.d > 0 ? " ▴" : " ▾") : ""}</th>`;
   return `<div class="dtwrap"><table class="dtab"><thead><tr>${th("name", "Sorte")}${cols.map(c => th(c[0], c[1], c[4] || "")).join("")}</tr></thead><tbody>
     ${rows.map(({f, sp}) => { const isOpen = open.has(f.id);
-      return `<tr class="${isLow(f) ? "low" : ""} ${isOpen ? "open" : ""}" onclick="toggle(${f.id})">
+      return `<tr class="${isLow(f) ? "low" : ""} ${isOpen ? "open" : ""}" style="--fc:${f.color || "transparent"}" onclick="toggle(${f.id})">
         <td class="dname">${PH.spool(f.color, sortFill(f, sp), 26)}<span>${esc(f.name)}${badges(f, sp)}</span></td>
         ${cols.map(c => `<td class="${c[4] || ""}">${c[3](f, sp)}</td>`).join("")}</tr>
         ${isOpen ? `<tr class="dexp"><td colspan="${cols.length + 1}"><div class="muted small">${infoLine(f, sp)}</div><div class="fil-act">${actBtns(f)}</div>${spoolList(f, sp)}</td></tr>` : ""}`; }).join("")}
