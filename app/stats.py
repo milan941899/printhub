@@ -48,8 +48,22 @@ def kpis(rows):
     }
 
 
-def _buckets(rng, start, now, first_time):
-    """Zeitachse: Tage (Woche/Monat) oder Monate (Jahr/Gesamt)."""
+def _buckets(rng, start, now, first_time, fixed=False):
+    """Zeitachse: Tage (Woche/Monat) oder Monate (Jahr/Gesamt). fixed = fester Zeitraum von start bis now."""
+    if fixed:
+        d0, d1 = date.fromtimestamp(start), date.fromtimestamp(max(start, now - 1))
+        n = (d1 - d0).days + 1
+        if n <= 62:
+            days = [d0 + timedelta(days=i) for i in range(n)]
+            return [(d.isoformat(), WEEKDAYS[d.weekday()] if n <= 7 else f"{d.day}.{d.month}.") for d in days], \
+                lambda t: date.fromtimestamp(t).isoformat()
+        out, (y, m) = [], (d0.year, d0.month)
+        while (y, m) <= (d1.year, d1.month):
+            out.append((f"{y}-{m:02d}", f"{MONTHS[m - 1]} {str(y)[2:]}"))
+            m += 1
+            if m > 12:
+                y, m = y + 1, 1
+        return out, lambda t: date.fromtimestamp(t).strftime("%Y-%m")
     if rng in ("week", "month"):
         d0 = date.fromtimestamp(start) + timedelta(days=1)
         days = [d0 + timedelta(days=i) for i in range((date.fromtimestamp(now) - d0).days + 1)]
@@ -69,13 +83,22 @@ def _buckets(rng, start, now, first_time):
     return out, lambda t: date.fromtimestamp(t).strftime("%Y-%m")
 
 
-def compute(rows_all, rng="month", printer="", vendors=None, now=None):
-    now = now or time.time()
+def compute(rows_all, rng="month", printer="", vendors=None, now=None, frm=None, to=None):
+    """frm/to (Unix-Zeit): fester Zeitraum (Diese Woche, Dieser Monat, Letzter Monat, Dieses Jahr, eigener)."""
     vendors = vendors or {}
     if printer:
         rows_all = [r for r in rows_all if r["printer"] == printer]
-    start, prev_start, _ = window(rng, now)
-    rows = [r for r in rows_all if start is None or r["time"] >= start]
+    fixed = frm is not None
+    if fixed:
+        now = min(float(to), time.time()) if to else (now or time.time())
+        start = float(frm)
+        prev_start = start - max(86400, now - start)
+        rows_all_end = [r for r in rows_all if r["time"] < now]
+    else:
+        now = now or time.time()
+        start, prev_start, _ = window(rng, now)
+        rows_all_end = rows_all
+    rows = [r for r in rows_all_end if start is None or r["time"] >= start]
     prev = [r for r in rows_all if start is not None and prev_start <= r["time"] < start]
 
     out = {"range": rng, "printer": printer, "kpis": kpis(rows), "prev": kpis(prev) if start is not None else None,
@@ -125,7 +148,7 @@ def compute(rows_all, rng="month", printer="", vendors=None, now=None):
 
     # --- Zeitachse: Filament, Drucke, Strom, Kosten ----------------------------------
     first = rows_all[0]["time"] if rows_all else None
-    buckets, keyf = _buckets(rng, start, now, first if start is None else None)
+    buckets, keyf = _buckets(rng, start, now, first if start is None else None, fixed)
     series = {k: {"g": 0.0, "h": 0.0, "n": 0, "kwh": 0.0, "fc": 0.0, "ec": 0.0, "wc": 0.0, "mats": defaultdict(float)} for k, _ in buckets}
     for r in rows:
         b = series.get(keyf(r["time"]))

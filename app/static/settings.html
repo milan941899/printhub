@@ -29,19 +29,22 @@
 <div class="set-search"><input type="search" id="set-q" placeholder="🔍 Einstellung suchen, z. B. „trocknen“" autocomplete="off"></div>
 <div id="srch-none" class="muted small" hidden style="margin:4px 2px 10px">Keine Einstellung gefunden.</div>
 <nav class="tabs" id="tabs">
+  <div class="tgrp"><span class="tgl">Seiten</span>
   <a data-t="allgemein">⚙️ Allgemein</a>
+  <a data-t="uebersicht">🖥 Übersicht</a>
+  <a data-t="lager">🧵 Lager</a>
+  <a data-t="verlauf">🕘 Verlauf</a>
+  <a data-t="statistik">📊 Statistik</a></div>
+  <div class="tgrp"><span class="tgl">Technik</span>
   <a data-t="drucker">🖨️ Drucker</a>
   <a data-t="dienste">🔗 Dienste</a>
-  <a data-t="wartung">🔧 Wartung <i id="t-due"></i></a>
   <a data-t="waechter">🛡️ Druckwächter</a>
-  <a data-t="lager">🧵 Lager</a>
-  <a data-t="druck">🖨 Druck</a>
+  <a data-t="wartung">🔧 Wartung <i id="t-due"></i></a>
   <a data-t="kosten">💶 Kosten</a>
   <a data-t="meldungen">🔔 Benachrichtigungen</a>
   <a data-t="zugriff">🔒 Zugriff</a>
-  <a data-t="daten">⇄ Import / Export</a>
-  <a data-t="diagnose">🩺 Diagnose</a>
-  <a data-t="system">ℹ️ System</a>
+  <a data-t="daten">💾 Daten</a>
+  <a data-t="system">ℹ️ System</a></div>
 </nav>
 
 <!-- ============ Allgemein ============ -->
@@ -64,16 +67,8 @@
       <label class="switch"><input type="checkbox" data-k="tab_progress"><span></span></label>
     </div>
     <div class="row">
-      <div><div class="t">Letzte Drucke auf der Übersicht</div><div class="d">0 = ausblenden</div></div>
-      <input type="number" min="0" max="50" step="1" data-k="history_on_dashboard" style="width:90px">
-    </div>
-    <div class="row">
       <div><div class="t">Bambuddy-Warteschlange auf der Übersicht</div><div class="d">Nur wenn Bambuddy unter „Dienste“ eingerichtet ist</div></div>
       <label class="switch"><input type="checkbox" data-k="queue_on_dashboard"><span></span></label>
-    </div>
-    <div class="row">
-      <div><div class="t">Bereiche auf der Übersicht</div><div class="d">Reihenfolge und Ein-/Ausklappen merkt sich jedes Gerät selbst</div></div>
-      <button class="small-btn" onclick="resetLayout()">Zurücksetzen</button>
     </div>
   </section>
 
@@ -96,52 +91,90 @@
     </div>
   </section>
 
+</div>
+
+<!-- ============ Übersicht ============ -->
+<div class="set-grid" data-tab="uebersicht">
   <section class="card">
-    <div class="label">Funktionen</div>
-    <div class="d muted small" style="margin:6px 0 4px">Was ausgeschaltet ist, verschwindet auch aus Lager, Übersicht, Meldungen und Wochenbericht.</div>
+    <div class="label">Kacheln <span class="muted small">(nur dieses Gerät)</span></div>
+    <div class="d muted small" style="margin:6px 0 4px">Bis zu 6 Kacheln je Drucker – getrennt für „beim Drucken“ und „im Leerlauf“. Reihenfolge mit ▲▼.</div>
+    <div id="tilecfg" class="tilecfg muted small">Lade …</div>
+  </section>
+  <section class="card">
+    <div class="label">Düse / Hotend <span class="muted small">(nur dieses Gerät)</span></div>
     <div class="row">
-      <div><div class="t">💧 Trocknen-Zähler</div><div class="d">Tage seit Öffnen bzw. Trocknen, Meldung wenn fällig. Grenzen pro Material unter 🧵 Lager</div></div>
-      <label class="switch"><input type="checkbox" data-k="dry_enabled"><span></span></label>
+      <div><div class="t">Darstellung</div><div class="d">Schema = Strichzeichnung · Realistisch = schattiert mit glühender Düse · Rundinstrumente · Kompakt = nur Werte</div></div>
+      <select data-p="hotend" style="width:170px"><option value="schema">Schema</option><option value="real">Realistisch</option><option value="gauge">Rundinstrumente</option><option value="compact">Kompakt</option></select>
     </div>
-    <div class="row sub" data-if="dry_enabled">
-      <div><div class="t">… auch Rollen im Lager melden</div><div class="d">Aus: nur Rollen, die gerade im Drucker stecken</div></div>
-      <label class="switch"><input type="checkbox" data-k="dry_all"><span></span></label>
-    </div>
+  </section>
+  <section class="card">
+    <div class="label">Bereiche &amp; Funktionen</div>
     <div class="row">
-      <div><div class="t">⏳ Reicht-noch-Prognose</div><div class="d">Schätzt aus dem bisherigen Verbrauch, wie lange eine Sorte reicht</div></div>
-      <label class="switch"><input type="checkbox" data-k="forecast_enabled"><span></span></label>
+      <div><div class="t">Letzte Drucke auf der Übersicht</div><div class="d">0 = ausblenden</div></div>
+      <input type="number" min="0" max="50" step="1" data-k="history_on_dashboard" style="width:90px">
     </div>
-    <div class="row sub" data-if="forecast_enabled">
-      <div><div class="t">… Verbrauch der letzten</div><div class="d">Kürzer = reagiert schneller, länger = ruhiger</div></div>
-      <select data-k="forecast_days" style="width:110px"><option value="30">30 Tage</option><option value="60">60 Tage</option><option value="90">90 Tage</option></select>
-    </div>
-    <div class="row sub" data-if="forecast_enabled">
-      <div><div class="t">… „bald leer“ ab</div><div class="d">Abzeichen ⏳ im Lager und Zeile im Wochenbericht</div></div>
-      <div class="unit-in"><input type="number" min="1" max="12" step="1" data-k="forecast_warn_weeks" style="width:70px"> Wochen</div>
-    </div>
-    <div class="row sub" data-if="forecast_enabled">
-      <div><div class="t">… bald leere Sorten auf die Einkaufsliste</div><div class="d">Auch ohne Mindestbestand, wenn keine volle Rolle mehr da ist</div></div>
-      <label class="switch"><input type="checkbox" data-k="forecast_shop"><span></span></label>
-    </div>
-    <div class="row">
-      <div><div class="t">🛒 Mindestbestand &amp; Einkaufsliste</div><div class="d">„nachkaufen“-Markierung, Kachel und Einkaufsliste im Lager</div></div>
-      <label class="switch"><input type="checkbox" data-k="shop_enabled"><span></span></label>
-    </div>
-    <div class="row">
-      <div><div class="t">♻ Reste aufbrauchen</div><div class="d">Warteschlange: passt ein Rest derselben Sorte für den Auftrag, wird er zum Einlegen vorgeschlagen</div></div>
-      <label class="switch"><input type="checkbox" data-k="rest_tip"><span></span></label>
-    </div>
-    <div class="row sub" data-if="rest_tip">
-      <div><div class="t">… als Rest gilt eine Rolle bis</div></div>
-      <div class="unit-in"><input type="number" min="50" step="50" data-k="rest_tip_max" style="width:90px"> g</div>
-    </div>
-    <div class="row">
-      <div><div class="t">🔁 Ersatzrolle vorschlagen</div><div class="d">Reicht die eingelegte Rolle nicht: passende Rolle aus dem Lager mit Knopf „Diese einlegen“</div></div>
-      <label class="switch"><input type="checkbox" data-k="swap_suggest"><span></span></label>
-    </div>
+
     <div class="row">
       <div><div class="t">▲ „zuerst“ im AMS</div><div class="d">Liegt dieselbe Sorte in mehreren Slots, wird die kleinere Rolle markiert</div></div>
       <label class="switch"><input type="checkbox" data-k="first_marks"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Bereiche auf der Übersicht</div><div class="d">Reihenfolge und Ein-/Ausklappen merkt sich jedes Gerät selbst</div></div>
+      <button class="small-btn" onclick="resetLayout()">Zurücksetzen</button>
+    </div>
+  </section>
+</div>
+
+<!-- ============ Verlauf ============ -->
+<div class="set-grid" data-tab="verlauf">
+  <section class="card">
+    <div class="label">Verlauf <span class="muted small">(nur dieses Gerät)</span></div>
+    <div class="row">
+      <div><div class="t">Zeitraum beim Öffnen</div></div>
+      <select data-p="hist_range" style="width:170px"></select>
+    </div>
+    <div class="row">
+      <div><div class="t">Fehlgeschlagene / abgebrochene Drucke</div><div class="d">Aus: Filter „Ergebnis“ steht beim Öffnen auf „Fertig“</div></div>
+      <label class="switch"><input type="checkbox" data-p="hist_fail" data-def="1"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Vorschaubilder</div></div>
+      <select data-p="hist_pics" style="width:170px"><option value="both">Modell + Foto</option><option value="thumb">nur Modellbild</option><option value="photo">nur Kamerafoto</option><option value="none">keine</option></select>
+    </div>
+    <div class="row">
+      <div><div class="t">Spalte Filament</div></div>
+      <label class="switch"><input type="checkbox" data-p="hist_fil" data-def="1"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Spalte Strom</div></div>
+      <label class="switch"><input type="checkbox" data-p="hist_kwh" data-def="1"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Spalte Kosten</div></div>
+      <label class="switch"><input type="checkbox" data-p="hist_cost" data-def="1"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Nach Tagen gruppieren</div><div class="d">Überschrift je Tag mit Anzahl, Filament und Kosten</div></div>
+      <label class="switch"><input type="checkbox" data-p="hist_days"><span></span></label>
+    </div>
+  </section>
+</div>
+
+<!-- ============ Statistik ============ -->
+<div class="set-grid" data-tab="statistik">
+  <section class="card">
+    <div class="label">Statistik <span class="muted small">(nur dieses Gerät)</span></div>
+    <div class="row">
+      <div><div class="t">Zeitraum beim ersten Öffnen</div><div class="d">Danach merkt sich die Statistik den zuletzt gewählten</div></div>
+      <select data-p="stats_range" style="width:170px"></select>
+    </div>
+    <div class="row">
+      <div><div class="t">Woche beginnt am</div><div class="d">Für „Diese Woche“ (Verlauf und Statistik) und das Wochentage-Diagramm</div></div>
+      <select data-p="week_start" style="width:170px"><option value="mo">Montag</option><option value="so">Sonntag</option></select>
+    </div>
+    <div class="row">
+      <div><div class="t">Diagramme ein- und ausblenden</div><div class="d">In der Statistik: „✎ Anordnen“ → „Bausteine ▾“, dort auch Größe und Reihenfolge</div></div>
+      <a class="small-btn" href="/statistik">Zur Statistik</a>
     </div>
   </section>
 </div>
@@ -171,6 +204,46 @@
     <div class="row" id="pw-bb-row" hidden><div><div class="t">Bambuddy „Auto Aus“</div><div class="d" id="pw-bb">–</div></div>
       <button class="small-btn" id="pw-bb-btn" onclick="pwBambuddy()">In Bambuddy ausschalten</button></div>
   </section>
+<div class="set-grid" style="margin-top:14px">
+  <section class="card">
+    <div class="label">Beim Drucken</div>
+    <div class="row">
+      <div><div class="t">Warnen, wenn das Filament nicht reicht</div><div class="d">Beim Druckstart: geplanter Bedarf gegen den Rest in Spoolman</div></div>
+      <label class="switch"><input type="checkbox" data-k="warn_short"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Sicherheitsreserve</div><div class="d">So viel soll mindestens übrig bleiben</div></div>
+      <div class="unit-in"><input type="number" min="0" step="5" data-k="short_reserve_g" style="width:90px"> g</div>
+    </div>
+    <div class="row">
+      <div><div class="t">Foto nach dem Druck</div><div class="d">Kamerabild vom fertigen Teil im Verlauf speichern</div></div>
+      <label class="switch"><input type="checkbox" data-k="photo_enabled"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Foto bei</div></div>
+      <div class="checks" id="photo_events">
+        <label><input type="checkbox" value="finish"> Fertig</label>
+        <label><input type="checkbox" value="fail"> Abbruch</label>
+      </div>
+    </div>
+    <div class="row">
+      <div><div class="t">Wartezeit bis zum Foto</div><div class="d">Damit das Bett nach vorne gefahren und das Licht an ist</div></div>
+      <div class="unit-in"><input type="number" min="0" max="300" step="1" data-k="photo_delay" style="width:90px"> s</div>
+    </div>
+    <div class="row">
+      <div><div class="t">🔁 Ersatzrolle vorschlagen</div><div class="d">Reicht die eingelegte Rolle nicht: passende Rolle aus dem Lager mit Knopf „Diese einlegen“</div></div>
+      <label class="switch"><input type="checkbox" data-k="swap_suggest"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">♻ Reste aufbrauchen</div><div class="d">Warteschlange: passt ein Rest derselben Sorte für den Auftrag, wird er zum Einlegen vorgeschlagen</div></div>
+      <label class="switch"><input type="checkbox" data-k="rest_tip"><span></span></label>
+    </div>
+    <div class="row sub" data-if="rest_tip">
+      <div><div class="t">… als Rest gilt eine Rolle bis</div></div>
+      <div class="unit-in"><input type="number" min="50" step="50" data-k="rest_tip_max" style="width:90px"> g</div>
+    </div>
+  </section>
+</div>
 </div>
 
 <!-- ============ Dienste ============ -->
@@ -346,6 +419,59 @@
 <!-- ============ Lager ============ -->
 <div class="set-grid" data-tab="lager">
   <section class="card">
+    <div class="label">Funktionen im Lager</div>
+    <div class="d muted small" style="margin:6px 0 4px">Was ausgeschaltet ist, verschwindet aus dem Lager (Knöpfe, Menü, Abzeichen), aus Meldungen und Wochenbericht.</div>
+    <div class="row">
+      <div><div class="t">📷 Rolle scannen</div><div class="d">Etikett oder Strichcode fotografieren</div></div>
+      <label class="switch"><input type="checkbox" data-k="lager_scan"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">🎨 Serie: mehrere Farben einer Sorte</div></div>
+      <label class="switch"><input type="checkbox" data-k="lager_series"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">📚 Stapel: gemischte Rollen</div></div>
+      <label class="switch"><input type="checkbox" data-k="lager_stack"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">📦 Archiv</div><div class="d">Knopf „Archiv“ und „Archivieren“ in der Auswahl</div></div>
+      <label class="switch"><input type="checkbox" data-k="lager_archive"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Aa Namen vereinheitlichen</div></div>
+      <label class="switch"><input type="checkbox" data-k="lager_names"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">🛒 Mindestbestand &amp; Einkaufsliste</div><div class="d">„nachkaufen“-Markierung, Kachel und Einkaufsliste im Lager</div></div>
+      <label class="switch"><input type="checkbox" data-k="shop_enabled"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">⏳ Reicht-noch-Prognose</div><div class="d">Schätzt aus dem bisherigen Verbrauch, wie lange eine Sorte reicht</div></div>
+      <label class="switch"><input type="checkbox" data-k="forecast_enabled"><span></span></label>
+    </div>
+    <div class="row sub" data-if="forecast_enabled">
+      <div><div class="t">… Verbrauch der letzten</div><div class="d">Kürzer = reagiert schneller, länger = ruhiger</div></div>
+      <select data-k="forecast_days" style="width:110px"><option value="30">30 Tage</option><option value="60">60 Tage</option><option value="90">90 Tage</option></select>
+    </div>
+    <div class="row sub" data-if="forecast_enabled">
+      <div><div class="t">… „bald leer“ ab</div><div class="d">Abzeichen ⏳ im Lager und Zeile im Wochenbericht</div></div>
+      <div class="unit-in"><input type="number" min="1" max="12" step="1" data-k="forecast_warn_weeks" style="width:70px"> Wochen</div>
+    </div>
+    <div class="row sub" data-if="forecast_enabled">
+      <div><div class="t">… bald leere Sorten auf die Einkaufsliste</div><div class="d">Auch ohne Mindestbestand, wenn keine volle Rolle mehr da ist</div></div>
+      <label class="switch"><input type="checkbox" data-k="forecast_shop"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">💧 Trocknen-Zähler</div><div class="d">Tage seit Öffnen bzw. Trocknen, Meldung wenn fällig. Grenzen pro Material unter 🧵 Lager</div></div>
+      <label class="switch"><input type="checkbox" data-k="dry_enabled"><span></span></label>
+    </div>
+    <div class="row sub" data-if="dry_enabled">
+      <div><div class="t">… auch Rollen im Lager melden</div><div class="d">Aus: nur Rollen, die gerade im Drucker stecken</div></div>
+      <label class="switch"><input type="checkbox" data-k="dry_all"><span></span></label>
+    </div>
+  </section>
+
+  <section class="card">
     <div class="label">Spulen</div>
     <div class="row">
       <div><div class="t">Slot am Drucker einstellen</div><div class="d">Beim Zuweisen Material, Farbe und Profil an den A1 senden (Bambuddy &amp; Bambu Studio sehen es dann)</div></div>
@@ -412,37 +538,6 @@
     </div>
     <div class="row"><div><div class="t">Heute verbraucht</div><div class="d">Zählt seit dem letzten Neustart von PrintHub; Google setzt das Kontingent um 9 Uhr zurück</div></div>
       <span id="ai-today" class="small">–</span></div>
-  </section>
-
-</div>
-
-<!-- ============ Druck ============ -->
-<div class="set-grid" data-tab="druck">
-  <section class="card">
-    <div class="label">Druck-Überwachung</div>
-    <div class="row">
-      <div><div class="t">Warnen, wenn das Filament nicht reicht</div><div class="d">Beim Druckstart: geplanter Bedarf gegen den Rest in Spoolman</div></div>
-      <label class="switch"><input type="checkbox" data-k="warn_short"><span></span></label>
-    </div>
-    <div class="row">
-      <div><div class="t">Sicherheitsreserve</div><div class="d">So viel soll mindestens übrig bleiben</div></div>
-      <div class="unit-in"><input type="number" min="0" step="5" data-k="short_reserve_g" style="width:90px"> g</div>
-    </div>
-    <div class="row">
-      <div><div class="t">Foto nach dem Druck</div><div class="d">Kamerabild vom fertigen Teil im Verlauf speichern</div></div>
-      <label class="switch"><input type="checkbox" data-k="photo_enabled"><span></span></label>
-    </div>
-    <div class="row">
-      <div><div class="t">Foto bei</div></div>
-      <div class="checks" id="photo_events">
-        <label><input type="checkbox" value="finish"> Fertig</label>
-        <label><input type="checkbox" value="fail"> Abbruch</label>
-      </div>
-    </div>
-    <div class="row">
-      <div><div class="t">Wartezeit bis zum Foto</div><div class="d">Damit das Bett nach vorne gefahren und das Licht an ist</div></div>
-      <div class="unit-in"><input type="number" min="0" max="300" step="1" data-k="photo_delay" style="width:90px"> s</div>
-    </div>
   </section>
 
   <section class="card">
@@ -623,7 +718,7 @@
 </div>
 
 <!-- ============ Diagnose ============ -->
-<div data-tab="diagnose">
+<div data-tab="system" class="diag-in-sys">
   <section class="card">
     <div class="section-h"><div><span class="label">Alles prüfen</span>
       <div class="d muted small" style="margin-top:4px">Prüft Drucker, Kamera, Dienste, Benachrichtigungen, Speicher und Sicherung. Dauert ein paar Sekunden.</div></div>
@@ -739,6 +834,48 @@ function dryAdd() {
 function dryDel(i) { const r = dryParse(S.dry_days); r.splice(i, 1); drySave(r); }
 function dryReset() { if (confirm("Trocknungsgrenzen auf die Standardwerte zurücksetzen?")) save({dry_days: DEF.dry_days}); }
 
+// ---------- Einstellungen nur für dieses Gerät (data-p → PH.pref) ----------
+function prefInit() {
+  document.querySelectorAll("select[data-p=hist_range], select[data-p=stats_range]").forEach(sel =>
+    sel.innerHTML = PH.RANGES.filter(r => r[0] !== "custom").map(([v, l]) => `<option value="${v}">${l}</option>`).join(""));
+  const defs = {hist_range: "all", stats_range: "month", hist_pics: "both", hotend: "schema", week_start: "mo"};
+  document.querySelectorAll("[data-p]").forEach(el => {
+    const k = el.dataset.p;
+    if (el.type === "checkbox") { el.checked = !!PH.pref(k, el.dataset.def === "1"); el.onchange = () => { PH.pref(k, null, el.checked); PH.toast("Gespeichert ✓ (dieses Gerät)"); }; }
+    else { el.value = PH.pref(k, defs[k] ?? ""); el.onchange = () => { PH.pref(k, null, el.value); PH.toast("Gespeichert ✓ (dieses Gerät)"); }; }
+  });
+}
+
+// ---------- Übersicht: Kacheln je Drucker (gespeichert im Layout der Übersicht, „ph-board“) ----------
+let TC_PR = null;
+function tcBoard() { try { return JSON.parse(localStorage.getItem("ph-board") || "null") || {page: {order: [], span: {}, hidden: []}, blk: {}, collapsed: {}}; } catch { return {page: {order: [], span: {}, hidden: []}, blk: {}, collapsed: {}}; } }
+function tcGet(pid, mode) { const b = tcBoard(), t = (b.tiles || {})[pid]; return (t && Array.isArray(t[mode]) ? t[mode] : PH.TILE_DEF[mode]).filter(k => PH.TILE_NAMES[k]); }
+function tcSet(pid, mode, list) {
+  const b = tcBoard(); b.tiles ||= {}; b.tiles[pid] ||= {}; b.tiles[pid][mode] = list.slice(0, 6);
+  try { localStorage.setItem("ph-board", JSON.stringify(b)); } catch {}
+  tileCfg(); PH.toast("Gespeichert ✓ (dieses Gerät)");
+}
+async function tileCfg() {
+  if (!TC_PR) { try { TC_PR = ((await (await fetch("/api/state")).json()).printers || []).map(p => ({id: p.id, name: p.name})); } catch { TC_PR = []; } }
+  if (!TC_PR.length) { $("tilecfg").textContent = "Keine Drucker eingerichtet."; return; }
+  const col = (pid, mode, title) => {
+    const sel = tcGet(pid, mode), rest = Object.keys(PH.TILE_NAMES).filter(k => !sel.includes(k));
+    return `<div class="tc-col"><div class="tc-h">${title}</div>
+      ${sel.map((k, i) => `<div class="tc-r"><span>${i + 1}. ${esc(PH.TILE_NAMES[k])}</span><span class="tc-b">
+        <button class="small-btn" ${i ? "" : "disabled"} onclick="tcMove('${pid}','${mode}',${i},-1)">▲</button>
+        <button class="small-btn" ${i < sel.length - 1 ? "" : "disabled"} onclick="tcMove('${pid}','${mode}',${i},1)">▼</button>
+        <button class="small-btn" onclick="tcDel('${pid}','${mode}',${i})">✕</button></span></div>`).join("")}
+      ${sel.length < 6 ? `<select onchange="if(this.value)tcAdd('${pid}','${mode}',this.value)"><option value="">＋ Kachel hinzufügen …</option>${rest.map(k => `<option value="${k}">${esc(PH.TILE_NAMES[k])}</option>`).join("")}</select>` : `<div class="muted small">Maximal 6 Kacheln</div>`}
+      <button class="link small" onclick="tcReset('${pid}','${mode}')">↺ Standard</button></div>`;
+  };
+  $("tilecfg").classList.remove("muted", "small");
+  $("tilecfg").innerHTML = TC_PR.map(p => `<div class="tc-pr"><div class="t">${esc(p.name)}</div><div class="tc-cols">${col(p.id, "print", "🖨 Beim Drucken")}${col(p.id, "idle", "💤 Im Leerlauf")}</div></div>`).join("");
+}
+function tcMove(pid, mode, i, d) { const l = tcGet(pid, mode); [l[i], l[i + d]] = [l[i + d], l[i]]; tcSet(pid, mode, l); }
+function tcDel(pid, mode, i) { const l = tcGet(pid, mode); l.splice(i, 1); tcSet(pid, mode, l); }
+function tcAdd(pid, mode, k) { tcSet(pid, mode, [...tcGet(pid, mode), k]); }
+function tcReset(pid, mode) { tcSet(pid, mode, PH.TILE_DEF[mode]); }
+
 // ---------- Spulen-Darstellung (nur dieses Gerät) ----------
 function splInit() {
   const P = PH.spoolPref();
@@ -757,7 +894,9 @@ function splSet(ch = {}) {
 // ---------- Tabs ----------
 function showTab(t) {
   if (t === "nachtruhe") t = "waechter";
-  if (t === "spulen") t = "lager";              // alter Link
+  if (t === "spulen") t = "lager";              // alte Links
+  if (t === "druck") t = "drucker";
+  if (t === "diagnose") t = "system";
   if ($("set-q") && $("set-q").value) { $("set-q").value = ""; document.body.classList.remove("searching"); setSearchClear(); }
   if (!document.querySelector(`[data-tab="${t}"]`)) t = "allgemein";
   document.querySelectorAll("[data-tab]").forEach(el => el.hidden = el.dataset.tab !== t);
@@ -766,10 +905,11 @@ function showTab(t) {
   if (t === "dienste") loadServices();
   if (t === "drucker") { pcLoad(); pwHint(); }
   if (t === "waechter") { loadNR(true); plInit(); }
-  if (t === "druck") loadProfiles();
+  if (t === "lager") loadProfiles();
+  if (t === "uebersicht") tileCfg();
   if (t === "meldungen") tgLoad();
   if (t === "daten") bkLoad();
-  if (t === "diagnose") { if (!DG) dgRun(); lgLoad(); }
+  if (t === "system" || t === "diagnose") { if (!DG) dgRun(); lgLoad(); }
 }
 document.querySelectorAll("#tabs a").forEach(a => { a.href = "#" + a.dataset.t; });
 $("set-q").addEventListener("input", setSearch);
@@ -806,7 +946,7 @@ function fill() {
 async function load() {
   const d = await (await fetch("/api/settings")).json();
   DEF = (d.info && d.info.defaults) || {};
-  S = d.settings; fill(); lblInit(); splInit();
+  S = d.settings; fill(); lblInit(); splInit(); prefInit();
   $("saver").value = PH.saverMode();
   const i = d.info;
   if (i.ai_today && $("ai-today")) $("ai-today").innerHTML = `<b>${i.ai_today.n}</b> Anfragen` +

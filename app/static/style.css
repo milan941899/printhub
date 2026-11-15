@@ -657,7 +657,7 @@ body:not(.editing) .kgrip, body:not(.editing) .krz, body:not(.editing) .kx { dis
 @container (max-width:600px) {
   .blk { grid-column:span 12; }
   .blk[data-b^="e"] { grid-column:span 6; }
-  .blk[data-b="e3"]:has(+ .blk:not([data-b="e4"])), .blk[data-b="e3"]:last-child { grid-column:span 12; }   /* ohne 4. Kachel volle Breite */
+  .blk.ewide { grid-column:span 12; }   /* ungerade Kachelzahl: letzte volle Breite */
 }
 /* Griffe: Seite */
 .pgrip, .px { position:absolute; top:-11px; z-index:5; background:var(--card); border:1px solid var(--acc); border-radius:99px;
@@ -1159,3 +1159,76 @@ body.searching #tabs { opacity:.45; }
 .dry-r .dry-m { flex:1; min-width:0; }
 .dry-r input.dry-m { max-width:180px; text-transform:uppercase; }
 .spl-prev { display:flex; gap:14px; align-items:flex-end; justify-content:center; flex-wrap:wrap; padding:10px 6px 14px; background:var(--well); border-radius:10px; margin:8px 0; min-height:70px; }
+
+/* frei wählbare Kacheln */
+a.etile.tlink { text-decoration:none; color:inherit; display:block; }
+a.etile.tlink:hover { border-color:var(--acc); }
+.etile .v .tclip { display:block; font-size:.62em; line-height:1.25; max-height:2.5em; overflow:hidden; text-overflow:ellipsis; }
+
+/* Hotend: Rundinstrumente + Kompakt */
+.hotend .gtrack { stroke:var(--trk); }
+.hotend .gtick { stroke:var(--muted); stroke-width:1.2; opacity:.6; }
+.hotend .gval { fill:var(--fg); font-size:26px; font-weight:800; }
+.hcompact { display:grid; grid-template-columns:1fr 1fr; gap:2px 16px; padding:6px 8px; }
+.hcompact .hc-r { display:flex; justify-content:space-between; align-items:baseline; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); }
+.hcompact .hc-r span { color:var(--muted); font-size:12px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; }
+.hcompact .hc-r b { font-size:17px; white-space:nowrap; } .hcompact .hc-r b.acc { color:var(--acc); }
+.hcompact .hc-r small { color:var(--muted); font-weight:600; font-size:12px; }
+.hcompact .hc-dot { display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:6px; vertical-align:0; border:1px solid #fff6; }
+@container (max-width:340px) { .hcompact { grid-template-columns:1fr; } }
+
+/* Lager: Funktionen aus */
+body.no-scan .f-scan, body.no-series .f-series, body.no-stack .f-stack, body.no-archive .f-archive, body.no-names .f-names { display:none !important; }
+/* Lager: große Kacheln */
+.btiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; padding:4px 0; }
+.btile { display:flex; flex-direction:column; align-items:center; gap:3px; padding:12px 8px 10px; background:var(--tile); border:1px solid var(--line); border-radius:12px; color:inherit; cursor:pointer; text-align:center; font:inherit; }
+.btile:hover { border-color:var(--acc); }
+.btile.low { border-color:color-mix(in srgb, var(--warn) 60%, var(--line)); }
+.btile .bt-img { height:88px; display:grid; place-items:end center; }
+.btile .bt-name { font-weight:700; line-height:1.2; }
+.btile .bt-num { font-size:13px; color:var(--muted); } .btile .bt-num b { color:var(--fg); }
+@media (max-width:700px) { .btiles { grid-template-columns:repeat(2, 1fr); } }
+/* Lager: Details-Tabelle */
+.dtwrap { overflow-x:auto; margin:0 -4px; }
+.dtab { width:100%; border-collapse:collapse; font-size:14px; }
+.dtab th { text-align:left; font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--line); cursor:pointer; white-space:nowrap; user-select:none; }
+.dtab th:hover { color:var(--acc); }
+.dtab td { padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; white-space:nowrap; }
+.dtab .num { text-align:right; font-variant-numeric:tabular-nums; }
+.dtab tbody tr:not(.dexp) { cursor:pointer; } .dtab tbody tr:not(.dexp):hover td { background:color-mix(in srgb, var(--acc) 6%, transparent); }
+.dtab tr.low td.dname span { color:var(--warn); }
+.dtab .dname { display:flex; align-items:center; gap:8px; white-space:normal; min-width:160px; }
+.dtab .dname .spl { flex:none; }
+.dtab tr.dexp td { white-space:normal; background:var(--well); }
+.dtab .warnc { color:var(--warn); font-weight:600; }
+.mm.cols { display:grid; gap:6px; padding:10px 12px; min-width:170px; }
+.mm.cols label { display:flex; gap:8px; align-items:center; font-size:14px; }
+
+/* Zeitraum-Leiste (Verlauf + Statistik) */
+.rangebar { display:flex; flex-direction:column; gap:8px; min-width:0; flex:1 1 100%; }
+.rbar { display:flex; flex-wrap:nowrap !important; overflow-x:auto; scrollbar-width:none; max-width:100%; }
+.rbar::-webkit-scrollbar { display:none; }
+.rbar button { white-space:nowrap; flex:none; }
+.rcustom { display:flex; gap:10px; flex-wrap:wrap; }
+.rcustom[hidden] { display:none; }
+.rcustom label { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+
+/* Verlauf: Spalten ausblenden, Tagesgruppen */
+table.list.no-fil .c-fil, table.list.no-kwh .c-kwh, table.list.no-cost .c-cost, table.list.no-pic .c-pic { display:none; }
+table.list tr.dayrow td { background:var(--well); padding:8px 10px; font-size:13px; border-top:1px solid var(--line); }
+
+/* Einstellungen: Reiter in zwei Gruppen */
+#tabs .tgrp { display:flex; flex-wrap:wrap; gap:4px 6px; align-items:center; }
+#tabs .tgrp + .tgrp { margin-top:6px; padding-top:6px; border-top:1px solid var(--line); }
+#tabs .tgl { font-size:10.5px; font-weight:800; letter-spacing:1px; text-transform:uppercase; color:var(--muted); width:62px; flex:none; }
+/* Kachel-Auswahl */
+.tc-pr { padding:8px 0 12px; border-bottom:1px solid var(--line); }
+.tc-pr:last-child { border-bottom:0; }
+.tc-cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:6px; }
+@media (max-width:600px) { .tc-cols { grid-template-columns:1fr; } }
+.tc-h { font-size:12px; font-weight:700; color:var(--muted); margin-bottom:4px; }
+.tc-r { display:flex; justify-content:space-between; align-items:center; gap:6px; padding:4px 0; border-bottom:1px dashed var(--line); font-size:14px; }
+.tc-b { display:flex; gap:4px; } .tc-b .small-btn { padding:3px 8px; min-width:30px; }
+.tc-col select { margin-top:8px; width:100%; }
+.tc-col .link { margin-top:6px; }
+#tabs { flex-direction:column; align-items:stretch; }

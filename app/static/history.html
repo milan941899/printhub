@@ -40,21 +40,7 @@
   <div id="v-prints">
   <section class="card">
     <div class="filters">
-      <div class="field">
-        <span class="lab">Zeitraum</span>
-        <select id="f-range">
-          <option value="month">Dieser Monat</option>
-          <option value="lastmonth">Letzter Monat</option>
-          <option value="30">Letzte 30 Tage</option>
-          <option value="year">Dieses Jahr</option>
-          <option value="all" selected>Alles</option>
-          <option value="custom">Eigener Zeitraum …</option>
-        </select>
-      </div>
-      <div class="field" id="f-custom" style="display:none;flex-direction:row;gap:6px">
-        <div class="field"><span class="lab">Von</span><input type="date" id="f-from"></div>
-        <div class="field"><span class="lab">Bis</span><input type="date" id="f-to"></div>
-      </div>
+      <div class="rangebar" id="rangebar"></div>
       <div class="field"><span class="lab">Drucker</span><select id="f-printer"><option value="">Alle</option></select></div>
       <div class="field"><span class="lab">Material</span><select id="f-material"><option value="">Alle</option></select></div>
       <div class="field"><span class="lab">Spule</span><select id="f-spool"><option value="">Alle</option></select></div>
@@ -83,8 +69,8 @@
     <div style="overflow-x:auto">
       <table class="list">
         <thead><tr>
-          <th></th><th>Datum</th><th>Modell / Spulen</th><th class="hide-s">Drucker</th><th class="num hide-s">Dauer</th>
-          <th class="num">Filament</th><th class="num hide-s">Strom</th><th class="num">Kosten</th><th></th>
+          <th class="c-pic"></th><th>Datum</th><th>Modell / Spulen</th><th class="hide-s">Drucker</th><th class="num hide-s">Dauer</th>
+          <th class="num c-fil">Filament</th><th class="num hide-s c-kwh">Strom</th><th class="num c-cost">Kosten</th><th></th>
         </tr></thead>
         <tbody id="rows"></tbody>
       </table>
@@ -142,21 +128,9 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") $("lightbox"
 let offset = 0, metric = "tc", lastMonths = [];
 const PAGE = 50;
 
-function range() {
-  const v = $("f-range").value, now = new Date();
-  const ts = d => Math.floor(d.getTime() / 1000);
-  if (v === "month") return {from: ts(new Date(now.getFullYear(), now.getMonth(), 1))};
-  if (v === "lastmonth") return {from: ts(new Date(now.getFullYear(), now.getMonth() - 1, 1)), to: ts(new Date(now.getFullYear(), now.getMonth(), 1))};
-  if (v === "30") return {from: ts(new Date(Date.now() - 30 * 864e5))};
-  if (v === "year") return {from: ts(new Date(now.getFullYear(), 0, 1))};
-  if (v === "custom") {
-    const r = {};
-    if ($("f-from").value) r.from = ts(new Date($("f-from").value + "T00:00"));
-    if ($("f-to").value) r.to = ts(new Date($("f-to").value + "T00:00")) + 86400;
-    return r;
-  }
-  return {};
-}
+// Zeitraum über die gemeinsame Leiste (wie in der Statistik); Vorgabe pro Gerät unter Einstellungen → Verlauf
+const RS = {v: PH.pref("hist_range", "all"), from: "", to: ""};
+function range() { return PH.rangeTs(RS.v, RS.from, RS.to); }
 function params(extra = {}) {
   const p = {...range(), printer: $("f-printer").value, material: $("f-material").value, spool: $("f-spool").value,
              result: $("f-result").value, q: $("f-q").value.trim(), ...extra};
@@ -174,12 +148,13 @@ async function loadFacets() {
   if (q.get("spool")) $("f-spool").value = q.get("spool");
   // Aufruf aus der Statistik: Zeitraum, Drucker, Material, Ergebnis übernehmen
   if (q.get("from") || q.get("to")) {
-    $("f-range").value = "custom"; $("f-custom").style.display = "flex";
-    $("f-from").value = q.get("from") || ""; $("f-to").value = q.get("to") || "";
+    RS.v = "custom"; RS.from = q.get("from") || ""; RS.to = q.get("to") || "";
   }
   if (q.get("printer")) { if (![...$("f-printer").options].some(o => o.value === q.get("printer"))) $("f-printer").add(new Option(q.get("printer"), q.get("printer"))); $("f-printer").value = q.get("printer"); }
   if (q.get("material")) { const m = q.get("material").toUpperCase(); if (![...$("f-material").options].some(o => o.value === m)) $("f-material").add(new Option(m, m)); $("f-material").value = m; }
   if (q.get("result")) $("f-result").value = q.get("result");
+  else if (!PH.pref("hist_fail", true)) $("f-result").value = "ok";
+  PH.rangeBar($("rangebar"), RS, () => load());
 }
 
 function sumTiles(t) {
@@ -219,23 +194,44 @@ function prep(e) {
   const tot = st.reduce((a, x) => a + x.sec, 0), mm = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   return `<details class="prep"><summary class="muted small">⚙ Vorb. ${mm(tot)}</summary>${st.map(x => `<div>${x.icon} ${esc(x.text)} <span>${mm(x.sec)}</span></div>`).join("")}</details>`;
 }
+let lastDay = "";
+function daySums() {   // Tagessummen aus den geladenen Zeilen
+  document.querySelectorAll("#rows tr.dayrow").forEach(h => {
+    const rs = [...document.querySelectorAll(`#rows tr[data-dk="${CSS.escape(h.dataset.day)}"]`)];
+    const gr = rs.reduce((a, r) => a + +r.dataset.g, 0), c = rs.reduce((a, r) => a + +r.dataset.c, 0), bad = rs.filter(r => r.dataset.ok === "0").length;
+    h.querySelector(".dsum").textContent = ` · ${rs.length} ${rs.length === 1 ? "Druck" : "Drucke"}${bad ? ` (${bad} ✗)` : ""} · ${g(gr)} · ${eur(c)}`;
+  });
+}
+function applyCols() {
+  const t = document.querySelector("table.list");
+  t.classList.toggle("no-fil", !PH.pref("hist_fil", true)); t.classList.toggle("no-kwh", !PH.pref("hist_kwh", true));
+  t.classList.toggle("no-cost", !PH.pref("hist_cost", true)); t.classList.toggle("no-pic", PH.pref("hist_pics", "both") === "none");
+}
 function row(e) {
   const d = new Date(e.time * 1000);
   const ok = e.result === "fertig";
   const uses = e.usage.map(u => `<span class="use-chip" title="${esc(u.slot)}${u.booked ? "" : " – nicht gebucht: " + esc(u.error || "")}">
       <span class="dot" style="background:${u.color || "transparent"}"></span>${u.spool ? `<a href="?spool=${u.spool}" onclick="event.preventDefault();filterSpool(${u.spool})">#${u.spool}</a> ` : ""}${esc(u.spool_name || (u.material ? u.material + " (Bambuddy)" : u.slot))} · ${String(u.grams).replace(".", ",")} g${u.booked || u.slot === "aus Bambuddy" ? "" : " ⚠"}</span>`).join("");
-  const imgs = [e.thumb, e.photo].filter(Boolean);
+  const pm = PH.pref("hist_pics", "both");
+  if (pm === "thumb") e = {...e, photo: null}; else if (pm === "photo") e = {...e, thumb: null};
+  const imgs = pm === "none" ? [] : [e.thumb, e.photo].filter(Boolean);
   const pic = imgs.length ? `<div class="pics" onclick='openPics(${JSON.stringify(imgs)}, ${JSON.stringify(e.job || "")})'>
       ${e.thumb ? `<img src="/media/${e.thumb}" alt="Modell">` : ""}${e.photo ? `<img src="/media/${e.photo}" alt="Foto" class="${e.thumb ? "ph" : ""}">` : ""}</div>` : `<div class="pics none">–</div>`;
-  return `<tr>
-    <td style="width:64px">${pic}</td>
+  const day = d.toLocaleDateString("de-DE", {weekday: "long", day: "numeric", month: "long", year: "numeric"});
+  let head = "";
+  if (PH.pref("hist_days", false) && day !== lastDay) {
+    lastDay = day;
+    head = `<tr class="dayrow" data-day="${esc(day)}"><td colspan="9"><b>${day}</b> <span class="muted small dsum"></span></td></tr>`;
+  }
+  return head + `<tr data-dk="${esc(day)}" data-g="${e.grams || 0}" data-c="${e.total_cost || 0}" data-ok="${ok ? 1 : 0}">
+    <td style="width:64px" class="c-pic">${pic}</td>
     <td style="white-space:nowrap">${d.toLocaleDateString("de-DE")}<div class="muted small">${d.toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"})}</div></td>
     <td><b>${esc(e.job)}</b> <span class="res ${ok ? "ok" : "bad"}" style="font-size:10.5px;padding:1px 7px;border-radius:99px">${esc(e.result)}</span><div class="uses">${uses}</div>${prep(e)}</td>
     <td class="hide-s">${esc(e.printer)}</td>
     <td class="num hide-s">${dur(e.duration)}</td>
-    <td class="num">${g(e.grams)}<div class="muted small">${e.filament_cost != null ? eur(e.filament_cost) : ""}</div></td>
-    <td class="num hide-s">${e.kwh != null ? kwh(e.kwh) : "–"}<div class="muted small">${e.energy_cost != null ? eur(e.energy_cost) : ""}</div></td>
-    <td class="num"><b>${eur(e.total_cost)}</b>${e.wear_cost ? `<div class="muted small">🔧 ${eur(e.wear_cost)}</div>` : ""}</td>
+    <td class="num c-fil">${g(e.grams)}<div class="muted small">${e.filament_cost != null ? eur(e.filament_cost) : ""}</div></td>
+    <td class="num hide-s c-kwh">${e.kwh != null ? kwh(e.kwh) : "–"}<div class="muted small">${e.energy_cost != null ? eur(e.energy_cost) : ""}</div></td>
+    <td class="num c-cost"><b>${eur(e.total_cost)}</b>${e.wear_cost ? `<div class="muted small">🔧 ${eur(e.wear_cost)}</div>` : ""}</td>
     <td style="white-space:nowrap"><button class="small-btn" title="Nochmal drucken – aus dem Bambuddy-Archiv wieder in die Warteschlange (Druckwächter startet)" onclick="reprint(${e.id}, this)">↻</button>
       <button class="small-btn" title="Eintrag löschen (Spoolman bleibt unverändert)" onclick="del(${e.id})">✕</button></td>
   </tr>`;
@@ -249,10 +245,10 @@ async function load(reset = true) {
     reset ? fetch("/api/history/stats?months=12&" + params()).then(r => r.json()) : null,
   ]);
   if (st) { lastMonths = st.months; drawChart(); }
-  if (reset) { sumTiles(d.totals); $("rows").innerHTML = ""; }
+  if (reset) { sumTiles(d.totals); $("rows").innerHTML = ""; lastDay = ""; applyCols(); }
   $("rows").insertAdjacentHTML("beforeend", d.entries.map(row).join("") ||
     (reset ? `<tr><td colspan="9" class="muted">Keine Drucke für diese Auswahl.</td></tr>` : ""));
-  offset += d.entries.length;
+  offset += d.entries.length; daySums();
   $("count").textContent = `${Math.min(offset, d.totals.n || 0)} von ${d.totals.n || 0}`;
   $("more").style.display = offset < (d.totals.n || 0) ? "" : "none";
   $("csv").href = "/api/history/export.csv?" + params();
@@ -265,8 +261,7 @@ async function del(id) {
   PH.toast("Eintrag gelöscht"); load();
 }
 
-$("f-range").onchange = () => { $("f-custom").style.display = $("f-range").value === "custom" ? "flex" : "none"; load(); };
-["f-from", "f-to", "f-printer", "f-material", "f-spool", "f-result"].forEach(id => $(id).onchange = () => load());
+["f-printer", "f-material", "f-spool", "f-result"].forEach(id => $(id).onchange = () => load());
 let qt; $("f-q").oninput = () => { clearTimeout(qt); qt = setTimeout(load, 300); };
 $("more").onclick = () => load(false);
 document.querySelectorAll("#metric button").forEach(b => b.onclick = () => {

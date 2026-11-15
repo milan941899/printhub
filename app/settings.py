@@ -43,7 +43,12 @@ SPEC = {
     "forecast_shop": (bool, True),         # bald leere Sorten automatisch auf die Einkaufsliste
     "first_marks": (bool, True),           # AMS: „▲ zuerst“ bei gleicher Sorte in mehreren Slots
     "swap_suggest": (bool, True),          # Reicht die Rolle nicht: passende Rolle aus dem Lager vorschlagen („Diese einlegen“)
-    "shop_enabled": (bool, True),          # Mindestbestand, „nachkaufen“ und Einkaufsliste
+    "shop_enabled": (bool, True),
+    "lager_scan": (bool, True),            # Lager: „📷 Rolle scannen“
+    "lager_series": (bool, True),          # Lager: „Serie: mehrere Farben einer Sorte“
+    "lager_stack": (bool, True),           # Lager: „Stapel: gemischte Rollen“
+    "lager_archive": (bool, True),         # Lager: Archiv-Knopf und -Ansicht
+    "lager_names": (bool, True),           # Lager: „Aa Namen vereinheitlichen“          # Mindestbestand, „nachkaufen“ und Einkaufsliste
     "weekly_lines": (list, ["prints", "time", "filament", "cost", "shop", "soon", "dry"]),
     "oe_restart": (bool, False),
     "oe_container": (str, "octoeverywhere"),

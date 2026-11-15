@@ -27,9 +27,7 @@
 
 <div class="page wide">
   <div class="stool">
-    <div class="seg" id="range">
-      <button data-v="week">7 Tage</button><button data-v="month">30 Tage</button><button data-v="year">12 Monate</button><button data-v="all">Gesamt</button>
-    </div>
+    <div class="rangebar" id="rangebar"></div>
     <select id="printer"><option value="">Alle Drucker</option></select>
     <span style="flex:1"></span>
     <button class="small-btn bb-only" onclick="importBB()">⇩ Verlauf aus Bambuddy übernehmen</button>
@@ -114,21 +112,23 @@ function resetLayout() { L = {order: Object.keys(W), hidden: [], span: {}, h: {}
 
 // ---------- Zustand ----------
 let S = null;
-let range = localStorage.getItem("ph-stats-range") || "month";
+// Zeitraum über die gemeinsame Leiste (wie im Verlauf); zuletzt gewählter bleibt, sonst Vorgabe aus Einstellungen → Statistik
+const RS = {v: (() => { try { return localStorage.getItem("ph-stats-range"); } catch { return null; } })() || PH.pref("stats_range", "month"), from: "", to: ""};
+let range = RS.v;
+const rq = () => { const r = ["week", "month", "year", "all"].includes(range) ? {} : PH.rangeTs(range, RS.from, RS.to);
+  return `range=${range}${r.from ? "&from=" + r.from : ""}${r.to ? "&to=" + r.to : ""}`; };
 function toggleEdit() { document.body.classList.toggle("editing"); $("edit").textContent = document.body.classList.contains("editing") ? "✓ Fertig" : "✎ Anordnen"; }
 let printer = "";
 async function load() {
-  try { S = await (await fetch(`/api/statistics?range=${range}&printer=${encodeURIComponent(printer)}`)).json(); }
+  try { S = await (await fetch(`/api/statistics?${rq()}&printer=${encodeURIComponent(printer)}`)).json(); }
   catch { $("grid").innerHTML = `<div class="err">Statistik nicht erreichbar</div>`; return; }
   const sel = $("printer");
   if (sel.options.length - 1 !== S.printers.length)
     sel.innerHTML = `<option value="">Alle Drucker</option>` + S.printers.map(p => `<option ${p === printer ? "selected" : ""}>${esc(p)}</option>`).join("");
-  $("csv").href = `/api/statistics/export.csv?range=${range}&printer=${encodeURIComponent(printer)}`;
+  $("csv").href = `/api/statistics/export.csv?${rq()}&printer=${encodeURIComponent(printer)}`;
   render();
 }
-document.querySelectorAll("#range button").forEach(b => b.onclick = () => {
-  range = b.dataset.v; try { localStorage.setItem("ph-stats-range", range); } catch {} load();
-});
+PH.rangeBar($("rangebar"), RS, st => { range = st.v; try { localStorage.setItem("ph-stats-range", range); } catch {} load(); });
 $("printer").onchange = e => { printer = e.target.value; load(); };
 document.addEventListener("click", e => { if (!e.target.closest(".dd")) document.querySelectorAll(".dd.open").forEach(d => d.classList.remove("open")); });
 
@@ -263,7 +263,8 @@ const bucketHref = x => x.key ? vhref(keyRange(x.key)) : "";
 const R = {
   kpi() {
     const k = S.kpis, p = S.prev || {};
-    const cmp = {week: "vs. Woche davor", month: "vs. 30 Tage davor", year: "vs. Jahr davor"}[range] || "";
+    const cmp = {week: "vs. Woche davor", month: "vs. 30 Tage davor", year: "vs. Jahr davor", cweek: "vs. Zeitraum davor", cmonth: "vs. Zeitraum davor",
+                 lmonth: "vs. Monat davor", cyear: "vs. Zeitraum davor", custom: "vs. Zeitraum davor"}[range] || "";
     const tiles = L.kpi.filter(t => KT[t.k]);
     const add = Object.entries(KT).filter(([key]) => !L.kpi.some(t => t.k === key));
     return `<div class="kgrid2">${tiles.map(t => {
@@ -378,7 +379,8 @@ const R = {
   duration() { return bars(S.habits.duration, [{k: "n", l: "Drucke", c: C(0)}], {fmt: fmtN, every: CW < 420 ? 2 : 1}); },
   weekday() {
     const m = view("weekday", 0);
-    return bars(S.habits.weekday, [{k: m, l: {n: "Drucke", g: "Filament", h: "Druckzeit"}[m], c: C(0)}], {fmt: m === "n" ? fmtN : m === "g" ? fmtG : fmtH});
+    const wd = PH.pref("week_start", "mo") === "so" ? [S.habits.weekday[6], ...S.habits.weekday.slice(0, 6)] : S.habits.weekday;
+    return bars(wd, [{k: m, l: {n: "Drucke", g: "Filament", h: "Druckzeit"}[m], c: C(0)}], {fmt: m === "n" ? fmtN : m === "g" ? fmtG : fmtH});
   },
   hour() {
     const ser = [{k: "ok", l: "Fertig", c: C(0)}, {k: "bad", l: "Fehler/Abbruch", c: C(1)}];
@@ -419,7 +421,8 @@ const R = {
 };
 function periodRange() {
   const days = {week: 7, month: 30, year: 365}[range];
-  if (!days) return {};
+  if (!days) { const r = PH.rangeTs(range, RS.from, RS.to);
+    return r.from ? {from: dayKey(r.from), to: dayKey((r.to || Date.now() / 1000) - 1)} : {}; }
   return {from: dayKey(Date.now() / 1000 - (days - 1) * 86400), to: dayKey(Date.now() / 1000)};
 }
 const periodHref = () => vhref(periodRange()) + "&x=1";
@@ -457,7 +460,7 @@ function renderOne(k) {
 function render() {
   if (!S) return;
   PHUI.hideTip();
-  document.querySelectorAll("#range button").forEach(b => b.classList.toggle("on", b.dataset.v === range));
+
   $("note").innerHTML = S.empty ? `<div class="card snote">Im gewählten Zeitraum gibt es noch keine Drucke.</div>` : "";
   const vis = L.order.filter(k => !L.hidden.includes(k));
   $("grid").innerHTML = vis.map((k, i) => cardHtml(k, i, vis.length)).join("");

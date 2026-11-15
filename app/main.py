@@ -225,10 +225,18 @@ def _vendors():
     return _vendor_cache["v"]
 
 
-def _statistics(rng, printer):
-    if rng not in statsmod.RANGES:
+def _statistics(rng, printer, frm=None, to=None):
+    try:
+        frm = float(frm) if frm else None
+        to = float(to) if to else None
+    except ValueError:
+        frm = to = None
+    if frm is None and rng not in statsmod.RANGES:
         rng = "month"
-    st = statsmod.compute(history.rows({}), rng, printer, _vendors())
+    st = statsmod.compute(history.rows({}), rng, printer, _vendors(), frm=frm, to=to)
+    if frm is not None:                                  # Stromzähler: passende grobe Auflösung
+        span = ((to or time.time()) - frm) / 86400
+        rng = "week" if span <= 8 else "month" if span <= 31 else "year"
     # Stromzähler (Shelly) stundengenau – unabhängig davon, ob gedruckt wurde
     erng = rng if rng in ("week", "month", "year") else "year"
     bars, has = None, []
@@ -249,12 +257,12 @@ def _statistics(rng, printer):
 
 async def api_statistics(request):
     q = request.query_params
-    return JSONResponse(await run_in_threadpool(_statistics, q.get("range", "month"), q.get("printer", "")))
+    return JSONResponse(await run_in_threadpool(_statistics, q.get("range", "month"), q.get("printer", ""), q.get("from"), q.get("to")))
 
 
 async def api_statistics_csv(request):
     q = request.query_params
-    st = await run_in_threadpool(_statistics, q.get("range", "month"), q.get("printer", ""))
+    st = await run_in_threadpool(_statistics, q.get("range", "month"), q.get("printer", ""), q.get("from"), q.get("to"))
     return Response(statsmod.to_csv(st), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="printhub-statistik-{st["range"]}.csv"'})
 
@@ -2128,6 +2136,48 @@ def _weeks_left(fid, remaining):
     return round(rate), round((remaining or 0) / rate, 1)
 
 
+_TILES = {"t": 0, "data": None}
+
+
+def _tiles_data():
+    """Zahlen für frei wählbare Übersichts-Kacheln (eine Minute zwischengespeichert)."""
+    if _TILES["data"] is not None and time.time() - _TILES["t"] < 60:
+        return _TILES["data"]
+    lt = time.localtime()
+    day0 = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+    week0 = day0 - lt.tm_wday * 86400
+    out = {"printers": {}, "lager": {}}
+    for p in printers.values():
+        try:
+            out["printers"][p.id] = history.tile_stats([p.id, p.name], day0, week0, time.time() - 30 * 86400)
+        except Exception as e:
+            log.debug("Kacheln %s: %s", p.id, e)
+    try:
+        inv = spoolman.inventory()
+        rest, full = {}, {}
+        for sp in inv["spools"]:
+            fid = (sp.get("filament") or {}).get("id")
+            rest[fid] = rest.get(fid, 0) + (sp.get("remaining_weight") or 0)
+            if not sp.get("first_used"):
+                full[fid] = full.get(fid, 0) + 1
+        warn = int(settings.get("forecast_warn_weeks") or 3)
+        soon = sum(1 for fid, r in rest.items() if (w := _weeks_left(fid, r)[1]) is not None and w <= warn)
+        mins = store.data.get("min_stock", {})
+        low = sum(1 for k, v in mins.items() if v and full.get(int(k) if str(k).isdigit() else k, 0) < v) if settings.get("shop_enabled", True) else 0
+        mats = {f["id"]: f.get("material") for f in inv["filaments"]}
+        dry = sum(1 for sp in inv["spools"] if (i := _dry_info(sp, mats.get((sp.get("filament") or {}).get("id")))) and i["due"])
+        out["lager"] = {"soon": soon, "low": low, "dry": dry, "rolls": len(inv["spools"]),
+                        "kg": round(sum(rest.values()) / 1000, 1)}
+    except Exception as e:
+        log.debug("Kacheln Lager: %s", e)
+    _TILES.update(t=time.time(), data=out)
+    return out
+
+
+async def api_tiles(request):
+    return JSONResponse(await run_in_threadpool(_tiles_data))
+
+
 async def api_lager(request):
     try:
         inv = await run_in_threadpool(spoolman.inventory, request.query_params.get("archived") == "1")
@@ -2171,7 +2221,8 @@ async def api_lager(request):
                          "empty_spool_weight": v.get("empty_spool_weight")} for v in inv["vendors"]],
                          "spoolman_url": cfg.get("spoolman_url"), "storage": settings["storage_location"],
                          "features": {k: settings.get(k) for k in ("dry_enabled", "forecast_enabled", "forecast_warn_weeks",
-                                                                   "forecast_shop", "shop_enabled")}})
+                                                                   "forecast_shop", "shop_enabled", "lager_scan", "lager_series",
+                                                                   "lager_stack", "lager_archive", "lager_names")}})
 
 
 def _num(v):
@@ -4362,6 +4413,7 @@ app = Starlette(
         Route("/api/labels/print", api_label_print, methods=["POST"]),
         Route("/api/labels/media", api_label_media),
         Route("/api/lager", api_lager),
+        Route("/api/tiles", api_tiles),
         Route("/api/lager/spools", api_lager_spools, methods=["POST"]),
         Route("/api/lager/external", api_lager_external),
         Route("/api/lager/external/manufacturers", api_lager_manufacturers),

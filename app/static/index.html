@@ -311,7 +311,63 @@ function pickScan() {
 }
 
 // ---------- Düsengrafik ----------
-function hotendSvg(p, info) {
+// Hotend-Darstellung pro Gerät: schema (Strichzeichnung) | real (schattiert) | gauge (Rundinstrumente) | compact (Liste)
+function hotendBody(p, info) {
+  const st = PH.pref("hotend", "schema");
+  if (st === "compact") return hotendCompact(p, info);
+  if (st === "gauge") return hotendGauge(p, info);
+  if (st === "real") return hotendSvg(p, info, true);
+  return hotendSvg(p, info);
+}
+function hotendSide(p) {   // die Werte links/rechts, die je nach Druckertyp wechseln
+  return {
+    leftMid: p.type === "moonraker" ? {l: "Fluss", v: p.flow != null ? p.flow : "–", u: p.flow != null ? "mm³/s" : ""}
+                                    : {l: "Speed-Modus", v: num(p.speed), u: p.speed_pct ? `${p.speed_pct} %` : ""},
+    rightMid: p.type === "moonraker" ? {l: "Speed", v: num(p.speed), u: p.speed_pct && p.speed_pct !== 100 ? `${p.speed_pct} %` : ""}
+                                     : {l: "Hotend-Lüfter", v: (p.fans || [])[1] && p.fans[1].pct != null ? `${p.fans[1].pct} %` : "–", u: ""},
+  };
+}
+function hotendCompact(p, info) {
+  const {nozzle, bed, color, material} = info, fan = (p.fans || [])[0], {leftMid, rightMid} = hotendSide(p);
+  const row = (l, v, cls = "") => `<div class="hc-r"><span>${l}</span><b class="${cls}">${v}</b></div>`;
+  return `<div class="hcompact">
+    ${row("Material", `<i class="hc-dot" style="background:${color || "#64748b"}"></i>${esc(material || "–")}`)}
+    ${row("Düse", `<span style="color:${nozzle && nozzle.actual >= 45 ? heatColor(nozzle.actual) : "inherit"}">${deg(nozzle && nozzle.actual)}</span> <small>/ ${deg(nozzle && nozzle.target)}</small>`)}
+    ${row("Bett", `${deg(bed && bed.actual)} <small>/ ${deg(bed && bed.target)}</small>`)}
+    ${row("Lüfter", fan && fan.pct != null ? fan.pct + " %" : "–")}
+    ${row(esc(leftMid.l), `${esc(leftMid.v)} <small>${esc(leftMid.u)}</small>`)}
+    ${row(esc(rightMid.l), `${esc(rightMid.v)} <small>${esc(rightMid.u)}</small>`)}
+    ${row("Layer", `${p.layer != null ? p.layer : "–"} <small>${p.total_layers != null ? "/ " + p.total_layers : ""}</small>`, "acc")}
+  </div>`;
+}
+function hotendGauge(p, info) {
+  const {nozzle, bed, color, material} = info, fan = (p.fans || [])[0], {leftMid, rightMid} = hotendSide(p);
+  const g = (cx, cy, r, val, tgt, max, lbl, unit, col) => {
+    const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25, f = v => Math.max(0, Math.min(1, (v || 0) / max));
+    const pt = t => [cx + r * Math.cos(a0 + (a1 - a0) * t), cy + r * Math.sin(a0 + (a1 - a0) * t)];
+    const arc = t => { const [x0, y0] = pt(0), [x1, y1] = pt(t); return `M${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 ${(a1 - a0) * t > Math.PI ? 1 : 0} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`; };
+    const [tx, ty] = pt(f(tgt)), ticks = [0, .25, .5, .75, 1].map(t => { const [x, y] = pt(t), [x2, y2] = [cx + (r - 9) * Math.cos(a0 + (a1 - a0) * t), cy + (r - 9) * Math.sin(a0 + (a1 - a0) * t)];
+      return `<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" class="gtick"/>`; }).join("");
+    return `<path d="${arc(0.9999)}" class="gtrack" stroke-width="10" fill="none" stroke-linecap="round"/>
+      ${val ? `<path d="${arc(Math.max(0.005, f(val)))}" stroke="${col}" stroke-width="10" fill="none" stroke-linecap="round"/>` : ""}
+      ${ticks}${tgt ? `<circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="4.5" fill="#fff" stroke="${col}" stroke-width="2"/>` : ""}
+      <text x="${cx}" y="${cy + 6}" text-anchor="middle" class="gval">${val != null ? Math.round(val) : "–"}<tspan class="unit">${unit}</tspan></text>
+      <text x="${cx}" y="${cy + 24}" text-anchor="middle" class="unit">${tgt ? "Ziel " + Math.round(tgt) + unit : "&#160;"}</text>
+      <text x="${cx}" y="${cy + r + 14}" text-anchor="middle" class="lbl">${lbl}</text>`;
+  };
+  const stat = (x, l, v, u = "", cls = "") => `<text class="lbl" x="${x}" y="200" text-anchor="middle">${l}</text><text class="val ${cls}" x="${x}" y="228" text-anchor="middle" style="font-size:20px">${v} <tspan class="unit">${u}</tspan></text>`;
+  return `<svg viewBox="0 0 400 244" role="img" aria-label="Düse">
+    ${g(72, 96, 52, nozzle && nozzle.actual, nozzle && nozzle.target, 300, "DÜSE", "°", heatColor(Math.max(nozzle && nozzle.actual || 0, 46)))}
+    ${g(200, 96, 52, bed && bed.actual, bed && bed.target, 120, "BETT", "°", heatColor(Math.max(bed && bed.actual || 0, 46)))}
+    ${g(328, 96, 52, fan && fan.pct, null, 100, "LÜFTER", "%", "var(--acc)")}
+    <text class="lbl" x="72" y="200" text-anchor="middle">MATERIAL</text>
+    <circle cx="${72 - 8 - String(material || "–").length * 6}" cy="221" r="6" fill="${color || "#64748b"}" stroke="#fff6"/>
+    <text class="val" x="72" y="228" text-anchor="middle" style="font-size:20px">${esc(material || "–")}</text>
+    ${stat(200, esc(leftMid.l.toUpperCase()), esc(leftMid.v), esc(leftMid.u))}
+    ${stat(328, "LAYER", p.layer != null ? p.layer : "–", p.total_layers != null ? "/ " + p.total_layers : "", "acc")}
+  </svg>`;
+}
+function hotendSvg(p, info, real = false) {
   const {nozzle, bed, color, material, toolNo} = info;
   const c = color || "#64748b";
   const heat = heatColor(nozzle && nozzle.actual);
@@ -362,6 +418,7 @@ function hotendSvg(p, info) {
     <text class="val acc" x="382" y="230" text-anchor="end">${layer} <tspan class="unit">${total}</tspan></text>
     <polyline class="lead" points="382,236 300,236 258,244"/>
 
+    ${real ? hotendReal(p, info, {heat, heating, bedHeating, fan, fanOn, rows}) : `
     <!-- Filament -->
     <line x1="200" y1="44" x2="200" y2="206" stroke="${c}" stroke-width="3"/>
     <rect x="150" y="10" width="100" height="34" rx="8" fill="${c}" stroke="#ffffff30"/>
@@ -385,8 +442,60 @@ function hotendSvg(p, info) {
     <polygon points="96,262 304,262 326,284 74,284" class="metal ${bedHeating ? "heating" : ""}"/>
     <path d="M186 258 q4 -5 0 -10 M200 258 q4 -5 0 -10 M214 258 q4 -5 0 -10" stroke="${heatColor(bed && bed.actual)}" stroke-width="2" fill="none" opacity="${bed && bed.actual >= 40 ? 1 : .25}"/>
     <text x="200" y="279" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">BETT ${deg(bed && bed.actual)}${bed && bed.target ? ` / ${deg(bed.target)}` : ""}</text>
-    <defs><linearGradient id="shine-${p.id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".25"/><stop offset="1" stop-color="#000" stop-opacity=".15"/></linearGradient></defs>
+    <defs><linearGradient id="shine-${p.id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".25"/><stop offset="1" stop-color="#000" stop-opacity=".15"/></linearGradient></defs>`}
   </svg>`;
+}
+// Schattierte, möglichst echte Ansicht: Alu-Kühlkörper, Lüfter, Heizblock mit Silikonsocke, Messingdüse (glüht je nach Temperatur), PEI-Platte
+function hotendReal(p, info, k) {
+  const {nozzle, bed, color, material, toolNo} = info, c = color || "#64748b", id = "hr" + p.id.replace(/\W/g, "");
+  const t = nozzle && nozzle.actual || 0, glow = Math.max(0, Math.min(1, (t - 60) / 200)), bt = bed && bed.actual || 0, bglow = Math.max(0, Math.min(1, (bt - 35) / 70));
+  let fins = "";
+  for (let i = 0; i < 9; i++) fins += `<rect x="164" y="${56 + i * 8.4}" width="72" height="5.2" rx="1" fill="url(#${id}al)"/><rect x="164" y="${61.2 + i * 8.4}" width="72" height="3.2" fill="#0b1020" opacity=".55"/>`;
+  let part = "";
+  const n = k.rows, lc = (i) => i % 2 ? `url(#${id}fa)` : `url(#${id}fb)`;
+  for (let i = 0; i < 7; i++) part += `<rect x="150" y="${248 - i * 5}" width="100" height="4.6" rx="2.3" fill="${i < n && p.printing ? lc(i) : "var(--trk)"}" ${i < n && p.printing ? "" : `opacity=".55"`}/>`;
+  return `<defs>
+      <linearGradient id="${id}al" x1="0" x2="1"><stop offset="0" stop-color="#5b6472"/><stop offset=".22" stop-color="#e8edf3"/><stop offset=".5" stop-color="#aab3bf"/><stop offset=".8" stop-color="#d7dde5"/><stop offset="1" stop-color="#4b5361"/></linearGradient>
+      <linearGradient id="${id}blk" x1="0" x2="1"><stop offset="0" stop-color="#3b4250"/><stop offset=".3" stop-color="#c9d0d9"/><stop offset=".65" stop-color="#8d96a3"/><stop offset="1" stop-color="#3e4552"/></linearGradient>
+      <linearGradient id="${id}sock" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a3f47"/><stop offset=".5" stop-color="#1c1f24"/><stop offset="1" stop-color="#0d0f12"/></linearGradient>
+      <linearGradient id="${id}br" x1="0" x2="1"><stop offset="0" stop-color="#6b4a10"/><stop offset=".35" stop-color="#f8dc84"/><stop offset=".6" stop-color="#c8962f"/><stop offset="1" stop-color="#5a3f0c"/></linearGradient>
+      <linearGradient id="${id}fan" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2e3440"/><stop offset="1" stop-color="#11151c"/></linearGradient>
+      <linearGradient id="${id}fa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset=".4" stop-color="${c}"/><stop offset="1" stop-color="#000" stop-opacity=".45"/></linearGradient>
+      <linearGradient id="${id}fb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".25"/><stop offset=".45" stop-color="${c}"/><stop offset="1" stop-color="#000" stop-opacity=".5"/></linearGradient>
+      <linearGradient id="${id}pei" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8a6420"/><stop offset=".45" stop-color="#d9b25c"/><stop offset="1" stop-color="#7a5719"/></linearGradient>
+      <linearGradient id="${id}tube" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".15"/><stop offset=".5" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity=".15"/></linearGradient>
+      <radialGradient id="${id}glow"><stop offset="0" stop-color="#ffb04a" stop-opacity=".95"/><stop offset=".4" stop-color="#ff5a1f" stop-opacity=".5"/><stop offset="1" stop-color="#ff2a00" stop-opacity="0"/></radialGradient>
+      <filter id="${id}n" x="0" y="0" width="1" height="1"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="3"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .35 0"/><feComposite in2="SourceGraphic" operator="in"/></filter>
+    </defs>
+    <!-- Filament im PTFE-Schlauch -->
+    <rect x="193" y="6" width="14" height="52" rx="3" fill="${c}"/><rect x="190" y="6" width="20" height="52" rx="5" fill="url(#${id}tube)" stroke="#ffffff40"/>
+    <!-- Kühlkörper -->
+    <rect x="162" y="52" width="76" height="80" rx="4" fill="#20262f"/>${fins}
+    <circle cx="200" cy="92" r="15" fill="#0b1220" opacity=".8"/><circle cx="200" cy="92" r="13" fill="#e6edf7"/><text x="200" y="98.5" text-anchor="middle" font-size="17" font-weight="800" fill="#0a1220">${toolNo}</text>
+    <!-- Lüfter -->
+    <rect x="106" y="58" width="50" height="68" rx="7" fill="url(#${id}fan)" stroke="#000" stroke-opacity=".5"/>
+    <circle cx="131" cy="92" r="20" fill="#0a0d12"/>
+    <g class="${k.fanOn ? "spin" : ""}" style="animation-duration:${k.fanOn ? Math.max(0.2, 1.4 - k.fan.pct / 80) : 1}s">
+      ${[0, 72, 144, 216, 288].map(a => `<path d="M131 92 Q${131 + 6} ${92 - 10} ${131 + 2} ${92 - 18} Q${131 - 6} ${92 - 12} 131 92Z" transform="rotate(${a} 131 92)" fill="#3c4556" stroke="#596377" stroke-width=".6"/>`).join("")}
+      <circle cx="131" cy="92" r="6" fill="#596377"/></g>
+    <!-- Heizblock mit Silikonsocke -->
+    <rect x="164" y="136" width="72" height="42" rx="6" fill="url(#${id}blk)"/>
+    <rect x="161" y="134" width="78" height="46" rx="10" fill="url(#${id}sock)" opacity=".92"/>
+    <rect x="166" y="138" width="68" height="8" rx="4" fill="#fff" opacity=".07"/>
+    ${glow ? `<rect x="161" y="134" width="78" height="46" rx="10" fill="${k.heat}" opacity="${(glow * .35).toFixed(2)}" class="${k.heating ? "heating" : ""}"/>` : ""}
+    <!-- Messingdüse -->
+    <polygon points="186,180 214,180 214,188 186,188" fill="url(#${id}br)"/>
+    <polygon points="188,188 212,188 203,207 197,207" fill="url(#${id}br)"/>
+    ${glow > .3 ? `<circle cx="200" cy="208" r="${(10 + glow * 14).toFixed(1)}" fill="url(#${id}glow)" opacity="${glow.toFixed(2)}"/>` : ""}
+    ${p.printing ? `<line x1="200" y1="207" x2="200" y2="${246 - (n - 1) * 5}" stroke="${c}" stroke-width="2.4"/>` : ""}
+    <!-- Druckteil -->
+    ${part}
+    <!-- PEI-Platte -->
+    <polygon points="92,262 308,262 330,286 70,286" fill="url(#${id}pei)"/>
+    <polygon points="92,262 308,262 330,286 70,286" fill="#fff" filter="url(#${id}n)" opacity=".5"/>
+    ${bglow ? `<polygon points="92,262 308,262 330,286 70,286" fill="#ff5a1f" opacity="${(bglow * .25).toFixed(2)}" class="${k.bedHeating ? "heating" : ""}"/>` : ""}
+    <polygon points="92,262 308,262 310,264 90,264" fill="#fff" opacity=".35"/>
+    <text x="200" y="280" text-anchor="middle" font-size="14" font-weight="800" fill="#1b1206" opacity=".85">BETT ${deg(bed && bed.actual)}${bed && bed.target ? ` / ${deg(bed.target)}` : ""}</text>`;
 }
 
 // ---------- Druckerkarte ----------
@@ -475,32 +584,54 @@ function ringHtml(p, lastJob) {
   </div>`;
 }
 
-function energyTiles(p) {   // 4 Kacheln als Liste
-  const html = energyTilesHtml(p);
-  return [...html.matchAll(/<div class="etile">[\s\S]*?<\/div><\/div>/g)].map(m => m[0]);
-}
-function energyTilesHtml(p) {
-  const e = p.energy || {};
-  const t = (l, v, sub, cls = "") => `<div class="etile"><div class="label">${l}</div><div class="v ${cls}">${v}</div><div class="s">${sub}</div></div>`;
-  const plug = !p.shelly ? "kein Shelly eingerichtet" : !e.plug_online ? "Shelly offline" : e.plug_on === false ? "Steckdose aus" : "Shelly-Steckdose";
-  const power = t("Leistung", e.watts != null ? `${Math.round(e.watts)} W` : "–", plug, "y");
-  if (p.printing) {
-    const parts = [e.job_energy_cost, e.filament_cost, e.wear_cost];
+// ---------- Kacheln: frei wählbar je Drucker und Zustand (beim Drucken / Leerlauf), gespeichert pro Gerät ----------
+const TILE_T = (l, v, sub, cls = "") => `<div class="etile"><div class="label">${l}</div><div class="v ${cls}">${v}</div><div class="s">${sub}</div></div>`;
+const TS = pid => ((X.tiles || {}).printers || {})[pid] || {};
+const TILES = {
+  power: {t: "Leistung", f: p => { const e = p.energy || {};
+    const plug = !p.shelly ? "kein Shelly eingerichtet" : !e.plug_online ? "Shelly offline" : e.plug_on === false ? "Steckdose aus" : "Shelly-Steckdose";
+    return TILE_T("Leistung", e.watts != null ? `${Math.round(e.watts)} W` : "–", plug, "y"); }},
+  job_energy: {t: "Strom Druck", print: 1, f: p => { const e = p.energy || {}; return TILE_T("Strom Druck", kwh(e.job_kwh), e.job_energy_cost != null ? eur(e.job_energy_cost) : "–"); }},
+  job_filament: {t: "Filament Druck", print: 1, f: p => { const e = p.energy || {};
+    return TILE_T("Filament", e.filament_g != null ? `${e.filament_g.toLocaleString("de-DE")} g` : "–", e.filament_cost != null ? eur(e.filament_cost) : "kein Preis hinterlegt"); }},
+  job_cost: {t: "Kosten Druck", print: 1, f: p => { const e = p.energy || {}, parts = [e.job_energy_cost, e.filament_cost, e.wear_cost];
     const total = parts.some(v => v != null) ? parts.reduce((a, v) => a + (v || 0), 0) : null;
-    return `<div class="etiles">
-      ${power}
-      ${t("Strom Druck", kwh(e.job_kwh), e.job_energy_cost != null ? eur(e.job_energy_cost) : "–")}
-      ${t("Filament", e.filament_g != null ? `${e.filament_g.toLocaleString("de-DE")} g` : "–", e.filament_cost != null ? eur(e.filament_cost) : "kein Preis hinterlegt")}
-      ${t("Kosten Druck", eur(total), e.wear_cost != null ? `inkl. ${eur(e.wear_cost)} Verschleiß` : "Strom + Filament", "acc")}
-    </div>`;
-  }
-  const assigned = p.slots.filter(s => s.spool).length;
-  return `<div class="etiles">
-    ${power}
-    ${t("Heute", kwh(e.today_kwh), e.today_cost != null ? eur(e.today_cost) : "–")}
-    ${t("Spulen", `${assigned} / ${p.slots.length}`, "zugewiesen")}
-    ${p.wifi ? t("WLAN", esc(p.wifi), "") : ""}
-  </div>`;
+    return TILE_T("Kosten Druck", eur(total), e.wear_cost != null ? `inkl. ${eur(e.wear_cost)} Verschleiß` : "Strom + Filament", "acc"); }},
+  today_energy: {t: "Strom heute", f: p => { const e = p.energy || {}; return TILE_T("Heute", kwh(e.today_kwh), e.today_cost != null ? eur(e.today_cost) : "–"); }},
+  spools: {t: "Spulen zugewiesen", f: p => TILE_T("Spulen", `${p.slots.filter(s => s.spool).length} / ${p.slots.length}`, "zugewiesen")},
+  wifi: {t: "WLAN", f: p => p.wifi ? TILE_T("WLAN", esc(p.wifi), "") : ""},
+  prints_today: {t: "Drucke heute", f: p => { const d = TS(p.id).today; return TILE_T("Drucke heute", d ? d.prints : "–", d ? `${d.ok} erfolgreich` : ""); }},
+  fil_today: {t: "Filament heute", f: p => { const d = TS(p.id).today; return TILE_T("Filament heute", d ? PH.g(d.grams) : "–", d ? `${d.prints} Drucke` : ""); }},
+  hours_week: {t: "Druckstunden Woche", f: p => { const d = TS(p.id).week;
+    return TILE_T("Diese Woche", d ? `${String(d.hours).replace(".", ",")} h` : "–", d ? `${d.prints} Drucke · ${PH.g(d.grams)}` : ""); }},
+  success: {t: "Erfolgsrate (30 Tage)", f: p => { const d = TS(p.id).d30;
+    return TILE_T("Erfolgsrate", d && d.prints ? `${Math.round(d.ok / d.prints * 100)} %` : "–", d ? `${d.ok} von ${d.prints} · 30 Tage` : "", d && d.prints && d.ok / d.prints < 0.8 ? "y" : ""); }},
+  next_job: {t: "Nächster Auftrag", f: p => { const q = (X.queue || []).find(x => x.status === "pending" && (!x.printer || x.printer === p.name));
+    return TILE_T("Als Nächstes", q ? `<span class="tclip">${esc(q.name)}</span>` : "–", q ? [q.seconds ? "⏱ " + PH.dur(q.seconds) : "", q.grams ? PH.g(q.grams) : ""].filter(Boolean).join(" · ") : "Warteschlange leer"); }},
+  stock: {t: "Lager", f: () => { const l = (X.tiles || {}).lager || {};
+    const warn = [l.soon ? `⏳ ${l.soon} bald leer` : "", l.low ? `🛒 ${l.low} nachkaufen` : ""].filter(Boolean).join(" · ");
+    return `<a class="etile tlink" href="/lager"><div class="label">Lager</div><div class="v ${warn ? "y" : ""}">${l.rolls != null ? `${l.rolls} Rollen` : "–"}</div><div class="s">${warn || (l.kg != null ? `${String(l.kg).replace(".", ",")} kg · alles da` : "")}</div></a>`; }},
+  dry: {t: "Trocknen fällig", f: () => { const l = (X.tiles || {}).lager || {};
+    return `<a class="etile tlink" href="/lager"><div class="label">Trocknen</div><div class="v ${l.dry ? "y" : ""}">${l.dry != null ? (l.dry ? `💧 ${l.dry}` : "–") : "–"}</div><div class="s">${l.dry ? "Rollen fällig" : "nichts fällig"}</div></a>`; }},
+  maint: {t: "Wartung fällig", f: p => `<a class="etile tlink" href="/einstellungen#wartung"><div class="label">Wartung</div><div class="v ${p.maint_due ? "y" : ""}">${p.maint_due ? `🔧 ${p.maint_due}` : "✓"}</div><div class="s">${p.maint_due ? "Aufgaben fällig" : "alles erledigt"}</div></a>`},
+  guard: {t: "Druckwächter", f: () => { const g = (X.services || []).find(s => s.id === "nachtruhe");
+    if (!g) return TILE_T("Druckwächter", "–", "");
+    return TILE_T("Druckwächter", g.online === null ? "aus" : g.online ? "🛡 an" : "⚠ Fehler", esc((g.lines || [])[0] || ""), g.online === false ? "y" : ""); }},
+};
+const TILE_DEF = {print: ["power", "job_energy", "job_filament", "job_cost"], idle: ["power", "today_energy", "spools", "wifi"]};
+function tileSel(pid, mode) {
+  const t = (layout.tiles || {})[pid];
+  return (t && Array.isArray(t[mode]) ? t[mode] : TILE_DEF[mode]).filter(k => TILES[k]).slice(0, 6);
+}
+function energyTiles(p) {   // bis zu 6 Kacheln als Liste (leere fallen weg)
+  return tileSel(p.id, p.printing ? "print" : "idle").map(k => TILES[k].f(p)).filter(Boolean);
+}
+async function loadTiles() {
+  const used = new Set(lastPrinters.flatMap(p => [...tileSel(p.id, "print"), ...tileSel(p.id, "idle")]));
+  const need = ["prints_today", "fil_today", "hours_week", "success", "stock", "dry"].some(k => used.has(k));
+  try { if (need) X.tiles = await (await fetch("/api/tiles")).json(); } catch {}
+  try { if (used.has("next_job") && !queueOn) X.queue = (await (await fetch("/api/queue")).json()).items || []; } catch {}
+  fillPrinters();
 }
 
 // Grundmaterial vergleichen: PLA+ / PLA Matte / PLA-CF zählen als PLA, PETG-HF als PETG usw.
@@ -575,7 +706,8 @@ function amsBody(p) {
 // Druckerkarte: Fortschritt, Düse, 4 Kacheln, Kamera, AMS, Temperaturverlauf, Wartung (Raster mit 12 Spalten)
 const BLK = {
   progress: {t: "Fortschritt", span: 6}, hotend: {t: "Düse", span: 6},
-  e1: {t: "Leistung", span: 3}, e2: {t: "Strom / Heute", span: 3}, e3: {t: "Filament / Spulen", span: 3}, e4: {t: "Kosten / WLAN", span: 3},
+  e1: {t: "Kachel 1", span: 3}, e2: {t: "Kachel 2", span: 3}, e3: {t: "Kachel 3", span: 3}, e4: {t: "Kachel 4", span: 3},
+  e5: {t: "Kachel 5", span: 3}, e6: {t: "Kachel 6", span: 3},
   camera: {t: "Kamera", span: 4}, ams: {t: "Spulen", span: 12}, temps: {t: "Temperaturverlauf", span: 12}, maint: {t: "Wartung", span: 12},
 };
 const PAGE = {services: {t: "Dienste", span: 6}, queue: {t: "Warteschlange (Bambuddy)", span: 6}, history: {t: "Letzte Drucke", span: 6}};
@@ -841,8 +973,9 @@ function printerCard(p) {
   const tw = cardW[p.id + ":temps"], th = fp ? fp.h - 95 : (L.h.temps ? L.h.temps - 90 : 0);
   const bodies = {
     progress: () => `${ringHtml(p, lastJob)}${ctrl}`,
-    hotend: () => `<div class="hotend">${hotendSvg(p, info)}</div>`,
+    hotend: () => `<div class="hotend">${hotendBody(p, info)}</div>`,
     e1: () => tiles[0] || "", e2: () => tiles[1] || "", e3: () => tiles[2] || "", e4: () => tiles[3] || "",
+    e5: () => tiles[4] || "", e6: () => tiles[5] || "",
     camera: () => p.camera ? `<div class="camrow"><div id="cam-${p.id}"></div><div class="camhint"><div class="label">Kamera</div><div class="muted small">Zum Vergrößern<br>aufs Bild klicken</div></div></div>` : "",
     ams: () => sec(p, "ams", amsBody(p), `<span class="legend">Spule antippen zum Wechseln</span>`, p.type === "moonraker" ? "Werkzeugköpfe" : "AMS lite"),
     temps: () => sec(p, "temps", lineChart(X.temps[p.id], tw, th), segBtns("trange", p.id, [["5", "5 Min"], ["15", "15 Min"], ["60", "1 h"], ["job", "Druck"]], tr)),
@@ -850,12 +983,13 @@ function printerCard(p) {
   };
   const lightBtn = p.light === undefined ? "" :
     `<button class="small-btn lightbtn ${p.light ? "on" : ""}" title="Licht ${p.light ? "aus" : "an"}schalten" onclick="light('${p.id}', ${!p.light})">💡 ${p.light ? "An" : p.light === false ? "Aus" : "Licht"}</button>`;
-  const blocks = L.order.filter(k => !L.hidden.includes(k) && !(k === "camera" && !p.camera) && !(k === "e4" && !tiles[3])).map(k => {
+  const blocks = L.order.filter(k => !L.hidden.includes(k) && !(k === "camera" && !p.camera) && !(/^e\d$/.test(k) && !tiles[+k[1] - 1])).map(k => {
     const col = ["ams", "temps", "maint"].includes(k) && isCol(p.id, k);      // zugeklappt → eigene Höhe ignorieren
     const h = L.h[k] && k !== "temps" && !col ? `--bh:${L.h[k]}px;` : "";
     let bs = L.span[k] || BLK[k].span;
-    if (k === "e3" && !tiles[3]) bs = Math.min(12, bs + (L.span.e4 || BLK.e4.span));   // ohne 4. Kachel: „Spulen“ füllt die Lücke
-    return `<div class="blk${h ? " hset" : ""}${col ? " colb" : ""}" data-b="${k}" style="--bs:${bs};${h}">${blkCtl(p.id, k)}${bodies[k]()}</div>`;
+    const nT = tiles.length, last = k === "e" + nT;
+    if (last && !L.span[k] && nT % 4) bs = 12 - ((nT - 1) % 4) * 3;          // letzte Kachel füllt die Reihe auf
+    return `<div class="blk${h ? " hset" : ""}${col ? " colb" : ""}${last && nT % 2 ? " ewide" : ""}" data-b="${k}" style="--bs:${bs};${h}">${blkCtl(p.id, k)}${bodies[k]()}</div>`;
   }).join("");
   return `<div class="head">
       <h2><span class="icon">${esc(p.id.toUpperCase().slice(0, 3))}</span>${esc(p.name)}</h2>
@@ -948,6 +1082,7 @@ async function loadServices() {
   if (!document.getElementById("svcs")) return;
   try {
     const d = await (await fetch("/api/services")).json();
+    X.services = d.services;
     const chips = document.getElementById("svchips");
     if (chips) chips.innerHTML = d.services.map(s => {
       const st = s.online === false || s.error ? "bad" : s.warn ? "warn" : s.online === true ? "on" : "";
@@ -989,6 +1124,7 @@ async function loadQueue() {
   try {
     const d = await (await fetch("/api/queue")).json();
     if (!d.enabled) return;
+    X.queue = d.items || [];
     document.getElementById("q-open").href = (d.url || "") + "/queue";
     const el = document.getElementById("queue");
     if (d.error) { el.innerHTML = `<span class="err">${esc(d.error)}</span>`; return; }
@@ -1138,6 +1274,7 @@ const vis = fn => () => { if (!document.hidden) fn(); };
 let lastRefresh = 0, extrasN = 0;
 loadSpools().then(refresh);
 loadServices(); setInterval(vis(loadServices), 30000);
+setTimeout(loadTiles, 1500); setInterval(vis(loadTiles), 60000);
 setTimeout(loadQueue, 600); setInterval(vis(loadQueue), 15000);
 setInterval(vis(() => {                  // Druckerdaten: alle 3 s, im Datensparmodus alle 10 s
   const every = PH.saving() ? 10000 : 3000;

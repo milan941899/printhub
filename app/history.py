@@ -179,6 +179,17 @@ class History:
                 f" FROM prints p{where} GROUP BY m ORDER BY m DESC LIMIT ?", args + [int(months)]).fetchall()
         return [dict(r) for r in reversed(rows)]
 
+    def tile_stats(self, names, day0, week0, d30):
+        """Kennzahlen für die Übersichts-Kacheln eines Druckers (names = mögliche Druckernamen/IDs)."""
+        q = ",".join("?" * len(names)) or "''"
+        out = {}
+        with self._db() as db:
+            for key, since in (("today", day0), ("week", week0), ("d30", d30)):
+                r = db.execute(f"SELECT COUNT(*), SUM(success=1), SUM(grams), SUM(duration) FROM prints"
+                               f" WHERE time >= ? AND printer IN ({q})", (int(since), *names)).fetchone()
+                out[key] = {"prints": r[0] or 0, "ok": r[1] or 0, "grams": round(r[2] or 0), "hours": round((r[3] or 0) / 3600, 1)}
+        return out
+
     def spool_grams(self, since):
         """Verbrauch je Spule seit `since` und Zeitpunkt des ältesten Drucks → ({spool: g}, erster_druck)"""
         with self._db() as db:

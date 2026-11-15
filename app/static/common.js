@@ -1,6 +1,53 @@
 // Gemeinsam für alle PrintHub-Seiten: Theme, Navigation, Formatierung, Hinweise
 (function () {
   window.PH = {
+    // Gemeinsame Zeitraum-Leiste für Verlauf und Statistik
+    RANGES: [["cweek", "Diese Woche"], ["week", "7 Tage"], ["cmonth", "Dieser Monat"], ["lmonth", "Letzter Monat"], ["month", "30 Tage"],
+             ["cyear", "Dieses Jahr"], ["year", "12 Monate"], ["all", "Gesamt"], ["custom", "📅 Zeitraum"]],
+    // Zeitraum → {from, to} (Unix-Sekunden, to exklusiv); week/month/year rollierend, Wochenstart Mo oder So
+    rangeTs(v, from, to) {
+      const now = new Date(), ts = d => Math.floor(d.getTime() / 1000), day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const ws = PH.pref("week_start", "mo") === "so" ? 0 : 1;
+      if (v === "cweek") { const d = new Date(day0); d.setDate(d.getDate() - ((d.getDay() - ws + 7) % 7)); return {from: ts(d)}; }
+      if (v === "week") return {from: Math.floor(Date.now() / 1000) - 7 * 86400};
+      if (v === "month") return {from: Math.floor(Date.now() / 1000) - 30 * 86400};
+      if (v === "year") return {from: Math.floor(Date.now() / 1000) - 365 * 86400};
+      if (v === "cmonth") return {from: ts(new Date(now.getFullYear(), now.getMonth(), 1))};
+      if (v === "lmonth") return {from: ts(new Date(now.getFullYear(), now.getMonth() - 1, 1)), to: ts(new Date(now.getFullYear(), now.getMonth(), 1))};
+      if (v === "cyear") return {from: ts(new Date(now.getFullYear(), 0, 1))};
+      if (v === "custom") {
+        const r = {};
+        if (from) r.from = ts(new Date(from + "T00:00"));
+        if (to) r.to = ts(new Date(to + "T00:00")) + 86400;
+        return r;
+      }
+      return {};
+    },
+    // Leiste zeichnen: el = Container, st = {v, from, to}, onChange(st)
+    rangeBar(el, st, onChange) {
+      const draw = () => {
+        el.innerHTML = `<div class="seg rbar">${PH.RANGES.map(([v, l]) => `<button type="button" data-v="${v}" class="${st.v === v ? "on" : ""}">${l}</button>`).join("")}</div>
+          <div class="rcustom" ${st.v === "custom" ? "" : "hidden"}><label>Von <input type="date" data-k="from" value="${st.from || ""}"></label>
+          <label>Bis <input type="date" data-k="to" value="${st.to || ""}"></label></div>`;
+        el.querySelectorAll(".rbar button").forEach(b => b.onclick = () => { st.v = b.dataset.v; draw(); if (st.v !== "custom" || st.from) onChange(st); });
+        el.querySelectorAll(".rcustom input").forEach(i => i.onchange = () => { st[i.dataset.k] = i.value; onChange(st); });
+        const on = el.querySelector(".rbar .on"); if (on) on.scrollIntoView({block: "nearest", inline: "center"});
+      };
+      draw();
+    },
+    // Einstellungen, die nur dieses Gerät betreffen (localStorage „ph-pref“)
+    pref(key, def, val) {
+      let all = {};
+      try { all = JSON.parse(localStorage.getItem("ph-pref") || "{}") || {}; } catch {}
+      if (val !== undefined) { all[key] = val; try { localStorage.setItem("ph-pref", JSON.stringify(all)); } catch {} return val; }
+      return key in all ? all[key] : def;
+    },
+    // Namen der wählbaren Übersichts-Kacheln (für die Einstellungen)
+    TILE_NAMES: {power: "Leistung", job_energy: "Strom Druck", job_filament: "Filament Druck", job_cost: "Kosten Druck",
+      today_energy: "Strom heute", spools: "Spulen zugewiesen", wifi: "WLAN", prints_today: "Drucke heute", fil_today: "Filament heute",
+      hours_week: "Druckstunden Woche", success: "Erfolgsrate (30 Tage)", next_job: "Nächster Auftrag", stock: "Lager (bald leer / nachkaufen)",
+      dry: "Trocknen fällig", maint: "Wartung fällig", guard: "Druckwächter"},
+    TILE_DEF: {print: ["power", "job_energy", "job_filament", "job_cost"], idle: ["power", "today_energy", "spools", "wifi"]},
     // Spulen-Darstellung pro Gerät (localStorage „ph-spool“): Stil, Blickwinkel, Deckkraft der vorderen Scheibe
     SPOOL_DIM: {"c": 202, "d": 174, "e": 142, "f": 104},          // Bildbreite je Blickwinkel (Höhe immer 212)
     spoolPref(v) {

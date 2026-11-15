@@ -30,19 +30,19 @@
 
   <section class="card toolbar">
     <div class="tb-right" id="tb-lager">
-      <a class="btn" href="/lager?ansicht=archiv" id="archlink">📦 Archiv</a>
+      <a class="btn f-archive" href="/lager?ansicht=archiv" id="archlink">📦 Archiv</a>
       <button onclick="scanCtx=null;openFil()">＋ Neue Sorte</button>
       <button id="bulkbtn" style="display:none" onclick="openBulk()">✎ Gemeinsam bearbeiten</button>
       <details class="moremenu"><summary class="btn">⋯ Mehr</summary><div class="mm">
-        <button onclick="this.closest('details').open=false;openMulti()">🎨 Serie: mehrere Farben einer Sorte</button>
-        <button onclick="this.closest('details').open=false;openStack()">📚 Stapel: gemischte Rollen</button>
+        <button class="f-series" onclick="this.closest('details').open=false;openMulti()">🎨 Serie: mehrere Farben einer Sorte</button>
+        <button class="f-stack" onclick="this.closest('details').open=false;openStack()">📚 Stapel: gemischte Rollen</button>
         <button class="shopfeat" onclick="this.closest('details').open=false;openShop()">🛒 Einkaufsliste</button>
         <button class="nfcread" style="display:none" onclick="this.closest('details').open=false;nfcRead()">📡 NFC-Tag lesen</button>
-        <button onclick="this.closest('details').open=false;openNames()">Aa Namen vereinheitlichen</button>
+        <button class="f-names" onclick="this.closest('details').open=false;openNames()">Aa Namen vereinheitlichen</button>
         <button onclick="this.closest('details').open=false;fsel.clear();bulkMode=!bulkMode;render()">☑ Sorten auswählen (gemeinsam bearbeiten)</button>
       </div></details>
-      <button id="st-resume" style="display:none" onclick="openStack()">📚 Stapel fortsetzen</button>
-      <button onclick="scanStart()" title="Etikett oder Strichcode der Rolle fotografieren">📷 Rolle scannen</button>
+      <button id="st-resume" class="f-stack" style="display:none" onclick="openStack()">📚 Stapel fortsetzen</button>
+      <button class="f-scan" onclick="scanStart()" title="Etikett oder Strichcode der Rolle fotografieren">📷 Rolle scannen</button>
       <button class="primary" onclick="scanCtx=null;openAdd()">＋ Neue Rollen</button>
     </div>
     <div class="tb-right" id="tb-archiv" style="display:none">
@@ -54,16 +54,19 @@
     <div class="fb-row">
       <input type="search" id="q" placeholder="Suche: Hersteller, Farbe, Material …">
       <div class="vseg" id="vseg">
-        <button type="button" data-v="compact" onclick="setView('compact')" title="Kompakt: eine Zeile je Sorte">☰</button>
+        <button type="button" data-v="compact" onclick="setView('compact')" title="Liste: eine Zeile je Sorte">☰</button>
         <button type="button" data-v="full" onclick="setView('full')" title="Ausführlich">▤</button>
-        <button type="button" data-v="tiles" onclick="setView('tiles')" title="Farb-Kacheln">▦</button>
+        <button type="button" data-v="details" onclick="setView('details')" title="Details: Tabelle mit Spalten">▥</button>
+        <button type="button" data-v="big" onclick="setView('big')" title="Große Kacheln">⊞</button>
+        <button type="button" data-v="tiles" onclick="setView('tiles')" title="Kleine Farb-Kacheln">▦</button>
       </div>
     </div>
   </section>
   <section class="card fbopts">
     <div class="fb-row fb-opts" id="fb-opts">
       <select id="show" title="Anzeigen"><option value="stock">Mit Bestand</option><option value="all">Alle Sorten</option><option value="low" class="shopfeat">Nachkaufen</option></select>
-      <select id="grp" title="Gruppieren nach"><option value="vendor">nach Hersteller</option><option value="material">nach Material</option><option value="color">nach Farbfamilie</option><option value="loc">nach Ort</option></select>
+      <select id="grp" title="Gruppieren nach"><option value="vendor">nach Hersteller</option><option value="material">nach Material</option><option value="color">nach Farbfamilie</option><option value="loc">nach Ort</option><option value="none">ohne Gruppen</option></select>
+      <details class="moremenu" id="colbtn" hidden><summary class="btn small-btn" onclick="colMenu()">Spalten ▾</summary><div class="mm cols" id="colmenu"></div></details>
       <select id="srt" title="Sortieren"><option value="name">Name A–Z</option><option value="hue">Farbton</option><option value="count">Anzahl Rollen</option><option value="used">zuletzt benutzt</option></select>
     </div>
     <select id="mat" style="display:none"><option value="">Alle</option></select>
@@ -74,7 +77,7 @@
   <div class="selbar" id="selbar">
     <span id="selcount"></span>
     <button id="lblbtn" onclick="printLabels()">🏷 Etiketten drucken</button>
-    <button id="archbtn" onclick="archiveSel()">📦 Archivieren</button>
+    <button id="archbtn" class="f-archive" onclick="archiveSel()">📦 Archivieren</button>
     <button id="restbtn" onclick="restoreSel()" style="display:none">↩ Zurückholen</button>
     <button class="danger" onclick="delSpools([...sel])">✕ Löschen</button>
     <button class="link" onclick="sel.clear();render()">Auswahl aufheben</button>
@@ -368,6 +371,7 @@ async function load() {
   if (d.error) { $("err").textContent = d.error; return; }
   D = d; $("err").textContent = "";
   document.body.classList.toggle("noshop", FEAT().shop_enabled === false);
+  for (const k of ["scan", "series", "stack", "archive", "names"]) document.body.classList.toggle("no-" + k, FEAT()["lager_" + k] === false);
   $("smlink").href = d.spoolman_url;
   const mats = [...new Set(d.filaments.map(f => f.material).filter(Boolean))].sort();
   const cur = $("mat").value;
@@ -404,7 +408,7 @@ function isSoon(f) { return f.weeks != null && f.weeks <= (FEAT().forecast_warn_
 const PREF = (() => { try { return JSON.parse(localStorage.getItem("ph_lager_view") || "{}"); } catch { return {}; } })();
 const V = {view: PREF.view || (matchMedia("(max-width:700px)").matches ? "compact" : "full"), group: PREF.group || "vendor",
   sort: PREF.sort || "name", closed: new Set(PREF.closed || []), status: ""};
-function savePref() { try { localStorage.setItem("ph_lager_view", JSON.stringify({view: V.view, group: V.group, sort: V.sort, closed: [...V.closed]})); } catch {} }
+function savePref() { try { localStorage.setItem("ph_lager_view", JSON.stringify({view: V.view, group: V.group, sort: V.sort, closed: [...V.closed], cols: PREF.cols})); } catch {} }
 function setView(v) { V.view = v; savePref(); render(); }
 function setStatus(s) { V.status = V.status === s ? "" : s; render(); }
 function toggleGroup(k) { V.closed.has(k) ? V.closed.delete(k) : V.closed.add(k); savePref(); render(); }
@@ -475,7 +479,7 @@ function buildGroups(fl) {
       for (const s of f.spools) (by[s.in_printer ? "🖨 " + (s.location || "Drucker") : (s.location || "ohne Ort")] ||= []).push(s);
       if (!f.spools.length) add("ohne Rollen", f, []);
       for (const [k, sp] of Object.entries(by)) add(k, f, sp);
-    } else add(V.group === "material" ? (f.material || "ohne Material") : V.group === "color" ? family(f.color) : (f.vendor || "Ohne Hersteller"), f, f.spools);
+    } else add(V.group === "none" ? "Alle Sorten" : V.group === "material" ? (f.material || "ohne Material") : V.group === "color" ? family(f.color) : (f.vendor || "Ohne Hersteller"), f, f.spools);
   }
   let keys = [...G.keys()];
   keys.sort(V.group === "color" ? (a, b) => FAMS.indexOf(a) - FAMS.indexOf(b) : (a, b) => a.localeCompare(b, "de"));
@@ -550,6 +554,54 @@ function tileCard(f, sp) {
     <span class="fname">${esc(f.name)}</span><span class="muted small">${esc(f.material)}${V.group !== "vendor" ? " · " + esc(f.vendor || "") : ""}</span>${badges(f, sp)}
   </button>`;
 }
+// Große Kacheln: Spulenbild, Name, Rollen und Rest
+function bigCard(f, sp) {
+  const rem = sp.reduce((a, s) => a + (s.remaining || 0), 0);
+  return `<button type="button" class="btile ${isLow(f) ? "low" : ""}" onclick="tileOpen(${f.id})" title="${esc(f.vendor)} ${esc(f.name)} ${esc(f.material)}">
+    <span class="bt-img">${PH.spool(f.color, sortFill(f, sp), 84)}</span>
+    <span class="bt-name">${esc(f.name)}</span>
+    <span class="muted small">${esc(f.material)}${V.group !== "vendor" ? " · " + esc(f.vendor || "") : ""}</span>
+    <span class="bt-num"><b>${sp.length}</b> ${sp.length === 1 ? "Rolle" : "Rollen"} · ${g(rem)}</span>${badges(f, sp)}
+  </button>`;
+}
+// Details: Tabelle mit sortier- und ausblendbaren Spalten (wie Windows-Explorer „Details“)
+const DCOLS = [
+  ["vendor", "Hersteller", f => f.vendor || "", f => esc(f.vendor || "–")],
+  ["material", "Material", f => f.material || "", f => `<span class="mtag">${esc(f.material || "–")}</span>`],
+  ["rolls", "Rollen", (f, sp) => sp.length, (f, sp) => `<b>${sp.length}</b>`, "num"],
+  ["full", "voll", (f, sp) => sp.filter(s => !s.opened).length, (f, sp) => sp.filter(s => !s.opened).length, "num"],
+  ["rest", "Rest", (f, sp) => sp.reduce((a, s) => a + (s.remaining || 0), 0), (f, sp) => g(sp.reduce((a, s) => a + (s.remaining || 0), 0)), "num"],
+  ["weeks", "reicht", f => f.weeks ?? 1e9, f => f.weeks != null ? `<span class="${isSoon(f) ? "warnc" : ""}">${wkText(f.weeks).replace("≈ ", "")}</span>` : "–"],
+  ["price", "Preis", f => f.price || 0, f => f.price ? eur(f.price) : "–", "num"],
+  ["temp", "Düse", f => f.extruder_temp || 0, f => f.extruder_temp ? f.extruder_temp + " °" : "–", "num"],
+  ["loc", "Standort", (f, sp) => [...new Set(sp.map(s => s.in_printer ? "🖨 Drucker" : s.location || ""))].join(", "), (f, sp) => esc([...new Set(sp.map(s => s.in_printer ? "🖨 Drucker" : s.location || ""))].filter(Boolean).join(", ") || "–")],
+  ["dry", "Trocknen", (f, sp) => sp.filter(s => s.dry && s.dry.due).length, (f, sp) => { const n = sp.filter(s => s.dry && s.dry.due).length; return n ? `💧 ${n}` : "–"; }, "num"],
+];
+const DCOL_DEF = ["vendor", "material", "rolls", "rest", "weeks", "price", "loc"];
+function dcols() { return (PREF.cols || DCOL_DEF).filter(k => DCOLS.some(c => c[0] === k) && (k !== "weeks" || FEAT().forecast_enabled !== false) && (k !== "dry" || FEAT().dry_enabled !== false)); }
+function detailsTable(items) {
+  const cols = DCOLS.filter(c => dcols().includes(c[0]));
+  const ts = V.tsort || {k: "", d: 1};
+  let rows = items;
+  if (ts.k) { const c = ts.k === "name" ? [0, 0, f => f.name] : DCOLS.find(x => x[0] === ts.k);
+    if (c) rows = [...items].sort((a, b) => { const x = c[2](a.f, a.sp), y = c[2](b.f, b.sp);
+      return (typeof x === "number" ? x - y : String(x).localeCompare(String(y), "de")) * ts.d; }); }
+  const th = (k, l, cls = "") => `<th class="${cls}" onclick="event.stopPropagation();tSort('${k}')">${l}${ts.k === k ? (ts.d > 0 ? " ▴" : " ▾") : ""}</th>`;
+  return `<div class="dtwrap"><table class="dtab"><thead><tr>${th("name", "Sorte")}${cols.map(c => th(c[0], c[1], c[4] || "")).join("")}</tr></thead><tbody>
+    ${rows.map(({f, sp}) => { const isOpen = open.has(f.id);
+      return `<tr class="${isLow(f) ? "low" : ""} ${isOpen ? "open" : ""}" onclick="toggle(${f.id})">
+        <td class="dname">${PH.spool(f.color, sortFill(f, sp), 26)}<span>${esc(f.name)}${badges(f, sp)}</span></td>
+        ${cols.map(c => `<td class="${c[4] || ""}">${c[3](f, sp)}</td>`).join("")}</tr>
+        ${isOpen ? `<tr class="dexp"><td colspan="${cols.length + 1}"><div class="muted small">${infoLine(f, sp)}</div><div class="fil-act">${actBtns(f)}</div>${spoolList(f, sp)}</td></tr>` : ""}`; }).join("")}
+  </tbody></table></div>`;
+}
+function tSort(k) { const t = V.tsort || {}; V.tsort = {k, d: t.k === k ? -t.d : 1}; render(); }
+function colMenu() {
+  const on = dcols();
+  $("colmenu").innerHTML = DCOLS.map(c => `<label><input type="checkbox" value="${c[0]}" ${on.includes(c[0]) ? "checked" : ""}> ${c[1]}</label>`).join("");
+  $("colmenu").querySelectorAll("input").forEach(i => i.onchange = () => {
+    PREF.cols = [...$("colmenu").querySelectorAll("input:checked")].map(x => x.value); savePref(); render(); });
+}
 function tileOpen(id) {
   open.add(id); setView("compact");
   setTimeout(() => { const el = [...document.querySelectorAll(".crow")].find(x => x.querySelector(`[onclick="toggle(${id})"]`)); if (el) el.scrollIntoView({block: "center", behavior: "smooth"}); }, 50);
@@ -561,6 +613,8 @@ function listHtml(fl) {
     const closed = V.closed.has(gr.key) && !$("q").value.trim() && !V.status;
     const nR = gr.items.reduce((a, x) => a + x.sp.length, 0), kg = gr.items.reduce((a, x) => a + x.sp.reduce((b, s) => b + (s.remaining || 0), 0), 0);
     const body = V.view === "tiles" ? `<div class="ftiles">${gr.items.map(x => tileCard(x.f, x.sp)).join("")}</div>`
+      : V.view === "big" ? `<div class="btiles">${gr.items.map(x => bigCard(x.f, x.sp)).join("")}</div>`
+      : V.view === "details" ? detailsTable(gr.items)
       : gr.items.map(x => (V.view === "compact" ? compactRow : filRow)(x.f, x.sp)).join("");
     return `<section class="card lgroup ${closed ? "closed" : ""}">
       <div class="section-h ghead" data-k="${esc(gr.key)}" onclick="toggleGroup(this.dataset.k)">
@@ -579,6 +633,7 @@ function render() {
     statusBar(D.filaments.filter(f => match(f) && (show === "all" || (show === "low" ? isLow(f) : f.spools.length > 0 || isLow(f)))));
   }
   document.querySelectorAll("#vseg button").forEach(b => b.classList.toggle("on", b.dataset.v === V.view));
+  $("colbtn").style.display = V.view !== "details" || ARCH ? "none" : "";
   const tile = (l, v, s = "", c = "") => `<div class="etile"><div class="label">${l}</div><div class="v ${c}">${v}</div><div class="s">${s}</div></div>`;
   let fl;
   if (ARCH) {
