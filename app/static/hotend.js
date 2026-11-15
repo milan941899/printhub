@@ -4,6 +4,23 @@ const HX = {
   num: (v, d = "–") => (v === null || v === undefined || v === "") ? d : v,
   deg: v => v == null ? "–" : `${Math.round(v)}°`,
   heat(t) { if (t == null || t < 45) return "#475569"; if (t < 120) return "#f59e0b"; if (t < 200) return "#f97316"; return "#ef4444"; },
+  // Lüfter: Dauer je Umdrehung aus der Drehzahl; negative Verzögerung = Drehung läuft nach dem Neuzeichnen
+  // (alle 3 s) nahtlos weiter, statt wieder bei 0° zu beginnen
+  spin(pct) {
+    if (!(pct > 0)) return "";
+    const dur = +(0.28 + (1 - Math.min(100, pct) / 100) * 1.1).toFixed(2);
+    return `animation-duration:${dur}s;animation-delay:-${((Date.now() / 1000) % dur).toFixed(3)}s`;
+  },
+  // Lüfterrad mit geschwungenen Flügeln (n Flügel, Nabe r0, außen r1) um (cx, cy)
+  blades(cx, cy, n, r0, r1, fill, stroke) {
+    const P = (r, a) => `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
+    let d = "";
+    for (let i = 0; i < n; i++) {
+      const a = i * 2 * Math.PI / n, w = 2 * Math.PI / n * 0.62, sw = 0.75;   // Flügelbreite, Schwung
+      d += `M${P(r0, a)} Q${P((r0 + r1) / 2, a + sw * 0.55)} ${P(r1, a + sw)} A${r1} ${r1} 0 0 1 ${P(r1, a + sw + w * 0.55)} Q${P((r0 + r1) / 2 + 1, a + w + sw * 0.4)} ${P(r0, a + w)} Z `;
+    }
+    return `<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width=".5" stroke-linejoin="round"/>`;
+  },
   textOn(hex) {
     const h = (hex || "").replace("#", "");
     if (h.length < 6) return "#fff";
@@ -134,10 +151,13 @@ function hotendSvg(p, info, real = false) {
     <!-- Kühlkörper + Lüfter -->
     ${fins}
     <rect class="fanbox" x="112" y="62" width="40" height="68" rx="6" fill="none" stroke-width="2"/>
-    <g class="${fanOn ? "spin" : ""}" style="animation-duration:${fanOn ? Math.max(0.25, 1.6 - fan.pct / 70) : 1}s">
-      <circle class="fanc" cx="132" cy="96" r="14" fill="none" stroke-width="1.5"/>
-      <path d="M132 96 L132 83 A13 13 0 0 1 143 90 Z M132 96 L143 103 A13 13 0 0 1 132 109 Z M132 96 L121 103 A13 13 0 0 1 121 89 Z" class="fanf"/>
+    <circle class="fanc" cx="132" cy="96" r="15" fill="none" stroke-width="1.5"/>
+    <g class="${fanOn ? "spin" : ""}" style="${HX.spin(fan && fan.pct)}">
+      <circle cx="132" cy="96" r="13.5" fill="none"/>
+      ${HX.blades(132, 96, 5, 3.2, 13, "var(--muted)", "none")}
+      <circle cx="132" cy="96" r="3.6" class="fanf"/>
     </g>
+    ${fanOn && fan.pct > 45 ? `<circle cx="132" cy="96" r="13" fill="var(--muted)" opacity="${(0.08 + fan.pct / 100 * 0.14).toFixed(2)}"/>` : ""}
     <circle cx="200" cy="96" r="19" fill="#e6edf7" stroke="${c}" stroke-width="3"/>
     <text x="200" y="103" text-anchor="middle" font-size="20" font-weight="800" fill="#0a1220">${toolNo}</text>
     <!-- Heizblock + Düse -->
@@ -172,6 +192,9 @@ function hotendReal(p, info, k) {
       <linearGradient id="${id}fb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".25"/><stop offset=".45" stop-color="${c}"/><stop offset="1" stop-color="#000" stop-opacity=".5"/></linearGradient>
       <linearGradient id="${id}pei" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8a6420"/><stop offset=".45" stop-color="#d9b25c"/><stop offset="1" stop-color="#7a5719"/></linearGradient>
       <linearGradient id="${id}tube" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".15"/><stop offset=".5" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity=".15"/></linearGradient>
+      <linearGradient id="${id}bl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b6577"/><stop offset=".5" stop-color="#363e4c"/><stop offset="1" stop-color="#232a35"/></linearGradient>
+      <radialGradient id="${id}mb"><stop offset=".25" stop-color="#4b5563" stop-opacity=".55"/><stop offset=".85" stop-color="#4b5563" stop-opacity=".35"/><stop offset="1" stop-color="#4b5563" stop-opacity="0"/></radialGradient>
+      <radialGradient id="${id}hub" cx=".35" cy=".3"><stop offset="0" stop-color="#9aa3b2"/><stop offset="1" stop-color="#2b323e"/></radialGradient>
       <radialGradient id="${id}glow"><stop offset="0" stop-color="#ffb04a" stop-opacity=".95"/><stop offset=".4" stop-color="#ff5a1f" stop-opacity=".5"/><stop offset="1" stop-color="#ff2a00" stop-opacity="0"/></radialGradient>
       <filter id="${id}n" x="0" y="0" width="1" height="1"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="3"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .35 0"/><feComposite in2="SourceGraphic" operator="in"/></filter>
     </defs>
@@ -181,11 +204,19 @@ function hotendReal(p, info, k) {
     <rect x="162" y="52" width="76" height="80" rx="4" fill="#20262f"/>${fins}
     <circle cx="200" cy="92" r="15" fill="#0b1220" opacity=".8"/><circle cx="200" cy="92" r="13" fill="#e6edf7"/><text x="200" y="98.5" text-anchor="middle" font-size="17" font-weight="800" fill="#0a1220">${toolNo}</text>
     <!-- Lüfter -->
-    <rect x="106" y="58" width="50" height="68" rx="7" fill="url(#${id}fan)" stroke="#000" stroke-opacity=".5"/>
-    <circle cx="131" cy="92" r="20" fill="#0a0d12"/>
-    <g class="${k.fanOn ? "spin" : ""}" style="animation-duration:${k.fanOn ? Math.max(0.2, 1.4 - k.fan.pct / 80) : 1}s">
-      ${[0, 72, 144, 216, 288].map(a => `<path d="M131 92 Q${131 + 6} ${92 - 10} ${131 + 2} ${92 - 18} Q${131 - 6} ${92 - 12} 131 92Z" transform="rotate(${a} 131 92)" fill="#3c4556" stroke="#596377" stroke-width=".6"/>`).join("")}
-      <circle cx="131" cy="92" r="6" fill="#596377"/></g>
+    <!-- Lüftergehäuse mit Schrauben, Rad mit 7 geschwungenen Flügeln, Bewegungsunschärfe je nach Drehzahl -->
+    <rect x="105" y="66" width="52" height="52" rx="8" fill="url(#${id}fan)" stroke="#000" stroke-opacity=".55"/>
+    <rect x="106.5" y="67.5" width="49" height="49" rx="7" fill="none" stroke="#fff" stroke-opacity=".07"/>
+    ${[[111, 72], [151, 72], [111, 112], [151, 112]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.2" fill="#0a0d12"/><circle cx="${x - .4}" cy="${y - .4}" r="1" fill="#6b7280" opacity=".6"/>`).join("")}
+    <circle cx="131" cy="92" r="22" fill="#07090d"/>
+    <circle cx="131" cy="92" r="22" fill="none" stroke="#000" stroke-width="1.5" opacity=".6"/>
+    <g class="${k.fanOn ? "spin" : ""}" style="${HX.spin(k.fan && k.fan.pct)}">
+      <circle cx="131" cy="92" r="20.5" fill="none"/>
+      ${HX.blades(131, 92, 7, 6, 20, `url(#${id}bl)`, "#7b8496")}
+    </g>
+    ${k.fanOn && k.fan.pct > 30 ? `<circle cx="131" cy="92" r="20" fill="url(#${id}mb)" opacity="${Math.min(.6, k.fan.pct / 160).toFixed(2)}"/>` : ""}
+    <circle cx="131" cy="92" r="6.5" fill="url(#${id}hub)"/>
+    <circle cx="131" cy="92" r="3.8" fill="#1f2937" stroke="#9ca3af" stroke-width=".5" opacity=".9"/>
     <!-- Heizblock mit Silikonsocke -->
     <rect x="164" y="136" width="72" height="42" rx="6" fill="url(#${id}blk)"/>
     <rect x="161" y="134" width="78" height="46" rx="10" fill="url(#${id}sock)" opacity=".92"/>

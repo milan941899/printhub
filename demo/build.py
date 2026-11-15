@@ -26,6 +26,8 @@ def rewrite(txt):
     return txt
 
 
+import time
+STAMP = str(int(time.time()))
 shutil.rmtree(OUT, ignore_errors=True)
 os.makedirs(os.path.join(OUT, "demo", "img"))
 shutil.copytree(STATIC, os.path.join(OUT, "static"))
@@ -51,6 +53,8 @@ head = (f'<base href="{BASE}">\n<script src="demo/fixtures.js"></script>\n<scrip
 for src, dst in PAGES.items():
     t = rewrite(open(os.path.join(STATIC, src), encoding="utf-8").read())
     t = t.replace("<head>", "<head>\n" + head, 1)
+    # GitHub Pages speichert Dateien 10 Minuten zwischen → CSS/JS mit Versionsnummer laden, damit Änderungen sofort ankommen
+    t = re.sub(r'((?:src|href)="(?:static|demo)/[\w.-]+\.(?:css|js))"', r'\1?v=' + STAMP + '"', t)
     open(os.path.join(OUT, dst), "w", encoding="utf-8").write(t)
     os.remove(os.path.join(OUT, "static", src))
 
