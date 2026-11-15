@@ -32,10 +32,11 @@ def same_material(a, b):
 
 
 class QueueCheck:
-    def __init__(self, bambuddy, store, spool_map_fn, reserve_fn=lambda: 10, tip_fn=lambda: 0):
+    def __init__(self, bambuddy, store, spool_map_fn, reserve_fn=lambda: 10, tip_fn=lambda: 0, swap_fn=lambda: True):
         self.bb, self.store, self.spool_map = bambuddy, store, spool_map_fn
         self.reserve = reserve_fn
-        self.tip_max = tip_fn       # Reste-Tipp: Rolle bis zu so viel g gilt als Rest (0 = aus)
+        self.tip_max = tip_fn
+        self.swap_on = swap_fn       # Reste-Tipp: Rolle bis zu so viel g gilt als Rest (0 = aus)
         self._req = {}            # (archive/library, id, plate) -> (zeit, filaments)
 
     def requirements(self, item):
@@ -123,7 +124,7 @@ class QueueCheck:
                     alt = sorted((o for o in spools.values() if o.get("filament_id") == sp.get("filament_id") and o["id"] != sp["id"]
                                   and not self.store.slot_of_spool(o["id"]) and (o.get("remaining") or 0) >= need + reserve),
                                  key=lambda o: o["remaining"])
-                    if alt:
+                    if alt and self.swap_on():
                         ln["swap"] = {"id": alt[0]["id"], "rest": round(alt[0]["remaining"]), "key": key, "printer": printer.id}
                         ln["msg"] += f" – im Lager reicht Rolle #{alt[0]['id']} ({alt[0]['remaining']:.0f} g)"
                 elif need and (lim := float(self.tip_max() or 0)) > 0:

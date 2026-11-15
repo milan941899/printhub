@@ -552,7 +552,7 @@ function aspool(p, s, i) {
     <div class="a-g">${sp && sp.remaining != null ? `<b>${Math.round(sp.remaining)} g</b>` : (sp ? `#${sp.id}` : "&nbsp;")}</div>
     <div class="a-name">${name}</div>
     ${extra}
-    ${p._first && p._first.has(s.key) ? `<div class="a-first" title="Gleiche Sorte liegt mehrfach im AMS – diese zuerst aufbrauchen (beim Sync diesen Slot wählen)">▲ zuerst</div>` : ""}
+    ${PH.cfg.first_marks !== false && p._first && p._first.has(s.key) ? `<div class="a-first" title="Gleiche Sorte liegt mehrfach im AMS – diese zuerst aufbrauchen (beim Sync diesen Slot wählen)">▲ zuerst</div>` : ""}
     <button type="button" class="overlay" aria-label="${esc(s.label)}: Spule wählen" data-pid="${p.id}" data-key="${esc(s.key)}"></button>
   </div>`;
 }

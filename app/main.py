@@ -36,6 +36,7 @@ from . import stats as statsmod
 from .notify import Notifier
 from .qr import QR
 from .settings import Settings
+from . import settings as settingsmod
 from .shelly import Shelly
 from . import labelprint
 from . import aiscan          # KI-Etiketterkennung (Google Gemini, optional)
@@ -186,7 +187,8 @@ def _tg_status():
 telegram = Telegram(settings, TG_INBOX, _tg_status)
 power = Power(settings, printers, bambuddy, notifier, os.path.join(DATA_DIR, "nachtruhe", "zustand.json"))
 qcheck = QueueCheck(bambuddy, store, lambda: _spool_map(), lambda: settings.get("short_reserve_g") or 10,
-                    lambda: (settings.get("rest_tip_max") or 0) if settings.get("rest_tip") else 0)
+                    lambda: (settings.get("rest_tip_max") or 0) if settings.get("rest_tip") else 0,
+                    lambda: settings.get("swap_suggest", True))
 QEVENTS = os.path.join(DATA_DIR, "nachtruhe", "auftraege.jsonl")
 notifier.telegram = telegram
 
@@ -405,6 +407,7 @@ async def api_settings(request):
         "docker": os.path.exists(dockerctl.SOCK),
         "ai_today": aiscan.today(),
         "version": os.environ.get("PRINTHUB_VERSION", "dev"),
+        "defaults": {k: v[1] for k, v in settingsmod.SPEC.items() if k not in settingsmod.SECRET | settingsmod.HIDDEN},
     }
     return JSONResponse({"settings": settings.all(), "info": info})
 
@@ -2010,6 +2013,8 @@ def _iso_ts(v):
 
 def _dry_info(sp, material):
     """Wie lange ist die Rolle offen (seit Öffnen bzw. letztem Trocknen)? → {days, limit, due, dried, opened}"""
+    if not settings.get("dry_enabled", True):
+        return None
     d = (store.data.get("dry") or {}).get(str(sp["id"])) or {}
     opened = d.get("opened") or _iso_ts(sp.get("first_used"))
     if not opened and not d.get("dried"):
@@ -2043,6 +2048,8 @@ async def api_lager_dried(request):
 def _watch_dry():
     """Spulen im Drucker (auf Wunsch auch offene im Lager), die zu lange offen sind: einmal melden, bis getrocknet."""
     if "dry" not in notifier.events and "dry" not in (settings.get("tg_events") or []):
+        return
+    if not settings.get("dry_enabled", True):
         return
     in_slot = _slot_names()
     every = bool(settings.get("dry_all"))
@@ -2090,24 +2097,27 @@ def _spool_fil_map():
 
 
 def _forecast():
-    """Verbrauch je Filament in g/Woche (Durchschnitt der letzten 60 Tage bzw. seit dem ersten Druck, mind. 14 Tage)."""
-    if time.time() - _FC["t"] < 600:
+    """Verbrauch je Filament in g/Woche (Durchschnitt der eingestellten Tage bzw. seit dem ersten Druck, mind. 14 Tage)."""
+    if not settings.get("forecast_enabled", True):
+        return {}
+    days = max(14, int(settings.get("forecast_days") or FC_DAYS))
+    if time.time() - _FC["t"] < 600 and _FC.get("days") == days:
         return _FC["data"]
     now = time.time()
     try:
-        grams, first = history.spool_grams(now - FC_DAYS * 86400)
+        grams, first = history.spool_grams(now - days * 86400)
     except Exception as e:
         log.debug("Prognose: %s", e)
         return {}
     if not first:
         return {}
-    span = min(FC_DAYS, max(14, (now - first) / 86400))
+    span = min(days, max(14, (now - first) / 86400))
     m, out = _spool_fil_map(), {}
     for sid, g in grams.items():
         fid = m.get(sid)
         if fid is not None:
             out[fid] = out.get(fid, 0) + g
-    _FC.update(t=now, data={fid: g / span * 7 for fid, g in out.items()})
+    _FC.update(t=now, days=days, data={fid: g / span * 7 for fid, g in out.items()})
     return _FC["data"]
 
 
@@ -2159,7 +2169,9 @@ async def api_lager(request):
     fils.sort(key=lambda f: (f["vendor"].lower(), f["material"], f["name"].lower()))
     return JSONResponse({"filaments": fils, "vendors": [{"id": v["id"], "name": v["name"],
                          "empty_spool_weight": v.get("empty_spool_weight")} for v in inv["vendors"]],
-                         "spoolman_url": cfg.get("spoolman_url"), "storage": settings["storage_location"]})
+                         "spoolman_url": cfg.get("spoolman_url"), "storage": settings["storage_location"],
+                         "features": {k: settings.get(k) for k in ("dry_enabled", "forecast_enabled", "forecast_warn_weeks",
+                                                                   "forecast_shop", "shop_enabled")}})
 
 
 def _num(v):
@@ -2717,13 +2729,19 @@ def _weekly_report(force=False):
             by[n] = by.get(n, 0) + (u.get("grams") or 0)
     top = sorted(by.items(), key=lambda x: -x[1])[:3]
     eur = lambda v: f"{v:.2f} €".replace(".", ",")
-    lines = [f"🖨 {len(rows)} Drucke ({ok} erfolgreich)" + (f" · Vorwoche {len(prev)}" if prev else ""),
-             f"⏱ {hrs:.1f} h Druckzeit".replace(".", ","),
-             f"🧵 {grams / 1000:.2f} kg Filament".replace(".", ",") + (" – " + ", ".join(f"{n} {g:.0f} g" for n, g in top) if top else ""),
-             f"⚡ {kwh:.1f} kWh".replace(".", ",") + f" · 💶 {eur(cost)} gesamt"]
+    want = set(settings.get("weekly_lines") or settingsmod.WEEKLY_LINES)
+    lines = []
+    if "prints" in want:
+        lines.append(f"🖨 {len(rows)} Drucke ({ok} erfolgreich)" + (f" · Vorwoche {len(prev)}" if prev else ""))
+    if "time" in want:
+        lines.append(f"⏱ {hrs:.1f} h Druckzeit".replace(".", ","))
+    if "filament" in want:
+        lines.append(f"🧵 {grams / 1000:.2f} kg Filament".replace(".", ",") + (" – " + ", ".join(f"{n} {g:.0f} g" for n, g in top) if top else ""))
+    if "cost" in want:
+        lines.append(f"⚡ {kwh:.1f} kWh".replace(".", ",") + f" · 💶 {eur(cost)} gesamt")
     try:
         mins = {k: v for k, v in store.data.get("min_stock", {}).items() if v}
-        if mins:
+        if mins and "shop" in want and settings.get("shop_enabled", True):
             inv = spoolman.inventory()
             full = {}
             for sp in inv["spools"]:
@@ -2748,14 +2766,15 @@ def _weekly_report(force=False):
             fid = (sp.get("filament") or {}).get("id")
             rest[fid] = rest.get(fid, 0) + (sp.get("remaining_weight") or 0)
         soon = []
+        warn = int(settings.get("forecast_warn_weeks") or 3)
         for fid, r in rest.items():
             _, wk = _weeks_left(fid, r)
-            if wk is not None and wk <= 4:
+            if wk is not None and wk <= warn and "soon" in want:
                 soon.append((wk, names.get(fid, f"#{fid}")))
         if soon:
             lines.append("⏳ Bald leer: " + ", ".join(f"{n} ({_wk_text(w)})" for w, n in sorted(soon)[:5]))
         due = []
-        for sp in inv["spools"]:
+        for sp in (inv["spools"] if "dry" in want else []):
             info = _dry_info(sp, mats.get((sp.get("filament") or {}).get("id")))
             if info and info["due"]:
                 due.append(f"{names.get((sp.get('filament') or {}).get('id'), '?')} #{sp['id']}")
@@ -2763,6 +2782,8 @@ def _weekly_report(force=False):
             lines.append("💧 Trocknen fällig: " + ", ".join(due[:6]) + (f" (+{len(due) - 6})" if len(due) > 6 else ""))
     except Exception as e:
         log.debug("Wochenbericht Prognose/Trocknen: %s", e)
+    if not lines:
+        lines = ["(keine Zeilen ausgewählt – Einstellungen → Benachrichtigungen → Wochenbericht)"]
     notifier.send("weekly", "Wochenbericht 📊", "\n".join(lines), "bar_chart", force=force)
     return lines
 

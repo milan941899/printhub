@@ -26,13 +26,16 @@
 </header>
 
 <div class="page">
+<div class="set-search"><input type="search" id="set-q" placeholder="🔍 Einstellung suchen, z. B. „trocknen“" autocomplete="off"></div>
+<div id="srch-none" class="muted small" hidden style="margin:4px 2px 10px">Keine Einstellung gefunden.</div>
 <nav class="tabs" id="tabs">
   <a data-t="allgemein">⚙️ Allgemein</a>
   <a data-t="drucker">🖨️ Drucker</a>
   <a data-t="dienste">🔗 Dienste</a>
   <a data-t="wartung">🔧 Wartung <i id="t-due"></i></a>
   <a data-t="waechter">🛡️ Druckwächter</a>
-  <a data-t="spulen">🧵 Spulen &amp; Druck</a>
+  <a data-t="lager">🧵 Lager</a>
+  <a data-t="druck">🖨 Druck</a>
   <a data-t="kosten">💶 Kosten</a>
   <a data-t="meldungen">🔔 Benachrichtigungen</a>
   <a data-t="zugriff">🔒 Zugriff</a>
@@ -71,6 +74,74 @@
     <div class="row">
       <div><div class="t">Bereiche auf der Übersicht</div><div class="d">Reihenfolge und Ein-/Ausklappen merkt sich jedes Gerät selbst</div></div>
       <button class="small-btn" onclick="resetLayout()">Zurücksetzen</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="label">Spulen-Darstellung <span class="muted small">(nur dieses Gerät)</span></div>
+    <div class="spl-prev" id="spl-prev"></div>
+    <div class="row">
+      <div><div class="t">Spulen-Stil</div><div class="d">Wie Rollen in Lager, Übersicht, Slot-Auswahl und Einkaufsliste aussehen</div></div>
+      <select id="spl-s" style="width:190px" onchange="splSet()">
+        <option value="sunlu">Lochspule (Jayo/Sunlu)</option><option value="karton">Kartonspule</option><option value="bambu">Bambu-Spule</option>
+        <option value="flat">Flach (Farbring)</option><option value="dot">Nur Farbpunkt</option></select>
+    </div>
+    <div class="row spl-3d">
+      <div><div class="t">Blickwinkel</div><div class="d">C = schräg von vorne … F = fast von der Seite</div></div>
+      <div class="seg" id="spl-a"><button data-v="c">C</button><button data-v="d">D</button><button data-v="e">E</button><button data-v="f">F</button></div>
+    </div>
+    <div class="row spl-3d">
+      <div><div class="t">Deckkraft der Scheibe</div><div class="d">Weniger = durchsichtige Spule, man sieht mehr Filament</div></div>
+      <div class="seg" id="spl-o"><button data-v="1">100 %</button><button data-v="0.6">60 %</button><button data-v="0.3">30 %</button></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="label">Funktionen</div>
+    <div class="d muted small" style="margin:6px 0 4px">Was ausgeschaltet ist, verschwindet auch aus Lager, Übersicht, Meldungen und Wochenbericht.</div>
+    <div class="row">
+      <div><div class="t">💧 Trocknen-Zähler</div><div class="d">Tage seit Öffnen bzw. Trocknen, Meldung wenn fällig. Grenzen pro Material unter 🧵 Lager</div></div>
+      <label class="switch"><input type="checkbox" data-k="dry_enabled"><span></span></label>
+    </div>
+    <div class="row sub" data-if="dry_enabled">
+      <div><div class="t">… auch Rollen im Lager melden</div><div class="d">Aus: nur Rollen, die gerade im Drucker stecken</div></div>
+      <label class="switch"><input type="checkbox" data-k="dry_all"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">⏳ Reicht-noch-Prognose</div><div class="d">Schätzt aus dem bisherigen Verbrauch, wie lange eine Sorte reicht</div></div>
+      <label class="switch"><input type="checkbox" data-k="forecast_enabled"><span></span></label>
+    </div>
+    <div class="row sub" data-if="forecast_enabled">
+      <div><div class="t">… Verbrauch der letzten</div><div class="d">Kürzer = reagiert schneller, länger = ruhiger</div></div>
+      <select data-k="forecast_days" style="width:110px"><option value="30">30 Tage</option><option value="60">60 Tage</option><option value="90">90 Tage</option></select>
+    </div>
+    <div class="row sub" data-if="forecast_enabled">
+      <div><div class="t">… „bald leer“ ab</div><div class="d">Abzeichen ⏳ im Lager und Zeile im Wochenbericht</div></div>
+      <div class="unit-in"><input type="number" min="1" max="12" step="1" data-k="forecast_warn_weeks" style="width:70px"> Wochen</div>
+    </div>
+    <div class="row sub" data-if="forecast_enabled">
+      <div><div class="t">… bald leere Sorten auf die Einkaufsliste</div><div class="d">Auch ohne Mindestbestand, wenn keine volle Rolle mehr da ist</div></div>
+      <label class="switch"><input type="checkbox" data-k="forecast_shop"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">🛒 Mindestbestand &amp; Einkaufsliste</div><div class="d">„nachkaufen“-Markierung, Kachel und Einkaufsliste im Lager</div></div>
+      <label class="switch"><input type="checkbox" data-k="shop_enabled"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">♻ Reste aufbrauchen</div><div class="d">Warteschlange: passt ein Rest derselben Sorte für den Auftrag, wird er zum Einlegen vorgeschlagen</div></div>
+      <label class="switch"><input type="checkbox" data-k="rest_tip"><span></span></label>
+    </div>
+    <div class="row sub" data-if="rest_tip">
+      <div><div class="t">… als Rest gilt eine Rolle bis</div></div>
+      <div class="unit-in"><input type="number" min="50" step="50" data-k="rest_tip_max" style="width:90px"> g</div>
+    </div>
+    <div class="row">
+      <div><div class="t">🔁 Ersatzrolle vorschlagen</div><div class="d">Reicht die eingelegte Rolle nicht: passende Rolle aus dem Lager mit Knopf „Diese einlegen“</div></div>
+      <label class="switch"><input type="checkbox" data-k="swap_suggest"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">▲ „zuerst“ im AMS</div><div class="d">Liegt dieselbe Sorte in mehreren Slots, wird die kleinere Rolle markiert</div></div>
+      <label class="switch"><input type="checkbox" data-k="first_marks"><span></span></label>
     </div>
   </section>
 </div>
@@ -272,8 +343,8 @@
   </section>
 </div>
 
-<!-- ============ Spulen & Druck ============ -->
-<div class="set-grid" data-tab="spulen">
+<!-- ============ Lager ============ -->
+<div class="set-grid" data-tab="lager">
   <section class="card">
     <div class="label">Spulen</div>
     <div class="row">
@@ -293,54 +364,18 @@
       <div class="unit-in"><input type="number" min="0" max="200" step="1" data-k="runout_tol_g" style="width:90px"> g</div>
     </div>
     <div class="row">
-      <div><div class="t">Trocknen empfohlen nach … Tagen offen</div><div class="d">Pro Material, gezählt ab Öffnen bzw. letztem Trocknen (🔥 im Lager). Gemeldet wird für Rollen im Drucker (Schalter darunter: auch offene im Lager). „*“ = alle anderen</div></div>
-      <input type="text" data-k="dry_days" style="width:100%;max-width:420px">
-    </div>
-    <div class="row">
-      <div><div class="t">Trocknen auch für Rollen im Lager melden</div><div class="d">Aus: nur Rollen, die gerade im Drucker stecken. An: jede offene Rolle (z. B. wenn sie nicht in der Trockenbox liegen)</div></div>
-      <label class="switch"><input type="checkbox" data-k="dry_all"><span></span></label>
-    </div>
-    <div class="row">
       <div><div class="t">Adresse für QR-Codes &amp; NFC</div><div class="d">Leer = so wie gerade im Browser. Am besten die feste Adresse im WLAN</div></div>
       <input type="url" data-k="public_url" placeholder="http://192.168.1.10:8095" style="width:230px">
     </div>
   </section>
 
-  <section class="card">
-    <div class="label">Druck-Überwachung</div>
-    <div class="row">
-      <div><div class="t">Warnen, wenn das Filament nicht reicht</div><div class="d">Beim Druckstart: geplanter Bedarf gegen den Rest in Spoolman</div></div>
-      <label class="switch"><input type="checkbox" data-k="warn_short"><span></span></label>
-    </div>
-    <div class="row">
-      <div><div class="t">Sicherheitsreserve</div><div class="d">So viel soll mindestens übrig bleiben</div></div>
-      <div class="unit-in"><input type="number" min="0" step="5" data-k="short_reserve_g" style="width:90px"> g</div>
-    </div>
-    <div class="row">
-      <div><div class="t">Reste aufbrauchen</div><div class="d">Warteschlange: liegt im Lager ein Rest derselben Sorte, der für den Auftrag reicht, wird er zum Einlegen vorgeschlagen</div></div>
-      <label class="switch"><input type="checkbox" data-k="rest_tip"><span></span></label>
-    </div>
-    <div class="row">
-      <div><div class="t">Als Rest gilt eine Rolle bis</div><div class="d">Nur Rollen bis zu diesem Gewicht werden als Rest vorgeschlagen</div></div>
-      <div class="unit-in"><input type="number" min="50" step="50" data-k="rest_tip_max" style="width:90px"> g</div>
-    </div>
-    <div class="row">
-      <div><div class="t">Foto nach dem Druck</div><div class="d">Kamerabild vom fertigen Teil im Verlauf speichern</div></div>
-      <label class="switch"><input type="checkbox" data-k="photo_enabled"><span></span></label>
-    </div>
-    <div class="row">
-      <div><div class="t">Foto bei</div></div>
-      <div class="checks" id="photo_events">
-        <label><input type="checkbox" value="finish"> Fertig</label>
-        <label><input type="checkbox" value="fail"> Abbruch</label>
-      </div>
-    </div>
-    <div class="row">
-      <div><div class="t">Wartezeit bis zum Foto</div><div class="d">Damit das Bett nach vorne gefahren und das Licht an ist</div></div>
-      <div class="unit-in"><input type="number" min="0" max="300" step="1" data-k="photo_delay" style="width:90px"> s</div>
-    </div>
+  <section class="card" data-if="dry_enabled">
+    <div class="label">💧 Trocknen</div>
+    <div class="d muted small" style="margin:6px 0 4px">Nach so vielen Tagen offen (bzw. seit dem letzten Trocknen, 🔥 im Lager) gilt eine Rolle als „trocknen fällig“. „Alle anderen“ gilt für Materialien ohne eigene Zeile, 0 = nie.</div>
+    <input type="hidden" data-k="dry_days" id="dry-days">
+    <div id="dry-tbl" class="dry-tbl"></div>
+    <div class="row"><div></div><div style="display:flex;gap:6px"><button class="small-btn" onclick="dryAdd()">＋ Material</button><button class="small-btn" onclick="dryReset()">↺ Standard</button></div></div>
   </section>
-
   <section class="card">
     <div class="label">Etikettendrucker (Brother QL)</div>
     <div class="d muted small" style="margin:6px 0 4px">Etiketten mit QR-Code direkt aus PrintHub drucken – ohne Druckdialog. Der Drucker muss im WLAN/Netzwerk sein (z. B. QL-810W, Port 9100).</div>
@@ -377,6 +412,37 @@
     </div>
     <div class="row"><div><div class="t">Heute verbraucht</div><div class="d">Zählt seit dem letzten Neustart von PrintHub; Google setzt das Kontingent um 9 Uhr zurück</div></div>
       <span id="ai-today" class="small">–</span></div>
+  </section>
+
+</div>
+
+<!-- ============ Druck ============ -->
+<div class="set-grid" data-tab="druck">
+  <section class="card">
+    <div class="label">Druck-Überwachung</div>
+    <div class="row">
+      <div><div class="t">Warnen, wenn das Filament nicht reicht</div><div class="d">Beim Druckstart: geplanter Bedarf gegen den Rest in Spoolman</div></div>
+      <label class="switch"><input type="checkbox" data-k="warn_short"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Sicherheitsreserve</div><div class="d">So viel soll mindestens übrig bleiben</div></div>
+      <div class="unit-in"><input type="number" min="0" step="5" data-k="short_reserve_g" style="width:90px"> g</div>
+    </div>
+    <div class="row">
+      <div><div class="t">Foto nach dem Druck</div><div class="d">Kamerabild vom fertigen Teil im Verlauf speichern</div></div>
+      <label class="switch"><input type="checkbox" data-k="photo_enabled"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Foto bei</div></div>
+      <div class="checks" id="photo_events">
+        <label><input type="checkbox" value="finish"> Fertig</label>
+        <label><input type="checkbox" value="fail"> Abbruch</label>
+      </div>
+    </div>
+    <div class="row">
+      <div><div class="t">Wartezeit bis zum Foto</div><div class="d">Damit das Bett nach vorne gefahren und das Licht an ist</div></div>
+      <div class="unit-in"><input type="number" min="0" max="300" step="1" data-k="photo_delay" style="width:90px"> s</div>
+    </div>
   </section>
 
   <section class="card">
@@ -417,6 +483,12 @@
         <option value="2">Mittwoch</option><option value="3">Donnerstag</option><option value="4">Freitag</option><option value="5">Samstag</option><option value="6">Sonntag</option></select>
       <select data-k="weekly_hour" style="width:90px"><option value="0">00:00</option><option value="1">01:00</option><option value="2">02:00</option><option value="3">03:00</option><option value="4">04:00</option><option value="5">05:00</option><option value="6">06:00</option><option value="7">07:00</option><option value="8">08:00</option><option value="9">09:00</option><option value="10">10:00</option><option value="11">11:00</option><option value="12">12:00</option><option value="13">13:00</option><option value="14">14:00</option><option value="15">15:00</option><option value="16">16:00</option><option value="17">17:00</option><option value="18">18:00</option><option value="19">19:00</option><option value="20">20:00</option><option value="21">21:00</option><option value="22">22:00</option><option value="23">23:00</option></select></div>
     </div>
+    <div class="row"><div><div class="t">Inhalt</div><div class="d">Diese Zeilen kommen in den Bericht</div></div>
+      <div class="checks" id="weekly_lines">
+        <label><input type="checkbox" value="prints"> Drucke</label><label><input type="checkbox" value="time"> Druckzeit</label>
+        <label><input type="checkbox" value="filament"> Filament</label><label><input type="checkbox" value="cost"> Strom &amp; Kosten</label>
+        <label><input type="checkbox" value="shop"> Nachkaufen</label><label><input type="checkbox" value="soon"> Bald leer</label>
+        <label><input type="checkbox" value="dry"> Trocknen fällig</label></div></div>
     <div class="row"><div><div class="t">Jetzt senden</div><div class="d">Zum Ausprobieren – geht sofort raus</div></div>
       <button type="button" onclick="weeklyTest(this)">📊 Bericht senden</button></div>
   </section>
@@ -464,8 +536,7 @@
       <input type="text" data-k="progress_steps" style="width:120px"></div>
     <div class="row"><div><div class="t">„Bett abgekühlt“ unter</div></div>
       <div class="unit-in"><input type="number" min="15" max="80" data-k="bed_cool_c" style="width:80px"> °C</div></div>
-    <div class="row"><div><div class="t">„Spule fast leer“ unter</div></div>
-      <div class="unit-in"><input type="number" min="0" step="10" data-k="low_spool_g" style="width:80px"> g</div></div>
+    <div class="row"><div><div class="t">„Spule fast leer“ unter</div><div class="d">Einstellbar unter 🧵 Lager → Spulen</div></div><a class="small-btn" href="#lager">Ändern</a></div>
     <div class="row"><div><div class="t">Dienst nicht erreichbar seit</div><div class="d">Spoolman, Bambuddy, OctoEverywhere</div></div>
       <div class="unit-in"><input type="number" min="1" max="240" data-k="service_alarm_min" style="width:80px"> min</div></div>
     <details class="prio-box">
@@ -586,11 +657,108 @@
 <script>
 const $ = id => document.getElementById(id);
 const {esc} = PH;
-let S = {};
+let S = {}, DEF = {};
+
+// ---------- Suche über alle Einstellungen ----------
+function setSearchClear() {
+  document.querySelectorAll(".srch-hide").forEach(el => el.classList.remove("srch-hide"));
+}
+function setSearch() {
+  const q = $("set-q").value.trim().toLowerCase();
+  setSearchClear();
+  if (!q) { document.body.classList.remove("searching"); showTab(location.hash.slice(1) || "allgemein"); return; }
+  document.body.classList.add("searching");
+  document.querySelectorAll("[data-tab]").forEach(el => {
+    el.hidden = false;
+    // alles außer Karten (Hinweise, Knöpfe, Listen) während der Suche ausblenden
+    const walk = box => [...box.children].forEach(ch => {
+      if (ch.matches("section.card")) return;
+      if (ch.querySelector("section.card")) walk(ch); else ch.classList.add("srch-hide");
+    });
+    walk(el);
+  });
+  let hits = 0;
+  document.querySelectorAll("[data-tab] section.card").forEach(card => {
+    const lab = (card.querySelector(".label") || {}).textContent || "";
+    const rows = card.querySelectorAll(".row");
+    let any = lab.toLowerCase().includes(q);
+    rows.forEach(r => {
+      const ok = any || r.textContent.toLowerCase().includes(q);
+      r.classList.toggle("srch-hide", !ok); if (ok) hits++;
+    });
+    if (!any && ![...rows].some(r => !r.classList.contains("srch-hide"))) card.classList.add("srch-hide");
+    else card.querySelectorAll(":scope > .d, :scope > div:not(.row):not(.label)").forEach(x => x.classList.toggle("srch-hide", !any));
+  });
+  $("srch-none").hidden = hits > 0;
+}
+
+// ---------- Zurücksetzen auf Standard (↺ bei geänderten Werten) ----------
+function rstDraw() {
+  document.querySelectorAll("[data-k]").forEach(el => {
+    const k = el.dataset.k, row = el.closest(".row");
+    if (!row || el.type === "hidden" || el.hasAttribute("data-secret") || !(k in DEF)) return;
+    const d = DEF[k], v = S[k], diff = d !== "" && d != null && JSON.stringify(v) !== JSON.stringify(d) && String(v) !== String(d);
+    let b = row.querySelector(`.rst[data-for="${k}"]`);
+    if (!diff) { if (b) b.remove(); return; }
+    if (!b) {
+      b = document.createElement("button"); b.type = "button"; b.className = "rst"; b.dataset.for = k;
+      b.onclick = e => { e.stopPropagation(); save({[k]: DEF[k]}); };
+      row.appendChild(b);
+    }
+    b.textContent = "↺"; b.title = `Auf Standard zurücksetzen (${typeof d === "boolean" ? (d ? "an" : "aus") : d})`;
+  });
+}
+
+// ---------- Trocknungsgrenzen als Tabelle ----------
+function dryParse(t) {
+  return String(t || "").split(",").map(x => x.split("=")).filter(x => x.length === 2 && x[0].trim())
+    .map(([m, d]) => [m.trim().toUpperCase(), d.trim()]);
+}
+function dryDraw() {
+  const el = $("dry-tbl"); if (!el) return;
+  const rows = dryParse(S.dry_days);
+  el.innerHTML = rows.map(([m, d], i) => `<div class="dry-r">
+      ${m === "*" ? `<span class="dry-m">Alle anderen</span>` : `<input class="dry-m" value="${esc(m)}" data-i="${i}" data-f="m" maxlength="12">`}
+      <span class="unit-in"><input type="number" min="0" max="365" value="${esc(d)}" data-i="${i}" data-f="d" style="width:70px"> Tage</span>
+      ${m === "*" ? `<span style="width:30px"></span>` : `<button class="small-btn" title="Zeile löschen" onclick="dryDel(${i})">✕</button>`}</div>`).join("");
+  el.querySelectorAll("input").forEach(inp => inp.onchange = () => {
+    const r = dryParse(S.dry_days), i = +inp.dataset.i;
+    if (inp.dataset.f === "m") r[i][0] = inp.value.trim().toUpperCase() || r[i][0]; else r[i][1] = String(Math.max(0, +inp.value || 0));
+    drySave(r);
+  });
+}
+function drySave(r) {
+  r.sort((a, b) => (a[0] === "*") - (b[0] === "*"));
+  save({dry_days: r.map(([m, d]) => `${m}=${d}`).join(", ")});
+}
+function dryAdd() {
+  const m = (prompt("Material (z. B. PETG-CF, PLA-Silk):") || "").trim().toUpperCase();
+  if (!m) return;
+  const r = dryParse(S.dry_days).filter(x => x[0] !== m); r.push([m, "30"]); drySave(r);
+}
+function dryDel(i) { const r = dryParse(S.dry_days); r.splice(i, 1); drySave(r); }
+function dryReset() { if (confirm("Trocknungsgrenzen auf die Standardwerte zurücksetzen?")) save({dry_days: DEF.dry_days}); }
+
+// ---------- Spulen-Darstellung (nur dieses Gerät) ----------
+function splInit() {
+  const P = PH.spoolPref();
+  $("spl-s").value = P.s;
+  document.querySelectorAll("#spl-a button").forEach(b => { b.classList.toggle("on", b.dataset.v === P.a); b.onclick = () => splSet({a: b.dataset.v}); });
+  document.querySelectorAll("#spl-o button").forEach(b => { b.classList.toggle("on", +b.dataset.v === P.o); b.onclick = () => splSet({o: +b.dataset.v}); });
+  document.querySelectorAll(".spl-3d").forEach(r => r.hidden = P.s === "flat" || P.s === "dot");
+  const demo = [["#2a4bd7", 1], ["#f07c1b", .6], ["#1a1a1a", .3], ["#f2f2f0", .8], ["#3aa655", .1]];
+  $("spl-prev").innerHTML = demo.map(([c, f]) => PH.spool(c, f, 64, P)).join("");
+}
+function splSet(ch = {}) {
+  const P = Object.assign(PH.spoolPref(), {s: $("spl-s").value}, ch);
+  PH.spoolPref(P); splInit(); PH.toast("Gespeichert ✓ (dieses Gerät)");
+}
 
 // ---------- Tabs ----------
 function showTab(t) {
   if (t === "nachtruhe") t = "waechter";
+  if (t === "spulen") t = "lager";              // alter Link
+  if ($("set-q") && $("set-q").value) { $("set-q").value = ""; document.body.classList.remove("searching"); setSearchClear(); }
   if (!document.querySelector(`[data-tab="${t}"]`)) t = "allgemein";
   document.querySelectorAll("[data-tab]").forEach(el => el.hidden = el.dataset.tab !== t);
   document.querySelectorAll("#tabs a").forEach(a => a.classList.toggle("on", a.dataset.t === t));
@@ -598,12 +766,13 @@ function showTab(t) {
   if (t === "dienste") loadServices();
   if (t === "drucker") { pcLoad(); pwHint(); }
   if (t === "waechter") { loadNR(true); plInit(); }
-  if (t === "spulen") loadProfiles();
+  if (t === "druck") loadProfiles();
   if (t === "meldungen") tgLoad();
   if (t === "daten") bkLoad();
   if (t === "diagnose") { if (!DG) dgRun(); lgLoad(); }
 }
 document.querySelectorAll("#tabs a").forEach(a => { a.href = "#" + a.dataset.t; });
+$("set-q").addEventListener("input", setSearch);
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 async function save(patch) {
@@ -626,6 +795,9 @@ function fill() {
   document.querySelectorAll("#theme button").forEach(b => b.classList.toggle("on", b.dataset.v === S.theme));
   if ($("evgroups")) drawEvents();
   document.querySelectorAll("#photo_events input").forEach(c => c.checked = (S.photo_events || []).includes(c.value));
+  document.querySelectorAll("#weekly_lines input").forEach(c => c.checked = (S.weekly_lines || []).includes(c.value));
+  document.querySelectorAll("[data-if]").forEach(el => el.hidden = !S[el.dataset.if]);
+  dryDraw(); rstDraw();
   document.querySelectorAll("#pin_mode button").forEach(b => b.classList.toggle("on", b.dataset.v === S.pin_mode));
   document.body.classList.toggle("bb-import", !!S.bambuddy_import);
   $("pin-state").textContent = S.pin_set ? "PIN ist festgelegt – zum Ändern neue eingeben" : "Noch keine PIN festgelegt (4–8 Ziffern)";
@@ -633,7 +805,8 @@ function fill() {
 
 async function load() {
   const d = await (await fetch("/api/settings")).json();
-  S = d.settings; fill(); lblInit();
+  DEF = (d.info && d.info.defaults) || {};
+  S = d.settings; fill(); lblInit(); splInit();
   $("saver").value = PH.saverMode();
   const i = d.info;
   if (i.ai_today && $("ai-today")) $("ai-today").innerHTML = `<b>${i.ai_today.n}</b> Anfragen` +
@@ -1243,6 +1416,8 @@ document.querySelectorAll("[data-k]").forEach(el => {
 document.querySelectorAll("#theme button").forEach(b => b.onclick = () => {
   PH.setTheme(b.dataset.v); save({theme: b.dataset.v});
 });
+document.querySelectorAll("#weekly_lines input").forEach(c => c.onchange = () =>
+  save({weekly_lines: [...document.querySelectorAll("#weekly_lines input:checked")].map(x => x.value)}));
 document.querySelectorAll("#photo_events input").forEach(c => c.onchange = () =>
   save({photo_events: [...document.querySelectorAll("#photo_events input:checked")].map(x => x.value)}));
 document.querySelectorAll("#pin_mode button").forEach(b => b.onclick = () => save({pin_mode: b.dataset.v}));

@@ -5,7 +5,8 @@ import threading
 
 from .notify import DEFAULT_EVENTS, EVENTS, PHOTO_EVENTS
 
-ALLOWED = {"notify_events": EVENTS, "photo_events": ["finish", "fail"], "notify_photo": PHOTO_EVENTS, "tg_events": EVENTS}
+WEEKLY_LINES = ["prints", "time", "filament", "cost", "shop", "soon", "dry"]
+ALLOWED = {"weekly_lines": WEEKLY_LINES, "notify_events": EVENTS, "photo_events": ["finish", "fail"], "notify_photo": PHOTO_EVENTS, "tg_events": EVENTS}
 NEW_IN_V2 = ["offline", "waiting", "plate", "power", "service", "maintenance"]   # neue Standard-Ereignisse
 HIDDEN = {"pin_hash", "pin_salt", "auth_secret"}   # nie an den Browser geben
 SECRET = {"bambuddy_key", "ntfy_token", "tg_token", "ai_key"}              # setzbar, aber nur als „gesetzt“ zurückgeben
@@ -32,9 +33,18 @@ SPEC = {
     "low_spool_g": (float, 100.0),
     "runout_tol_g": (float, 15.0),
     "dry_days": (str, "PLA=60, PETG=21, ABS=30, ASA=30, TPU=7, PA=3, PC=7, PVA=2, *=30"),   # Tage offen bis „trocknen“
+    "dry_enabled": (bool, True),           # Trocknen-Zähler überhaupt anzeigen/melden
     "dry_all": (bool, False),              # Trocknen auch für offene Rollen im Lager melden (nicht nur im Drucker)
     "rest_tip": (bool, True),              # Warteschlange: kleinen Rest derselben Sorte zum Aufbrauchen vorschlagen
     "rest_tip_max": (float, 350.0),        # … als „Rest“ gilt eine Rolle bis zu diesem Gewicht (g)
+    "forecast_enabled": (bool, True),      # „Reicht noch …“ aus dem bisherigen Verbrauch
+    "forecast_days": (int, 60),            # … Durchschnitt über so viele Tage
+    "forecast_warn_weeks": (int, 3),       # Abzeichen/„bald leer“ ab so wenigen Wochen
+    "forecast_shop": (bool, True),         # bald leere Sorten automatisch auf die Einkaufsliste
+    "first_marks": (bool, True),           # AMS: „▲ zuerst“ bei gleicher Sorte in mehreren Slots
+    "swap_suggest": (bool, True),          # Reicht die Rolle nicht: passende Rolle aus dem Lager vorschlagen („Diese einlegen“)
+    "shop_enabled": (bool, True),          # Mindestbestand, „nachkaufen“ und Einkaufsliste
+    "weekly_lines": (list, ["prints", "time", "filament", "cost", "shop", "soon", "dry"]),
     "oe_restart": (bool, False),
     "oe_container": (str, "octoeverywhere"),
     "oe_delay": (int, 20),

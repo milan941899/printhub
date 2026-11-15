@@ -636,16 +636,20 @@ Darunter das **Protokoll** (Passwörter und Tokens werden darin unkenntlich gema
 
 ## 7. Einstellungen – was bedeutet was?
 
+Oben gibt es ein **Suchfeld** („trocknen“, „reserve“ …) – es durchsucht alle Reiter. Weicht ein Wert vom Standard ab,
+steht daneben ein **↺** zum Zurücksetzen.
+
 | Reiter | Inhalt |
 |---|---|
-| **Allgemein** | Theme (hell/dunkel/automatisch), Datensparmodus, Fortschritt im Browser-Tab, welche Bereiche die Übersicht zeigt |
+| **Allgemein** | Theme, Datensparmodus, Fortschritt im Browser-Tab, Bereiche der Übersicht. **Spulen-Darstellung** (pro Gerät): Lochspule (Jayo/Sunlu), Kartonspule, Bambu-Spule, flacher Farbring oder nur Farbpunkt – bei den 3D-Spulen mit Blickwinkel C–F und Deckkraft der Scheibe (100/60/30 %). **Funktionen** zum Ein-/Ausschalten: Trocknen-Zähler, Reicht-noch-Prognose (Zeitraum, „bald leer“-Grenze, automatisch auf die Einkaufsliste), Mindestbestand & Einkaufsliste, Reste aufbrauchen, Ersatzrolle vorschlagen, „▲ zuerst“ im AMS |
 | **Drucker** | Drucker anlegen/ändern/testen, Strom-Verwaltung |
 | **Dienste** | Adressen von Spoolman, Bambuddy, OctoEverywhere; Container-Namen für Status und Neustart |
 | **Wartung** | Wartungsbuch |
 | **Druckwächter** | Ein/aus, Bambuddy-Zugang, Druckfenster pro Tag, Puffer, Plattenprüfung, Referenzbilder, „Alles über den Druckwächter“, Licht, Ausschalten nach Fehler, Testmodus, Protokoll |
-| **Spulen** | Slot am Drucker setzen, Standort im Regal, „fast leer“-Grenze, QR-Adresse, Filament-Warnung + Reserve, Foto nach dem Druck, Etikettendrucker, **KI-Etiketterkennung** (Schlüssel, wann, Modell, heute verbraucht), gelernte Profile |
+| **Lager** | Slot am Drucker setzen, Standort im Regal, „fast leer“-Grenze, QR-Adresse, **Trocknungsgrenzen** als Tabelle (Tage pro Material), Etikettendrucker, **KI-Etiketterkennung** (Schlüssel, wann, Modell, heute verbraucht) |
+| **Druck** | Filament-Warnung + Reserve, Foto nach dem Druck, gelernte Bambu-Profile |
 | **Kosten** | Strompreis (€/kWh – wird für alle Kosten verwendet, aber nicht in der Übersicht angezeigt), Verschleiß (€/h), Ersatz-Filamentpreis |
-| **Meldungen** | **Wochenbericht** (Tag, Uhrzeit, „Bericht senden“), ntfy, Telegram, Feineinstellungen (Fortschritt alle x %, Grenzen), Dringlichkeit, welche Meldung über welchen Weg |
+| **Meldungen** | **Wochenbericht** (Tag, Uhrzeit, welche Zeilen, „Bericht senden“), ntfy, Telegram, Feineinstellungen (Fortschritt alle x %, Grenzen), Dringlichkeit, welche Meldung über welchen Weg |
 | **Zugriff** | PIN-Schutz |
 | **Daten** | Sicherung herunterladen/zurückspielen, automatische Sicherung, Export (Verlauf, Statistik, Wartung), Import aus Bambuddy |
 | **Diagnose** | Alles prüfen, Protokoll |

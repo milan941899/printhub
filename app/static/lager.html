@@ -36,7 +36,7 @@
       <details class="moremenu"><summary class="btn">⋯ Mehr</summary><div class="mm">
         <button onclick="this.closest('details').open=false;openMulti()">🎨 Serie: mehrere Farben einer Sorte</button>
         <button onclick="this.closest('details').open=false;openStack()">📚 Stapel: gemischte Rollen</button>
-        <button onclick="this.closest('details').open=false;openShop()">🛒 Einkaufsliste</button>
+        <button class="shopfeat" onclick="this.closest('details').open=false;openShop()">🛒 Einkaufsliste</button>
         <button class="nfcread" style="display:none" onclick="this.closest('details').open=false;nfcRead()">📡 NFC-Tag lesen</button>
         <button onclick="this.closest('details').open=false;openNames()">Aa Namen vereinheitlichen</button>
         <button onclick="this.closest('details').open=false;fsel.clear();bulkMode=!bulkMode;render()">☑ Sorten auswählen (gemeinsam bearbeiten)</button>
@@ -62,7 +62,7 @@
   </section>
   <section class="card fbopts">
     <div class="fb-row fb-opts" id="fb-opts">
-      <select id="show" title="Anzeigen"><option value="stock">Mit Bestand</option><option value="all">Alle Sorten</option><option value="low">Nachkaufen</option></select>
+      <select id="show" title="Anzeigen"><option value="stock">Mit Bestand</option><option value="all">Alle Sorten</option><option value="low" class="shopfeat">Nachkaufen</option></select>
       <select id="grp" title="Gruppieren nach"><option value="vendor">nach Hersteller</option><option value="material">nach Material</option><option value="color">nach Farbfamilie</option><option value="loc">nach Ort</option></select>
       <select id="srt" title="Sortieren"><option value="name">Name A–Z</option><option value="hue">Farbton</option><option value="count">Anzahl Rollen</option><option value="used">zuletzt benutzt</option></select>
     </div>
@@ -338,7 +338,7 @@
       <div class="field"><span class="lab">Düse (°C)</span><input id="f-et" type="number" min="150" max="350"></div>
       <div class="field"><span class="lab">Bett (°C)</span><input id="f-bt" type="number" min="0" max="130"></div>
       <div class="field" id="f-countbox"><span class="lab">Gleich Rollen anlegen</span><input id="f-count" type="number" min="0" max="50" value="0"></div>
-      <div class="field" id="f-minbox"><span class="lab">Mindestbestand (volle Rollen)</span><input id="f-min" type="number" min="0" max="99" inputmode="numeric" title="Darunter wird „nachkaufen“ angezeigt"></div>
+      <div class="field shopfeat" id="f-minbox"><span class="lab">Mindestbestand (volle Rollen)</span><input id="f-min" type="number" min="0" max="99" inputmode="numeric" title="Darunter wird „nachkaufen“ angezeigt"></div>
       <div class="field" id="f-lotbox"><span class="lab">Charge (optional)</span><input id="f-lot" placeholder="z. B. 04260702AJ" autocomplete="off"></div>
       <div class="field" id="f-codes" style="grid-column:1/-1;display:none"></div>
     </div>
@@ -367,6 +367,7 @@ async function load() {
   const d = await r.json();
   if (d.error) { $("err").textContent = d.error; return; }
   D = d; $("err").textContent = "";
+  document.body.classList.toggle("noshop", FEAT().shop_enabled === false);
   $("smlink").href = d.spoolman_url;
   const mats = [...new Set(d.filaments.map(f => f.material).filter(Boolean))].sort();
   const cur = $("mat").value;
@@ -394,7 +395,10 @@ function barColor(hex) {
   if (lum > 235) return "#cbd5e1";
   return hex;
 }
-function isLow(f) { return f.min > 0 && f.full < f.min; }
+const FEAT = () => (D && D.features) || {};
+function isLow(f) { return FEAT().shop_enabled !== false && f.min > 0 && f.full < f.min; }
+// „bald leer“ laut Prognose (für Abzeichen und – wenn eingestellt – Einkaufsliste)
+function isSoon(f) { return f.weeks != null && f.weeks <= (FEAT().forecast_warn_weeks || 3); }
 
 // ---------- Ansicht: Kompakt / Ausführlich / Kacheln, Gruppieren, Sortieren, Status ----------
 const PREF = (() => { try { return JSON.parse(localStorage.getItem("ph_lager_view") || "{}"); } catch { return {}; } })();
@@ -488,7 +492,7 @@ function infoLine(f, sp) {
 function badges(f, sp) {
   const dry = sp.filter(s => s.dry && s.dry.due).length, inp = sp.filter(s => s.in_printer).length, ne = sp.filter(s => nearEmpty(f, s)).length;
   return (isLow(f) ? ` <span class="lowtag">nachkaufen</span>` : "") + (inp ? ` <span class="btag inp" title="im Drucker">🖨${inp > 1 ? inp : ""}</span>` : "") +
-    (f.weeks != null && f.weeks <= 3 && sp === f.spools ? ` <span class="btag soon" title="${wkTitle(f)}">⏳ ${f.weeks < 1 ? "<1" : Math.round(f.weeks)} Wo.</span>` : "") +
+    (isSoon(f) && sp === f.spools ? ` <span class="btag soon" title="${wkTitle(f)}">⏳ ${f.weeks < 1 ? "<1" : Math.round(f.weeks)} Wo.</span>` : "") +
     (dry ? ` <span class="btag dry" title="Trocknen fällig">💧${dry > 1 ? dry : ""}</span>` : "") + (ne ? ` <span class="btag ne" title="fast leer">◔${ne > 1 ? ne : ""}</span>` : "");
 }
 function actBtns(f) {
@@ -596,7 +600,7 @@ function render() {
       tile("Rollen", spools.length, `${spools.filter(s => !s.opened).length} voll · ${spools.filter(s => s.opened).length} angebrochen`) +
       tile("Filament", g(spools.reduce((a, s) => a + (s.remaining || 0), 0)), "Rest auf allen Rollen") +
       tile("Lagerwert", eur(value), "nach Restgewicht", "acc") +
-      tile("Nachkaufen", low, low ? "unter Mindestbestand" : "alles da", low ? "y" : "");
+      (FEAT().shop_enabled === false ? "" : tile("Nachkaufen", low, low ? "unter Mindestbestand" : "alles da", low ? "y" : ""));
     $("archlink").textContent = narch ? `📦 Archiv (${narch})` : "📦 Archiv";
   }
   if (!ARCH) {
@@ -1035,18 +1039,20 @@ async function saveMulti() {
 
 // ---------- Einkaufsliste ----------
 function shopItems() {
-  return D.filaments.filter(isLow).map(f => ({f, need: f.min - f.full}))
+  const soon = FEAT().forecast_shop !== false;
+  return D.filaments.filter(f => isLow(f) || (soon && FEAT().shop_enabled !== false && f.spools.length && isSoon(f) && !f.full))
+    .map(f => ({f, need: Math.max(1, f.min - f.full), soon: !isLow(f)}))
     .sort((a, b) => (a.f.vendor || "").localeCompare(b.f.vendor || "") || a.f.name.localeCompare(b.f.name));
 }
 function openShop() {
   const it = shopItems(), sum = it.reduce((a, x) => a + (x.f.price ? x.f.price * x.need : 0), 0);
-  $("shop-list").innerHTML = it.length ? it.map(({f, need}) => `<div class="crow" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
+  $("shop-list").innerHTML = it.length ? it.map(({f, need, soon}) => `<div class="crow" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
       ${PH.spool(f.color, sortFill(f, f.spools), 30)}
       <div style="flex:1;min-width:0"><b>${esc(f.vendor)}</b> ${esc(f.name)} <span class="muted">${esc(f.material)}</span>
-        <div class="small muted">${f.full} von ${f.min} vollen Rollen${f.price ? ` · zuletzt ${eur(f.price)} je Rolle` : ""}${f.weeks != null ? ` · reicht ${wkText(f.weeks)}` : ""}</div></div>
+        <div class="small muted">${soon ? `⏳ bald leer` : `${f.full} von ${f.min} vollen Rollen`}${f.price ? ` · zuletzt ${eur(f.price)} je Rolle` : ""}${f.weeks != null ? ` · reicht ${wkText(f.weeks)}` : ""}</div></div>
       <b style="white-space:nowrap">${need}×</b></div>`).join("") +
       (sum ? `<div class="small" style="margin-top:8px">Ungefähr <b>${eur(sum)}</b> (nach letztem Preis)</div>` : "")
-    : `<div class="muted" style="padding:10px 0">Alles da – keine Sorte unter dem Mindestbestand. 👍</div>`;
+    : `<div class="muted" style="padding:10px 0">Alles da – keine Sorte unter dem Mindestbestand${FEAT().forecast_shop !== false ? " und keine bald leer" : ""}. 👍</div>`;
   $("m-shop").classList.add("open");
 }
 function shopCopy() {

@@ -299,7 +299,7 @@ class BasePrinter:
             extra = sum(float(o.get("remaining") or 0) for _, o in backups)
             item = {"slot": self.slot_label(key), "key": key, "spool": sp["id"], "need": round(grams), "rest": round(rest),
                     "backup": [self.slot_label(k) for k, _ in backups], "ok": rest + extra >= grams + reserve}
-            if not item["ok"]:
+            if not item["ok"] and st.get("swap_suggest", True):
                 item["swap"] = self.replacement(sp, grams + reserve)
             notes.append(item)
             if item["ok"]:
@@ -309,7 +309,7 @@ class BasePrinter:
                 sw = item.get("swap")
                 warn.append(f"{item['slot']}: Spule #{sp['id']} hat nur {round(rest)} g, Druck braucht ~{round(grams)} g!" +
                             (f"\n→ Im Lager reicht Rolle #{sw['id']} ({sw['rest']} g{', ' + sw['location'] if sw['location'] else ''})"
-                             if sw else "\n→ Keine passende Rolle derselben Sorte im Lager."))
+                             if sw else ("\n→ Keine passende Rolle derselben Sorte im Lager." if st.get("swap_suggest", True) else "")))
         if notes:
             cur = self.store.get_job(self.id)
             if cur and cur.get("started") == job.get("started"):

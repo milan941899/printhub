@@ -1,15 +1,42 @@
 // Gemeinsam für alle PrintHub-Seiten: Theme, Navigation, Formatierung, Hinweise
 (function () {
   window.PH = {
-    // Spule (gerenderte 3D-Bilder, Jayo/Sunlu-Lochspule): f*.webp = Wicklung in Graustufen, wird per Filter eingefärbt; b*.webp = Spule darüber
-    spool(color, fill = 1, h = 34) {
+    // Spulen-Darstellung pro Gerät (localStorage „ph-spool“): Stil, Blickwinkel, Deckkraft der vorderen Scheibe
+    SPOOL_DIM: {"c": 202, "d": 174, "e": 142, "f": 104},          // Bildbreite je Blickwinkel (Höhe immer 212)
+    spoolPref(v) {
+      if (v) { try { localStorage.setItem("ph-spool", JSON.stringify(v)); } catch {} return v; }
+      let p = {};
+      try { p = JSON.parse(localStorage.getItem("ph-spool") || "{}") || {}; } catch {}
+      return {s: ["sunlu", "karton", "bambu", "flat", "dot"].includes(p.s) ? p.s : "sunlu",
+              a: ["c", "d", "e", "f"].includes(p.a) ? p.a : "d", o: [1, 0.6, 0.3].includes(+p.o) ? +p.o : 1};
+    },
+    // Spule mit Restmenge (fill 0…1). 3D: hinten b.webp, Wicklung f{k}.webp (Graustufen, per Filter eingefärbt),
+    // Glanz s{k}.webp, vordere Scheibe v.webp (Deckkraft einstellbar). pref = Vorschau mit anderen Einstellungen
+    spool(color, fill = 1, h = 34, pref) {
       const c = /^#?[0-9a-f]{6}$/i.test(color || "") ? (color[0] === "#" ? color : "#" + color) : "#9aa4b2";
-      const id = "sp" + (PH._sp = (PH._sp || 0) + 1);
+      const id = "sp" + (PH._sp = (PH._sp || 0) + 1), P = pref || PH.spoolPref();
       const f = Math.max(0, Math.min(1, +fill || 0)), k = f < 0.02 ? 0 : Math.max(1, Math.round(f * 10));
-      return `<svg class="spl" viewBox="0 0 174 212" width="${Math.round(h * 174 / 212)}" height="${h}" aria-hidden="true">
+      if (P.s === "flat") {
+        const L = 2 * Math.PI * 15;
+        return `<svg class="spl flat" viewBox="0 0 40 40" width="${h}" height="${h}" aria-hidden="true">
+          <circle cx="20" cy="20" r="15" fill="none" stroke="var(--trk, #ffffff22)" stroke-width="7"/>
+          <circle cx="20" cy="20" r="15" fill="none" stroke="${c}" stroke-width="7" stroke-dasharray="${(L * f).toFixed(1)} ${L.toFixed(1)}" transform="rotate(-90 20 20)"/>
+          <circle cx="20" cy="20" r="18.5" fill="none" stroke="#fff3" stroke-width=".8"/>
+          <circle cx="20" cy="20" r="11" fill="${c}" stroke="#fff3" stroke-width=".8"/>
+          <circle cx="20" cy="20" r="4.5" fill="var(--well, #0f172a)" stroke="#fff4" stroke-width="1"/></svg>`;
+      }
+      if (P.s === "dot") {
+        return `<svg class="spl dot" viewBox="0 0 40 40" width="${h}" height="${h}" aria-hidden="true">
+          <circle cx="20" cy="16" r="12" fill="${c}" stroke="#fff6" stroke-width="1.5"/>
+          <rect x="6" y="33" width="28" height="4.5" rx="2.2" fill="var(--trk, #ffffff22)"/>
+          <rect x="6" y="33" width="${(28 * f).toFixed(1)}" height="4.5" rx="2.2" fill="${c}" stroke="#fff3" stroke-width=".5"/></svg>`;
+      }
+      const set = `/static/spool/${P.s}-${P.a}/`, w = PH.SPOOL_DIM[P.a], v = "?v=3";
+      return `<svg class="spl" viewBox="0 0 ${w} 212" width="${Math.round(h * w / 212)}" height="${h}" aria-hidden="true">
         <filter id="${id}" color-interpolation-filters="sRGB"><feFlood flood-color="${c}"/><feComposite in2="SourceGraphic" operator="arithmetic" k1="1"/></filter>
-        ${k ? `<image href="/static/spool/f${k}.webp?v=2" width="174" height="212" filter="url(#${id})"/>` : ""}
-        <image href="/static/spool/b${k}.webp?v=2" width="174" height="212"/></svg>`;
+        <image href="${set}b.webp${v}" width="${w}" height="212"/>
+        ${k ? `<image href="${set}f${k}.webp${v}" width="${w}" height="212" filter="url(#${id})"/><image href="${set}s${k}.webp${v}" width="${w}" height="212"/>` : ""}
+        <image href="${set}v.webp${v}" width="${w}" height="212"${P.o < 1 ? ` opacity="${P.o}"` : ""}/></svg>`;
     },
     esc: s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])),
     eur: v => v == null ? "–" : Number(v).toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €",
@@ -89,7 +116,9 @@
     navigator.serviceWorker.register("/sw.js").catch(() => {});
 
   // Theme vom Server holen (gilt dann auf allen Geräten)
-  fetch("/api/settings").then(r => r.json()).then(d => PH.setTheme(d.settings.theme)).catch(() => {});
+  // Einstellungen merken (PH.cfg) – Seiten können damit Funktionen ein-/ausblenden
+  PH.cfg = {};
+  PH.cfgReady = fetch("/api/settings").then(r => r.json()).then(d => { PH.cfg = d.settings || {}; PH.setTheme(PH.cfg.theme); return PH.cfg; }).catch(() => ({}));
 })();
 
 // Handy: beim Zoomen (zwei Finger) die feste Leiste unten ausblenden, sonst wird sie mitvergrößert

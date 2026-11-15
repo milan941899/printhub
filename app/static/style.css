@@ -992,6 +992,7 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .btag { font-size:11px; padding:0 5px; border-radius:99px; background:var(--tile2); margin-left:3px; white-space:nowrap; }
 .btag.ne { color:#f97316; }
 .btag.soon { color:var(--warn); }
+body.noshop .shopfeat { display:none !important; }
 /* AMS-Slot mit 3D-Spule */
 .reel3d { position:relative; width:min(60px, 100%); display:grid; place-items:center; }
 .reel3d .spl { width:100%; height:auto; }
@@ -1143,3 +1144,18 @@ body { font-variant-numeric: tabular-nums; }
   .modal .mbox > .mact { margin-bottom:calc(-16px - max(0px, env(safe-area-inset-bottom))); }
 }
 @keyframes sheetUp { from { transform:translateY(40px); opacity:.4; } to { transform:none; opacity:1; } }
+
+/* Einstellungen: Suche, Zurücksetzen, Unterpunkte, Trocknungstabelle, Spulen-Vorschau */
+.set-search { margin:0 0 10px; }
+.set-search input { width:100%; box-sizing:border-box; font-size:16px; padding:10px 12px; border-radius:10px; }
+body.searching #tabs { opacity:.45; }
+.srch-hide { display:none !important; }
+.row .rst { flex:none; margin-left:6px; width:28px; height:28px; padding:0; border-radius:50%; font-size:14px; line-height:1; background:var(--tile2); border:1px solid var(--line); color:var(--muted); cursor:pointer; }
+.row .rst:hover { color:var(--acc); border-color:var(--acc); }
+.row.sub { padding-left:18px; border-left:2px solid var(--line); margin-left:6px; }
+.row.sub .t { font-weight:500; }
+.dry-tbl { display:grid; gap:6px; margin:8px 0 4px; }
+.dry-r { display:flex; align-items:center; gap:8px; }
+.dry-r .dry-m { flex:1; min-width:0; }
+.dry-r input.dry-m { max-width:180px; text-transform:uppercase; }
+.spl-prev { display:flex; gap:14px; align-items:flex-end; justify-content:center; flex-wrap:wrap; padding:10px 6px 14px; background:var(--well); border-radius:10px; margin:8px 0; min-height:70px; }
