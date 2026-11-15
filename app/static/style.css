@@ -1294,3 +1294,7 @@ body.tg-on #tg-steps { display:none; }   /* verbunden: Einrichtungs-Schritte aus
 .foldable.fold > :not(.fold-h):not(.keep) { display:none !important; }
 .foldable > .section-h.fold-h { margin-bottom:0; }
 .foldable:not(.fold) > .section-h.fold-h { margin-bottom:8px; }
+
+/* Einstellungen: Mauerwerk (zwei Spalten, Karten rücken nach oben) */
+.set-grid.masonry { grid-auto-rows:4px; row-gap:0; align-items:start; }
+.set-grid.masonry > * { margin-bottom:16px; }

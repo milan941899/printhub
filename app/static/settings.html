@@ -868,6 +868,33 @@ function foldStatic() {
   foldInit(document.querySelector('[data-tab="wartung"]'), ":scope > section.card", (c, h) => "wartung:" + (h.textContent.trim().slice(0, 30)));
 }
 
+// ---------- Mauerwerk-Anordnung: Karten rücken nach oben, wenn eine darüber zugeklappt wird ----------
+// Jede Karte belegt so viele 4-px-Rasterzeilen, wie sie hoch ist; bei einer Spalte (Handy) bleibt alles wie gewohnt.
+const MROW = 4, MGAP = 16;
+function masonry(grid) {
+  const cols = getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length;
+  const on = cols > 1;
+  grid.classList.toggle("masonry", on);
+  for (const el of grid.children) {
+    if (!on) { el.style.gridRowEnd = ""; continue; }
+    const h = el.getBoundingClientRect().height;
+    el.style.gridRowEnd = h ? `span ${Math.max(1, Math.ceil((h + MGAP) / MROW))}` : "";
+  }
+}
+const masonryRO = new ResizeObserver(entries => {
+  const grids = new Set(entries.map(e => e.target.parentElement).filter(Boolean));
+  requestAnimationFrame(() => grids.forEach(masonry));
+});
+function masonryInit() {
+  document.querySelectorAll(".set-grid").forEach(g => {
+    if (g.closest(".card")) return;                      // nur Kartenraster, nicht Raster innerhalb einer Karte
+    for (const el of g.children) if (!el._mo) { el._mo = 1; masonryRO.observe(el); }
+    masonry(g);
+  });
+}
+window.addEventListener("resize", () => document.querySelectorAll(".set-grid").forEach(g => { if (!g.closest(".card")) masonry(g); }));
+new MutationObserver(() => masonryInit()).observe(document.body, {childList: true, subtree: true});
+
 // ---------- Einstellungen nur für dieses Gerät (data-p → PH.pref) ----------
 function prefInit() {
   document.querySelectorAll("select[data-p=hist_range], select[data-p=stats_range]").forEach(sel =>
@@ -1008,7 +1035,7 @@ function fill() {
 async function load() {
   const d = await (await fetch("/api/settings")).json();
   DEF = (d.info && d.info.defaults) || {};
-  S = d.settings; fill(); lblInit(); splInit(); prefInit(); foldStatic();
+  S = d.settings; fill(); lblInit(); splInit(); prefInit(); foldStatic(); masonryInit();
   $("saver").value = PH.saverMode();
   const i = d.info;
   if (i.ai_today && $("ai-today")) $("ai-today").innerHTML = `<b>${i.ai_today.n}</b> Anfragen` +
