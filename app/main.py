@@ -1617,8 +1617,9 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         # KI: bei „Immer“ läuft die KI gleichzeitig mit der eigenen Erkennung (die dann nur die schnelle Stufe macht)
         ai_on = bool(settings.get("ai_enabled") and settings.get("ai_key"))
         ai_info = {}
+        ai_t0 = time.time()
         ai_fut = (_AI_POOL.submit(aiscan.read, img, settings.get("ai_key"), settings.get("ai_model"), info=ai_info)
-                  if ai_on and settings.get("ai_mode") == "always" else None)
+                  if ai_on and settings.get("ai_mode") == "always" and not aiscan.slow() else None)
         for c in codes:
             if c.get("box"):
                 # Stufen: a) Zeile über den Balken (schnell) → b) restliche Streifen → 2) gedreht/Schatten → ganzes Etikett
@@ -1634,9 +1635,23 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
         alltexts += texts
         ai = None
         if ai_fut:
-            ai = ai_fut.result()
+            try:                                    # höchstens ~6 s auf Google warten, dann gilt der Tower
+                ai = ai_fut.result(timeout=max(0.5, aiscan.LIMIT + 0.5 - (time.time() - ai_t0)))
+            except Exception:
+                ai = (None, time.time() - ai_t0, f"KI zu langsam (> {aiscan.LIMIT:.0f} s) – Tower-Ergebnis verwendet")
         def local_rest():
             nonlocal p, texts
+            if ai_fut and not enough():             # bei „Immer“ übersprungene Stufen nachholen (gedreht, Schatten …)
+                for c in codes:
+                    if c.get("box"):
+                        for st in ("b", 2):
+                            more = scanmod.band_texts(img, c, stage=st)
+                            texts += more
+                            alltexts.extend(more)
+                            p = scanmod.parse_votes(texts)
+                            if enough():
+                                break
+                        break
             if not texts:                           # kein Strichcode: erst weißes Etikett im Foto suchen und lesen
                 lab = scanmod.find_label(img)
                 if lab is not None:
@@ -1655,6 +1670,9 @@ def _scan(img_bytes=None, code=None, vendor="", material=""):
             ai = aiscan.read(img, settings.get("ai_key"), settings.get("ai_model"), info=ai_info)
         if ai is not None:
             d, sec, err = ai
+            aiscan.note_speed(sec, bool(err) and not (err or "").startswith(("Gratis", "Schlüssel")))
+            if aiscan.slow() and settings.get("ai_mode") == "always":
+                err = (err + " · " if err else "") + "Google gerade langsam – 15 min nur bei Bedarf gefragt"
             if d:
                 ks = d.pop("sku", None)            # KI-Nummer nie als SKU (die zählt stark) – nur als normale Erkennungsnummer
                 if ks and not d.get("batch"):

@@ -103,7 +103,26 @@ def _quota(r):
     return ("PerDay" in txt or "per day" in txt.lower()), wait
 
 
-def read(img, key, model="gemini-flash-lite-latest", timeout=20, info=None):
+LIMIT = 6.0                         # länger wartet ein Scan nicht auf Google
+_SLOW = {"n": 0, "until": 0}
+
+
+def slow():
+    """Google zuletzt wiederholt zu langsam → für 15 min nur noch „wenn nötig“ fragen."""
+    return time.time() < _SLOW["until"]
+
+
+def note_speed(sec, failed):
+    if failed or sec > LIMIT:
+        _SLOW["n"] += 1
+        if _SLOW["n"] >= 2:
+            _SLOW.update(n=0, until=time.time() + 900)
+            log.info("KI: Google wiederholt langsam – 15 min nur noch bei Bedarf")
+    else:
+        _SLOW["n"] = 0
+
+
+def read(img, key, model="gemini-flash-lite-latest", timeout=LIMIT, info=None):
     """→ (dict mit Etikett-Werten oder None, Sekunden, Fehlertext oder None)
     info (optional): wird gefüllt mit size, kb, open (KI-Anfragen gleichzeitig offen), retries – fürs Protokoll"""
     if info is None:
@@ -135,8 +154,8 @@ def _read(img, key, model, timeout, info):
                 r = requests.post(URL.format(model=model or "gemini-flash-lite-latest"), json=body, timeout=timeout,
                                   headers={"x-goog-api-key": key})
                 _count(r.status_code == 200)
-            except requests.RequestException:
-                if attempt == 2:
+            except requests.RequestException as e:
+                if attempt == 2 or isinstance(e, requests.Timeout):   # zu langsam: nicht nochmal warten
                     raise
                 info["retries"] += 1
                 time.sleep(0.5)
@@ -171,6 +190,8 @@ def _read(img, key, model, timeout, info):
         if isinstance(d, list):
             d = d[0] if d else {}
     except requests.RequestException as e:
+        if isinstance(e, requests.Timeout):
+            return None, time.time() - t, f"Google zu langsam (> {LIMIT:.0f} s) – Tower-Ergebnis verwendet"
         code = getattr(getattr(e, "response", None), "status_code", None)
         return None, time.time() - t, f"nicht erreichbar ({code or type(e).__name__})"
     except (ValueError, KeyError, IndexError) as e:
