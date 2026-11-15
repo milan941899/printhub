@@ -61,7 +61,7 @@ function hotendCompact(p, info) {
     ["MATERIAL", HX.esc(material || "–"), "", "", color || "#64748b"],
     ["DÜSE", `<tspan style="fill:${nozzle && nozzle.actual >= 45 ? HX.heat(nozzle.actual) : "var(--fg)"}">${HX.deg(nozzle && nozzle.actual)}</tspan>`, "/ " + HX.deg(nozzle && nozzle.target)],
     ["BETT", HX.deg(bed && bed.actual), "/ " + HX.deg(bed && bed.target)],
-    ["LÜFTER", fan && fan.pct != null ? fan.pct + " %" : "–", ""],
+    ["BAUTEILLÜFTER", fan && fan.pct != null ? fan.pct + " %" : "–", ""],
     [HX.esc(leftMid.l.toUpperCase()), HX.esc(leftMid.v), HX.esc(leftMid.u)],
     [HX.esc(rightMid.l.toUpperCase()), HX.esc(rightMid.v), HX.esc(rightMid.u)],
     ["LAYER", p.layer != null ? p.layer : "–", p.total_layers != null ? "/ " + p.total_layers : "", "acc"],
@@ -94,7 +94,7 @@ function hotendGauge(p, info) {
   return `<svg viewBox="0 -26 400 300" role="img" aria-label="Düse">
     ${g(72, 96, 52, nozzle && nozzle.actual, nozzle && nozzle.target, 300, "DÜSE", "°", HX.heat(Math.max(nozzle && nozzle.actual || 0, 46)))}
     ${g(200, 96, 52, bed && bed.actual, bed && bed.target, 120, "BETT", "°", HX.heat(Math.max(bed && bed.actual || 0, 46)))}
-    ${g(328, 96, 52, fan && fan.pct, null, 100, "LÜFTER", "%", "var(--acc)")}
+    ${g(328, 96, 52, fan && fan.pct, null, 100, "BAUTEILLÜFTER", "%", "var(--acc)")}
     <text class="lbl" x="72" y="200" text-anchor="middle">MATERIAL</text>
     <circle cx="26" cy="196" r="5.5" fill="${color || "#64748b"}" stroke="#fff6"/>
     <text class="val" x="72" y="228" text-anchor="middle">${HX.esc(material || "–")}</text>
@@ -108,8 +108,11 @@ function hotendSvg(p, info, real = false) {
   const heat = HX.heat(nozzle && nozzle.actual);
   const heating = nozzle && nozzle.target > 0 && nozzle.actual < nozzle.target - 3;
   const bedHeating = bed && bed.target > 0 && bed.actual < bed.target - 2;
-  const fan = (p.fans || [])[0];
+  const fan = (p.fans || [])[0];                    // Bauteillüfter (bläst aufs Druckteil)
   const fanOn = fan && fan.pct > 0;
+  // Hotend-Lüfter (kühlt den Kühlkörper): Bambu meldet ihn, sonst läuft er, solange die Düse heiß ist
+  const hf = (p.fans || [])[1] && p.fans[1].pct != null ? p.fans[1].pct : (nozzle && nozzle.actual > 50 ? 100 : 0);
+  const hot = {pct: hf}, hotOn = hf > 0, bambu = p.type !== "moonraker";
   const layer = p.layer != null ? `${p.layer}` : "–";
   const total = p.total_layers != null ? `/ ${p.total_layers}` : "";
   const prog = p.progress || 0;
@@ -126,16 +129,20 @@ function hotendSvg(p, info, real = false) {
     : {l: "Speed-Modus", v: HX.num(p.speed), u: p.speed_pct ? `${p.speed_pct} %` : ""};
   const rightMid = p.type === "moonraker"
     ? {l: "Speed", v: HX.num(p.speed), u: p.speed_pct && p.speed_pct !== 100 ? `${p.speed_pct} %` : ""}
-    : {l: "Hotend-Lüfter", v: (p.fans || [])[1] && p.fans[1].pct != null ? `${p.fans[1].pct} %` : "–", u: ""};
+    : {l: "Bauteillüfter", v: fan && fan.pct != null ? `${fan.pct} %` : "–", u: ""};
+  // links: beim Bambu der Hotend-Lüfter (gezeichnet am Kühlkörper), sonst der Bauteillüfter
+  const left = bambu ? {l: "HOTEND-LÜFTER", v: (p.fans || [])[1] && p.fans[1].pct != null ? p.fans[1].pct + " %" : "–"}
+                     : {l: "BAUTEILLÜFTER", v: fan && fan.pct != null ? fan.pct + " %" : "–"};
   return `<svg viewBox="0 0 400 300" role="img" aria-label="Düse">
     <!-- Material -->
     <text class="lbl" x="18" y="34">MATERIAL</text>
     <text class="val" x="18" y="58">${HX.esc(material || "–")}</text>
     <polyline class="lead" points="18,64 110,64 150,27"/>
     <!-- Lüfter -->
-    <text class="lbl" x="18" y="108">LÜFTER</text>
-    <text class="val" x="18" y="132">${fan && fan.pct != null ? fan.pct + " %" : "–"}</text>
-    <polyline class="lead" points="18,138 92,138 116,112"/>
+    ${bambu ? `<text class="lbl" x="18" y="96">HOTEND-</text><text class="lbl" x="18" y="110">LÜFTER</text>`
+            : `<text class="lbl" x="18" y="96">BAUTEIL-</text><text class="lbl" x="18" y="110">LÜFTER</text>`}
+    <text class="val" x="18" y="134">${left.v}</text>
+    <polyline class="lead" points="${bambu ? "18,138 92,138 108,118" : "18,138 140,138"}"/>
     <!-- Fluss / Speed-Modus -->
     <text class="lbl" x="18" y="192">${HX.esc(leftMid.l.toUpperCase())}</text>
     <text class="val" x="18" y="216">${HX.esc(leftMid.v)} <tspan class="unit">${HX.esc(leftMid.u)}</tspan></text>
@@ -143,7 +150,7 @@ function hotendSvg(p, info, real = false) {
     <!-- Hotend-Lüfter / Speed -->
     <text class="lbl" x="382" y="34" text-anchor="end">${HX.esc(rightMid.l.toUpperCase())}</text>
     <text class="val" x="382" y="58" text-anchor="end">${HX.esc(rightMid.v)} <tspan class="unit">${HX.esc(rightMid.u)}</tspan></text>
-    <polyline class="lead" points="382,64 290,64 236,84"/>
+    <polyline class="lead" points="${bambu ? "382,64 300,64 280,80" : "382,64 290,64 236,84"}"/>
     <!-- Düse -->
     <text class="lbl" x="382" y="128" text-anchor="end">DÜSE</text>
     <text class="val" x="382" y="152" text-anchor="end" style="fill:${nozzle && nozzle.actual >= 45 ? heat : "var(--fg)"}">${HX.deg(nozzle && nozzle.actual)}<tspan class="unit"> / ${HX.deg(nozzle && nozzle.target)}</tspan></text>
@@ -153,7 +160,7 @@ function hotendSvg(p, info, real = false) {
     <text class="val acc" x="382" y="230" text-anchor="end">${layer} <tspan class="unit">${total}</tspan></text>
     <polyline class="lead" points="382,236 300,236 258,244"/>
 
-    ${real ? hotendReal(p, info, {heat, heating, bedHeating, fan, fanOn, rows}) : `
+    ${real ? hotendReal(p, info, {heat, heating, bedHeating, fan, fanOn, rows, hot, hotOn}) : `
     <!-- Filament -->
     <line x1="200" y1="44" x2="200" y2="206" stroke="${c}" stroke-width="3"/>
     <rect x="150" y="10" width="100" height="34" rx="8" fill="${c}" stroke="#ffffff30"/>
@@ -162,12 +169,23 @@ function hotendSvg(p, info, real = false) {
     ${fins}
     <rect class="fanbox" x="112" y="62" width="40" height="68" rx="6" fill="none" stroke-width="2"/>
     <circle class="fanc" cx="132" cy="96" r="15" fill="none" stroke-width="1.5"/>
-    <g class="fanspin" ${HX.spin(fan && fan.pct)}>
+    <g class="fanspin" ${HX.spin(hf)}>
       <circle cx="132" cy="96" r="13.5" fill="none"/>
       ${HX.blades(132, 96, 5, 3.2, 13, "var(--muted)", "none")}
       <circle cx="132" cy="96" r="3.6" class="fanf"/>
     </g>
-    ${fanOn && fan.pct > 45 ? `<circle cx="132" cy="96" r="13" fill="var(--muted)" opacity="${(0.08 + fan.pct / 100 * 0.14).toFixed(2)}"/>` : ""}
+    ${hf > 45 ? `<circle cx="132" cy="96" r="13" fill="var(--muted)" opacity="${(0.08 + hf / 100 * 0.14).toFixed(2)}"/>` : ""}
+    <!-- Bauteillüfter mit Luftkanal zur Düse -->
+    <path d="M262 112 Q258 172 214 196" fill="none" class="fanbox" stroke-width="5" stroke-linecap="round"/>
+    <rect class="fanbox" x="246" y="80" width="34" height="34" rx="6" fill="none" stroke-width="2"/>
+    <circle class="fanc" cx="263" cy="97" r="12" fill="none" stroke-width="1.3"/>
+    <g class="fanspin" ${HX.spin(fan && fan.pct)}>
+      <circle cx="263" cy="97" r="10.5" fill="none"/>
+      ${HX.blades(263, 97, 5, 2.6, 10, "var(--muted)", "none")}
+      <circle cx="263" cy="97" r="3" class="fanf"/>
+    </g>
+    ${fanOn && fan.pct > 45 ? `<circle cx="263" cy="97" r="10" fill="var(--muted)" opacity="${(0.08 + fan.pct / 100 * 0.14).toFixed(2)}"/>` : ""}
+    ${fanOn ? `<path d="M222 200 q6 4 12 2 M220 206 q7 3 13 0" fill="none" stroke="var(--acc)" stroke-width="1.4" stroke-linecap="round" opacity="${(0.3 + fan.pct / 160).toFixed(2)}"/>` : ""}
     <circle cx="200" cy="96" r="19" fill="#e6edf7" stroke="${c}" stroke-width="3"/>
     <text x="200" y="103" text-anchor="middle" font-size="20" font-weight="800" fill="#0a1220">${toolNo}</text>
     <!-- Heizblock + Düse -->
@@ -220,13 +238,26 @@ function hotendReal(p, info, k) {
     ${[[111, 72], [151, 72], [111, 112], [151, 112]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.2" fill="#0a0d12"/><circle cx="${x - .4}" cy="${y - .4}" r="1" fill="#6b7280" opacity=".6"/>`).join("")}
     <circle cx="131" cy="92" r="22" fill="#07090d"/>
     <circle cx="131" cy="92" r="22" fill="none" stroke="#000" stroke-width="1.5" opacity=".6"/>
-    <g class="fanspin" ${HX.spin(k.fan && k.fan.pct)}>
+    <g class="fanspin" ${HX.spin(k.hot.pct)}>
       <circle cx="131" cy="92" r="20.5" fill="none"/>
       ${HX.blades(131, 92, 7, 6, 20, `url(#${id}bl)`, "#7b8496")}
     </g>
-    ${k.fanOn && k.fan.pct > 30 ? `<circle cx="131" cy="92" r="20" fill="url(#${id}mb)" opacity="${Math.min(.6, k.fan.pct / 160).toFixed(2)}"/>` : ""}
+    ${k.hot.pct > 30 ? `<circle cx="131" cy="92" r="20" fill="url(#${id}mb)" opacity="${Math.min(.6, k.hot.pct / 160).toFixed(2)}"/>` : ""}
     <circle cx="131" cy="92" r="6.5" fill="url(#${id}hub)"/>
     <circle cx="131" cy="92" r="3.8" fill="#1f2937" stroke="#9ca3af" stroke-width=".5" opacity=".9"/>
+    <!-- Bauteillüfter (Radiallüfter) mit Luftkanal bis an die Düse -->
+    <path d="M258 114 Q256 168 216 200" fill="none" stroke="#11151c" stroke-width="10" stroke-linecap="round"/>
+    <path d="M258 114 Q256 168 216 200" fill="none" stroke="url(#${id}fan)" stroke-width="7" stroke-linecap="round"/>
+    <rect x="242" y="76" width="42" height="42" rx="8" fill="url(#${id}fan)" stroke="#000" stroke-opacity=".55"/>
+    ${[[247, 81], [279, 81], [247, 113], [279, 113]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.7" fill="#0a0d12"/>`).join("")}
+    <circle cx="263" cy="97" r="16.5" fill="#07090d"/>
+    <g class="fanspin" ${HX.spin(k.fan && k.fan.pct)}>
+      <circle cx="263" cy="97" r="15.5" fill="none"/>
+      ${HX.blades(263, 97, 6, 4.5, 15, `url(#${id}bl)`, "#7b8496")}
+    </g>
+    ${k.fanOn && k.fan.pct > 30 ? `<circle cx="263" cy="97" r="15" fill="url(#${id}mb)" opacity="${Math.min(.6, k.fan.pct / 160).toFixed(2)}"/>` : ""}
+    <circle cx="263" cy="97" r="5" fill="url(#${id}hub)"/>
+    ${k.fanOn ? `<path d="M222 204 q6 4 13 2 M219 210 q7 3 14 0" fill="none" stroke="#9fe7ff" stroke-width="1.3" stroke-linecap="round" opacity="${(0.25 + k.fan.pct / 180).toFixed(2)}"/>` : ""}
     <!-- Heizblock mit Silikonsocke -->
     <rect x="164" y="136" width="72" height="42" rx="6" fill="url(#${id}blk)"/>
     <rect x="161" y="134" width="78" height="46" rx="10" fill="url(#${id}sock)" opacity=".92"/>
