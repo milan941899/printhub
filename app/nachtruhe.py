@@ -208,6 +208,8 @@ class Nachtruhe:
         env["NACHTRUHE_CONFIG"] = self.config
         # Meldungen laufen über die zentrale ntfy-Adresse von PrintHub
         url = (self.settings.get("ntfy_url") or "").rstrip("/")
+        if (self.settings.get("notify_via") or "both") not in ("both", "ntfy"):
+            url = ""                                      # ntfy abgeschaltet → Druckwächter schickt nichts über ntfy
         if url and "/" in url.split("://", 1)[-1]:
             server, topic = url.rsplit("/", 1)
             env["NTFY_SERVER"], env["NTFY_TOPIC"] = server, topic

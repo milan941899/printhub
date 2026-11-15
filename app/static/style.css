@@ -1232,3 +1232,17 @@ table.list tr.dayrow td { background:var(--well); padding:8px 10px; font-size:13
 .tc-col select { margin-top:8px; width:100%; }
 .tc-col .link { margin-top:6px; }
 #tabs { flex-direction:column; align-items:stretch; }
+
+/* Benachrichtigungen: abgeschalteter Weg */
+.ch-card .ch-off { display:none; font-size:10px; letter-spacing:.6px; background:var(--warn); color:#111; border-radius:99px; padding:1px 8px; margin-left:6px; vertical-align:2px; }
+.ch-card.off .ch-off { display:inline-block; }
+.ch-card.off > :not(.label) { opacity:.45; }
+/* Einstellungen: Vorschau Düse */
+.he-prev { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+.he-opt { min-width:0; width:100%; overflow:hidden; display:flex; flex-direction:column; gap:6px; padding:6px; background:none; border:2px solid var(--line); border-radius:14px; color:inherit; cursor:pointer; font:inherit; text-align:center; }
+.he-opt .hotend { margin:0; pointer-events:none; }
+.he-opt span { font-weight:700; font-size:13px; padding-bottom:2px; }
+.he-opt.on { border-color:var(--acc); } .he-opt.on span { color:var(--acc); }
+@media (max-width:520px) { .he-prev { grid-template-columns:1fr; } }
+.he-opt .hcompact { grid-template-columns:1fr; }
+@media (min-width:521px) { .he-opt .hcompact { grid-template-columns:1fr 1fr; } }

@@ -15,6 +15,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
 <script src="/static/common.js"></script>
+<script src="/static/hotend.js"></script>
 </head>
 <body>
 <header>
@@ -29,14 +30,12 @@
 <div class="set-search"><input type="search" id="set-q" placeholder="🔍 Einstellung suchen, z. B. „trocknen“" autocomplete="off"></div>
 <div id="srch-none" class="muted small" hidden style="margin:4px 2px 10px">Keine Einstellung gefunden.</div>
 <nav class="tabs" id="tabs">
-  <div class="tgrp"><span class="tgl">Seiten</span>
-  <a data-t="allgemein">⚙️ Allgemein</a>
+  <div class="tgrp">  <a data-t="allgemein">⚙️ Allgemein</a>
   <a data-t="uebersicht">🖥 Übersicht</a>
   <a data-t="lager">🧵 Lager</a>
   <a data-t="verlauf">🕘 Verlauf</a>
   <a data-t="statistik">📊 Statistik</a></div>
-  <div class="tgrp"><span class="tgl">Technik</span>
-  <a data-t="drucker">🖨️ Drucker</a>
+  <div class="tgrp">  <a data-t="drucker">🖨️ Drucker</a>
   <a data-t="dienste">🔗 Dienste</a>
   <a data-t="waechter">🛡️ Druckwächter</a>
   <a data-t="wartung">🔧 Wartung <i id="t-due"></i></a>
@@ -102,10 +101,8 @@
   </section>
   <section class="card">
     <div class="label">Düse / Hotend <span class="muted small">(nur dieses Gerät)</span></div>
-    <div class="row">
-      <div><div class="t">Darstellung</div><div class="d">Schema = Strichzeichnung · Realistisch = schattiert mit glühender Düse · Rundinstrumente · Kompakt = nur Werte</div></div>
-      <select data-p="hotend" style="width:170px"><option value="schema">Schema</option><option value="real">Realistisch</option><option value="gauge">Rundinstrumente</option><option value="compact">Kompakt</option></select>
-    </div>
+    <div class="d muted small" style="margin:6px 0 8px">Antippen zum Auswählen – so sieht die Düse auf der Übersicht aus (Beispielwerte).</div>
+    <div class="he-prev" id="he-prev"></div>
   </section>
   <section class="card">
     <div class="label">Bereiche &amp; Funktionen</div>
@@ -588,7 +585,14 @@
       <button type="button" onclick="weeklyTest(this)">📊 Bericht senden</button></div>
   </section>
   <section class="card">
-    <div class="label">ntfy</div>
+    <div class="label">Versand über</div>
+    <div class="row">
+      <div><div class="t">Benachrichtigungen schicken über</div><div class="d">Der abgeschaltete Weg bleibt eingerichtet, schickt aber nichts – auch der Druckwächter nicht</div></div>
+      <div class="seg" id="notify_via"><button data-v="both">Beides</button><button data-v="ntfy">nur ntfy</button><button data-v="telegram">nur Telegram</button><button data-v="off">aus</button></div>
+    </div>
+  </section>
+  <section class="card ch-card" data-ch="ntfy">
+    <div class="label">ntfy <span class="ch-off">abgeschaltet</span></div>
     <div class="row">
       <div><div class="t">ntfy-Adresse</div><div class="d">Server + Thema, z. B. https://ntfy.sh/mein-thema. Leer = aus. Gilt auch für den Druckwächter</div></div>
       <input type="url" data-k="ntfy_url" placeholder="https://ntfy.sh/…" style="width:260px">
@@ -605,8 +609,8 @@
       <div class="unit-in"><select id="test-prio" style="width:120px"><option value="5">dringend</option><option value="4">hoch</option><option value="3" selected>normal</option></select>
       <button onclick="testNotify()">🔔 Testnachricht</button></div></div>
   </section>
-  <section class="card">
-    <div class="label">Telegram</div>
+  <section class="card ch-card" data-ch="telegram">
+    <div class="label">Telegram <span class="ch-off">abgeschaltet</span></div>
     <div class="d muted small" style="margin:6px 0 4px">Eigener Bot – kommt zuverlässig an, mit Foto und Antwort-Knöpfen (z. B. „Platte belegt“). Läuft parallel zu ntfy; welche Meldungen wohin gehen, wählst du unten mit ✈️.</div>
     <div id="tg-steps" class="tg-steps">
       <div><b>1.</b> In Telegram <a href="https://t.me/BotFather" target="_blank">@BotFather</a> öffnen, <code>/newbot</code> schicken, Namen vergeben – du bekommst einen <b>Token</b>.</div>
@@ -846,6 +850,18 @@ function prefInit() {
   });
 }
 
+// ---------- Übersicht: Vorschau der Düsen-Darstellungen ----------
+function hePrev() {
+  const el = $("he-prev"); if (!el || typeof hotendBody !== "function") return;
+  const p = {id: "demo", type: "bambu", printing: true, progress: 62, layer: 184, total_layers: 296, speed: "Standard", speed_pct: 100,
+             fans: [{pct: 80}, {pct: 100}]};
+  const info = {nozzle: {actual: 219, target: 220}, bed: {actual: 65, target: 65}, color: "#2a4bd7", material: "PLA", toolNo: 1};
+  const cur = PH.pref("hotend", "schema");
+  el.innerHTML = [["schema", "Schema"], ["real", "Realistisch"], ["gauge", "Rundinstrumente"], ["compact", "Kompakt"]].map(([v, l]) =>
+    `<button type="button" class="he-opt ${cur === v ? "on" : ""}" onclick="PH.pref('hotend', null, '${v}'); hePrev(); PH.toast('Gespeichert ✓ (dieses Gerät)')">
+      <div class="hotend">${hotendBody(p, info, v)}</div><span>${cur === v ? "✓ " : ""}${l}</span></button>`).join("");
+}
+
 // ---------- Übersicht: Kacheln je Drucker (gespeichert im Layout der Übersicht, „ph-board“) ----------
 let TC_PR = null;
 function tcBoard() { try { return JSON.parse(localStorage.getItem("ph-board") || "null") || {page: {order: [], span: {}, hidden: []}, blk: {}, collapsed: {}}; } catch { return {page: {order: [], span: {}, hidden: []}, blk: {}, collapsed: {}}; } }
@@ -906,7 +922,7 @@ function showTab(t) {
   if (t === "drucker") { pcLoad(); pwHint(); }
   if (t === "waechter") { loadNR(true); plInit(); }
   if (t === "lager") loadProfiles();
-  if (t === "uebersicht") tileCfg();
+  if (t === "uebersicht") { tileCfg(); hePrev(); }
   if (t === "meldungen") tgLoad();
   if (t === "daten") bkLoad();
   if (t === "system" || t === "diagnose") { if (!DG) dgRun(); lgLoad(); }
@@ -936,6 +952,9 @@ function fill() {
   if ($("evgroups")) drawEvents();
   document.querySelectorAll("#photo_events input").forEach(c => c.checked = (S.photo_events || []).includes(c.value));
   document.querySelectorAll("#weekly_lines input").forEach(c => c.checked = (S.weekly_lines || []).includes(c.value));
+  const via = S.notify_via || "both";
+  document.querySelectorAll("#notify_via button").forEach(b => b.classList.toggle("on", b.dataset.v === via));
+  document.querySelectorAll(".ch-card").forEach(c => c.classList.toggle("off", !(via === "both" || via === c.dataset.ch)));
   document.querySelectorAll("[data-if]").forEach(el => el.hidden = !S[el.dataset.if]);
   dryDraw(); rstDraw();
   document.querySelectorAll("#pin_mode button").forEach(b => b.classList.toggle("on", b.dataset.v === S.pin_mode));
@@ -1556,6 +1575,7 @@ document.querySelectorAll("[data-k]").forEach(el => {
 document.querySelectorAll("#theme button").forEach(b => b.onclick = () => {
   PH.setTheme(b.dataset.v); save({theme: b.dataset.v});
 });
+document.querySelectorAll("#notify_via button").forEach(b => b.onclick = () => save({notify_via: b.dataset.v}));
 document.querySelectorAll("#weekly_lines input").forEach(c => c.onchange = () =>
   save({weekly_lines: [...document.querySelectorAll("#weekly_lines input:checked")].map(x => x.value)}));
 document.querySelectorAll("#photo_events input").forEach(c => c.onchange = () =>

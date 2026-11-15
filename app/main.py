@@ -404,7 +404,7 @@ async def api_settings(request):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
         _apply_services()
-        if body_keys & {"ntfy_url", "ntfy_token"} and nachtruhe.running():
+        if body_keys & {"ntfy_url", "ntfy_token", "notify_via"} and nachtruhe.running():
             nachtruhe.restart()   # Druckwächter bekommt die neue ntfy-Adresse
         return JSONResponse({"ok": True, "settings": vals})
     info = {
@@ -4330,7 +4330,8 @@ async def api_notify_relay(request):
         return JSONResponse({"error": "nicht erlaubt"}, status_code=403)
     b = await request.json()
     kat = b.get("kat")
-    if not telegram.enabled or (kat and kat not in set(settings["tg_events"] or [])):
+    if not telegram.enabled or settings.get("notify_via", "both") not in ("both", "telegram") \
+            or (kat and kat not in set(settings["tg_events"] or [])):
         return JSONResponse({"ok": True, "sent": False})
     img = None
     if b.get("photo"):
@@ -4354,6 +4355,9 @@ async def api_notify_test(request):
         return JSONResponse({"error": "Telegram ist noch nicht verbunden"}, status_code=400)
     if only != "telegram" and not notifier.url:
         return JSONResponse({"error": "Keine ntfy-Adresse eingetragen (Einstellungen → Benachrichtigungen)"}, status_code=400)
+    via = settings.get("notify_via", "both")
+    if via not in ("both", only or "ntfy"):
+        return JSONResponse({"error": f"{'Telegram' if only == 'telegram' else 'ntfy'} ist unter „Versand über“ abgeschaltet"}, status_code=400)
     prio = max(1, min(5, int(b.get("prio") or 3)))
     names = {5: "dringend", 4: "hoch", 3: "normal", 2: "niedrig", 1: "minimal"}
     notifier.send("test", "PrintHub", f"Testnachricht ({names[prio]}, Priorität {prio}) – Benachrichtigungen funktionieren 👍", "tada", prio, force=True, only=only or "ntfy")

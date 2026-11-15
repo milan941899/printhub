@@ -130,8 +130,9 @@ class Notifier:
 
     def channels(self, event, force=False):
         """Wohin diese Meldung geht: (an ntfy?, an Telegram?)."""
-        nt = bool(self.url) and (force or event in self.events)
-        tg = self.tg_on and (force or event in set(self.settings.get("tg_events") or []))
+        via = self.settings.get("notify_via") or "both"
+        nt = via in ("both", "ntfy") and bool(self.url) and (force or event in self.events)
+        tg = via in ("both", "telegram") and self.tg_on and (force or event in set(self.settings.get("tg_events") or []))
         return nt, tg
 
     def send(self, event, title, message, tags="", priority="default", force=False, photo=None, only=None,

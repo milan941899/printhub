@@ -6,7 +6,7 @@ import threading
 from .notify import DEFAULT_EVENTS, EVENTS, PHOTO_EVENTS
 
 WEEKLY_LINES = ["prints", "time", "filament", "cost", "shop", "soon", "dry"]
-ALLOWED = {"weekly_lines": WEEKLY_LINES, "notify_events": EVENTS, "photo_events": ["finish", "fail"], "notify_photo": PHOTO_EVENTS, "tg_events": EVENTS}
+ALLOWED = {"notify_via": ["both", "ntfy", "telegram", "off"], "weekly_lines": WEEKLY_LINES, "notify_events": EVENTS, "photo_events": ["finish", "fail"], "notify_photo": PHOTO_EVENTS, "tg_events": EVENTS}
 NEW_IN_V2 = ["offline", "waiting", "plate", "power", "service", "maintenance"]   # neue Standard-Ereignisse
 HIDDEN = {"pin_hash", "pin_salt", "auth_secret"}   # nie an den Browser geben
 SECRET = {"bambuddy_key", "ntfy_token", "tg_token", "ai_key"}              # setzbar, aber nur als „gesetzt“ zurückgeben
@@ -17,6 +17,7 @@ SPEC = {
     "price_kwh": (float, 0.30),             # €/kWh
     "wear_per_h": (float, 0.0),             # Verschleiß/Maschinenkosten €/Druckstunde
     "fallback_price_kg": (float, 0.0),      # €/kg, wenn in Spoolman kein Preis steht
+    "notify_via": (str, "both"),           # Versandweg: both | ntfy | telegram | off (der andere bleibt eingerichtet, schickt aber nichts)
     "ntfy_url": (str, ""),
     "ntfy_token": (str, ""),
     "click_url": (str, ""),

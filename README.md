@@ -639,14 +639,14 @@ Darunter das **Protokoll** (Passwörter und Tokens werden darin unkenntlich gema
 Oben gibt es ein **Suchfeld** („trocknen“, „reserve“ …) – es durchsucht alle Reiter. Weicht ein Wert vom Standard ab,
 steht daneben ein **↺** zum Zurücksetzen.
 
-Die Reiter sind wie das Menü geordnet: **Seiten** (Allgemein, Übersicht, Lager, Verlauf, Statistik) und **Technik**
-(Drucker, Dienste, Druckwächter, Wartung, Kosten, Benachrichtigungen, Zugriff, Daten, System). Was „nur dieses Gerät“
+Die Reiter sind in zwei Reihen wie das Menü geordnet: oben die Seiten (Allgemein, Übersicht, Lager, Verlauf, Statistik),
+darunter die Technik (Drucker, Dienste, Druckwächter, Wartung, Kosten, Benachrichtigungen, Zugriff, Daten, System). Was „nur dieses Gerät“
 heißt, wird im Browser gespeichert – Handy und PC können also unterschiedlich aussehen.
 
 | Reiter | Inhalt |
 |---|---|
 | **Allgemein** | Theme, Datensparmodus, Fortschritt im Browser-Tab. **Spulen-Darstellung** (nur dieses Gerät): Lochspule (Jayo/Sunlu), Kartonspule, Bambu-Spule, flacher Farbring oder nur Farbpunkt – bei 3D-Spulen mit Blickwinkel C–F und Deckkraft der Scheibe |
-| **Übersicht** | **Kacheln** je Drucker frei wählbar (bis zu 6, getrennt für „beim Drucken“ und „im Leerlauf“): Leistung, Strom Druck/heute, Filament, Kosten, Spulen, WLAN, Drucke heute, Filament heute, Druckstunden Woche, Erfolgsrate, Nächster Auftrag, Lager, Trocknen, Wartung, Druckwächter. **Düse/Hotend**: Schema, Realistisch, Rundinstrumente oder Kompakt. Letzte Drucke, „▲ zuerst“, Bereiche zurücksetzen |
+| **Übersicht** | **Kacheln** je Drucker frei wählbar (bis zu 6, getrennt für „beim Drucken“ und „im Leerlauf“): Leistung, Strom Druck/heute, Filament, Kosten, Spulen, WLAN, Drucke heute, Filament heute, Druckstunden Woche, Erfolgsrate, Nächster Auftrag, Lager, Trocknen, Wartung, Druckwächter. **Düse/Hotend**: Schema, Realistisch, Rundinstrumente oder Kompakt – mit Vorschau zum Antippen. Letzte Drucke, „▲ zuerst“, Bereiche zurücksetzen |
 | **Lager** | **Funktionen** ein/aus: Rolle scannen, Serie, Stapel, Archiv, Namen vereinheitlichen, Mindestbestand & Einkaufsliste, Reicht-noch-Prognose, Trocknen-Zähler. Spulen (Slot setzen, Standort, „fast leer“, QR-Adresse), Trocknungsgrenzen als Tabelle, Etikettendrucker, KI-Etiketterkennung, gelernte Bambu-Profile |
 | **Verlauf** | (nur dieses Gerät) Zeitraum beim Öffnen, Fehldrucke zeigen, Vorschaubilder, Spalten Filament/Strom/Kosten, nach Tagen gruppieren |
 | **Statistik** | (nur dieses Gerät) Zeitraum beim ersten Öffnen, Wochenstart Montag/Sonntag |
@@ -655,11 +655,10 @@ heißt, wird im Browser gespeichert – Handy und PC können also unterschiedlic
 | **Wartung** | Wartungsbuch |
 | **Druckwächter** | Ein/aus, Bambuddy-Zugang, Druckfenster pro Tag, Puffer, Plattenprüfung, Referenzbilder, „Alles über den Druckwächter“, Licht, Ausschalten nach Fehler, Testmodus, Protokoll |
 | **Kosten** | Strompreis (€/kWh – wird für alle Kosten verwendet, aber nicht in der Übersicht angezeigt), Verschleiß (€/h), Ersatz-Filamentpreis |
-| **Meldungen** | **Wochenbericht** (Tag, Uhrzeit, welche Zeilen, „Bericht senden“), ntfy, Telegram, Feineinstellungen (Fortschritt alle x %, Grenzen), Dringlichkeit, welche Meldung über welchen Weg |
+| **Meldungen** | **Versand über** Beides / nur ntfy / nur Telegram / aus (der andere Weg bleibt eingerichtet). **Wochenbericht** (Tag, Uhrzeit, welche Zeilen, „Bericht senden“), ntfy, Telegram, Feineinstellungen (Fortschritt alle x %, Grenzen), Dringlichkeit, welche Meldung über welchen Weg |
 | **Zugriff** | PIN-Schutz |
 | **Daten** | Sicherung herunterladen/zurückspielen, automatische Sicherung, Export (Verlauf, Statistik, Wartung), Import aus Bambuddy |
-| **Diagnose** | Alles prüfen, Protokoll |
-| **System** | Version, Docker-Zugriff, Neustart |
+| **System** | Version, Docker-Zugriff, Neustart, Diagnose (alles prüfen) und Protokoll |
 
 Die meisten Einstellungen werden **sofort gespeichert**. Nur Änderungen an Druckern brauchen einen Neustart von PrintHub
 (der Knopf „Speichern & neu starten“ erledigt das in ein paar Sekunden).
