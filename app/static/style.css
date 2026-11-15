@@ -1269,6 +1269,7 @@ table.list tr.dayrow td { background:var(--well); padding:8px 10px; font-size:13
 .ch-card .ch-chev { margin-left:auto; font-size:13px; color:var(--muted); }
 .ch-card .ch-chev::before { content:"▾"; }
 .ch-card.fold .ch-chev::before { content:"▸"; }
-.ch-card.fold > :not(.label) { display:none !important; }
+.ch-card.fold > :not(.label):not(.keep) { display:none !important; }   /* zugeklappt: nur das Wichtigste (Token, Verbindung, Adresse) */
 .ch-card.fold { padding-bottom:14px; }
 body.tg-on #tg-steps { display:none; }   /* verbunden: Einrichtungs-Schritte ausblenden */
+.ch-card.fold .row.keep:not(:has(+ .row.keep)) { border-bottom:0; padding-bottom:0; }

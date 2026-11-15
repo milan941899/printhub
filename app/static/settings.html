@@ -565,7 +565,7 @@
 
 <!-- ============ Benachrichtigungen ============ -->
 <div data-tab="meldungen">
-  <div class="set-grid">
+  <div class="set-grid" style="align-items:start">
   <section class="card">
     <div class="label">Versand über</div>
     <div class="row">
@@ -581,11 +581,11 @@
       <div><b>2.</b> Token hier eintragen.</div>
       <div><b>3.</b> „Verbinden“ drücken und dem Bot innerhalb von 10 Minuten irgendeine Nachricht schreiben (z. B. <code>/start</code>).</div>
     </div>
-    <div class="row">
+    <div class="row keep">
       <div><div class="t">Bot-Token</div><div class="d">z. B. 123456789:AA…</div></div>
       <input type="password" data-k="tg_token" data-secret autocomplete="off" style="width:260px" onchange="setTimeout(tgLoad, 800)">
     </div>
-    <div class="row">
+    <div class="row keep">
       <div><div class="t">Verbindung</div><div class="d" id="tg-state">–</div></div>
       <div class="unit-in"><button class="small-btn" id="tg-pair" onclick="tgPair()">🔗 Verbinden</button>
         <button class="small-btn" id="tg-unpair" onclick="tgUnpair()" hidden>Trennen</button></div>
@@ -595,7 +595,7 @@
   </section>
   <section class="card ch-card" data-ch="ntfy">
     <div class="label ch-h" onclick="chFold('ntfy')">ntfy <span class="ch-off">abgeschaltet</span><span class="ch-chev"></span></div>
-    <div class="row">
+    <div class="row keep">
       <div><div class="t">ntfy-Adresse</div><div class="d">Server + Thema, z. B. https://ntfy.sh/mein-thema. Leer = aus. Gilt auch für den Druckwächter</div></div>
       <input type="url" data-k="ntfy_url" placeholder="https://ntfy.sh/…" style="width:260px">
     </div>
