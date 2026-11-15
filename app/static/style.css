@@ -63,7 +63,7 @@ h2 { font-size:16px; margin:0; display:flex; align-items:center; gap:8px; font-w
 .hotend { background:var(--tile); border:1px solid var(--line); border-radius:12px; padding:8px; margin-bottom:12px; }
 .hotend svg { width:100%; height:auto; display:block; }
 .hotend .lbl { fill:var(--muted); font-size:12px; font-weight:700; letter-spacing:1.2px; }
-.hotend .val { fill:var(--fg); font-size:23px; font-weight:800; }
+.hotend .val { fill:var(--fg); font-size:22px; font-weight:800; }
 .hotend .val.acc { fill:var(--acc); }
 .hotend .unit { fill:var(--muted); font-size:12px; font-weight:600; }
 .hotend .lead { stroke:var(--leadc); stroke-width:1; fill:none; }
@@ -1168,7 +1168,7 @@ a.etile.tlink:hover { border-color:var(--acc); }
 /* Hotend: Rundinstrumente + Kompakt */
 .hotend .gtrack { stroke:var(--trk); }
 .hotend .gtick { stroke:var(--muted); stroke-width:1.2; opacity:.6; }
-.hotend .gval { fill:var(--fg); font-size:26px; font-weight:800; }
+.hotend .gval { fill:var(--fg); font-size:24px; font-weight:800; }
 .hcompact { display:grid; grid-template-columns:1fr 1fr; gap:2px 16px; padding:6px 8px; }
 .hcompact .hc-r { display:flex; justify-content:space-between; align-items:baseline; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); }
 .hcompact .hc-r span { color:var(--muted); font-size:12px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; }
@@ -1243,6 +1243,9 @@ table.list tr.dayrow td { background:var(--well); padding:8px 10px; font-size:13
 .he-opt .hotend { margin:0; pointer-events:none; }
 .he-opt span { font-weight:700; font-size:13px; padding-bottom:2px; }
 .he-opt.on { border-color:var(--acc); } .he-opt.on span { color:var(--acc); }
-@media (max-width:520px) { .he-prev { grid-template-columns:1fr; } }
-.he-opt .hcompact { grid-template-columns:1fr; }
-@media (min-width:521px) { .he-opt .hcompact { grid-template-columns:1fr 1fr; } }
+@media (max-width:520px) {
+  .he-prev { grid-template-columns:1fr 1fr; gap:8px; }
+  .he-opt { padding:4px; border-radius:12px; }
+  .he-opt .hotend { padding:4px; border-radius:9px; }
+  .he-opt span { font-size:12px; }
+}

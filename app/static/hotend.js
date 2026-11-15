@@ -27,18 +27,26 @@ function hotendSide(p) {   // die Werte links/rechts, die je nach Druckertyp wec
                                      : {l: "Hotend-Lüfter", v: (p.fans || [])[1] && p.fans[1].pct != null ? `${p.fans[1].pct} %` : "–", u: ""},
   };
 }
+// Kompakt: nur Werte in zwei Spalten – als SVG, damit Schrift und Größe genau wie bei den anderen Darstellungen skalieren
 function hotendCompact(p, info) {
   const {nozzle, bed, color, material} = info, fan = (p.fans || [])[0], {leftMid, rightMid} = hotendSide(p);
-  const row = (l, v, cls = "") => `<div class="hc-r"><span>${l}</span><b class="${cls}">${v}</b></div>`;
-  return `<div class="hcompact">
-    ${row("Material", `<i class="hc-dot" style="background:${color || "#64748b"}"></i>${HX.esc(material || "–")}`)}
-    ${row("Düse", `<span style="color:${nozzle && nozzle.actual >= 45 ? HX.heat(nozzle.actual) : "inherit"}">${HX.deg(nozzle && nozzle.actual)}</span> <small>/ ${HX.deg(nozzle && nozzle.target)}</small>`)}
-    ${row("Bett", `${HX.deg(bed && bed.actual)} <small>/ ${HX.deg(bed && bed.target)}</small>`)}
-    ${row("Lüfter", fan && fan.pct != null ? fan.pct + " %" : "–")}
-    ${row(HX.esc(leftMid.l), `${HX.esc(leftMid.v)} <small>${HX.esc(leftMid.u)}</small>`)}
-    ${row(HX.esc(rightMid.l), `${HX.esc(rightMid.v)} <small>${HX.esc(rightMid.u)}</small>`)}
-    ${row("Layer", `${p.layer != null ? p.layer : "–"} <small>${p.total_layers != null ? "/ " + p.total_layers : ""}</small>`, "acc")}
-  </div>`;
+  const items = [
+    ["MATERIAL", HX.esc(material || "–"), "", "", color || "#64748b"],
+    ["DÜSE", `<tspan style="fill:${nozzle && nozzle.actual >= 45 ? HX.heat(nozzle.actual) : "var(--fg)"}">${HX.deg(nozzle && nozzle.actual)}</tspan>`, "/ " + HX.deg(nozzle && nozzle.target)],
+    ["BETT", HX.deg(bed && bed.actual), "/ " + HX.deg(bed && bed.target)],
+    ["LÜFTER", fan && fan.pct != null ? fan.pct + " %" : "–", ""],
+    [HX.esc(leftMid.l.toUpperCase()), HX.esc(leftMid.v), HX.esc(leftMid.u)],
+    [HX.esc(rightMid.l.toUpperCase()), HX.esc(rightMid.v), HX.esc(rightMid.u)],
+    ["LAYER", p.layer != null ? p.layer : "–", p.total_layers != null ? "/ " + p.total_layers : "", "acc"],
+  ];
+  const cell = ([l, v, u, cls, dot], i) => {
+    const x = i % 2 ? 214 : 18, y = 26 + Math.floor(i / 2) * 70;
+    return `${dot ? `<circle cx="${x + 5}" cy="${y + 20}" r="5.5" fill="${dot}" stroke="#fff6"/>` : ""}
+      <text class="lbl" x="${x}" y="${y}">${l}</text>
+      <text class="val ${cls || ""}" x="${dot ? x + 16 : x}" y="${y + 28}">${v} <tspan class="unit">${u}</tspan></text>
+      <line x1="${x}" y1="${y + 40}" x2="${x + 168}" y2="${y + 40}" class="lead"/>`;
+  };
+  return `<svg viewBox="0 0 400 300" role="img" aria-label="Düse">${items.map(cell).join("")}</svg>`;
 }
 function hotendGauge(p, info) {
   const {nozzle, bed, color, material} = info, fan = (p.fans || [])[0], {leftMid, rightMid} = hotendSide(p);
@@ -55,14 +63,14 @@ function hotendGauge(p, info) {
       <text x="${cx}" y="${cy + 24}" text-anchor="middle" class="unit">${tgt ? "Ziel " + Math.round(tgt) + unit : "&#160;"}</text>
       <text x="${cx}" y="${cy + r + 14}" text-anchor="middle" class="lbl">${lbl}</text>`;
   };
-  const stat = (x, l, v, u = "", cls = "") => `<text class="lbl" x="${x}" y="200" text-anchor="middle">${l}</text><text class="val ${cls}" x="${x}" y="228" text-anchor="middle" style="font-size:20px">${v} <tspan class="unit">${u}</tspan></text>`;
-  return `<svg viewBox="0 0 400 244" role="img" aria-label="Düse">
+  const stat = (x, l, v, u = "", cls = "") => `<text class="lbl" x="${x}" y="200" text-anchor="middle">${l}</text><text class="val ${cls}" x="${x}" y="228" text-anchor="middle">${v} <tspan class="unit">${u}</tspan></text>`;
+  return `<svg viewBox="0 -26 400 300" role="img" aria-label="Düse">
     ${g(72, 96, 52, nozzle && nozzle.actual, nozzle && nozzle.target, 300, "DÜSE", "°", HX.heat(Math.max(nozzle && nozzle.actual || 0, 46)))}
     ${g(200, 96, 52, bed && bed.actual, bed && bed.target, 120, "BETT", "°", HX.heat(Math.max(bed && bed.actual || 0, 46)))}
     ${g(328, 96, 52, fan && fan.pct, null, 100, "LÜFTER", "%", "var(--acc)")}
     <text class="lbl" x="72" y="200" text-anchor="middle">MATERIAL</text>
     <circle cx="26" cy="196" r="5.5" fill="${color || "#64748b"}" stroke="#fff6"/>
-    <text class="val" x="72" y="228" text-anchor="middle" style="font-size:20px">${HX.esc(material || "–")}</text>
+    <text class="val" x="72" y="228" text-anchor="middle">${HX.esc(material || "–")}</text>
     ${stat(200, HX.esc(leftMid.l.toUpperCase()), HX.esc(leftMid.v), HX.esc(leftMid.u))}
     ${stat(328, "LAYER", p.layer != null ? p.layer : "–", p.total_layers != null ? "/ " + p.total_layers : "", "acc")}
   </svg>`;
