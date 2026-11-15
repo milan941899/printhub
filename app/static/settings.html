@@ -397,6 +397,18 @@
 <div data-tab="meldungen">
   <div class="set-grid">
   <section class="card">
+    <div class="label">Wochenbericht</div>
+    <div class="d muted small" style="margin:6px 0 4px">Einmal pro Woche per Telegram/ntfy: Drucke, Druckzeit, Filament, Strom, Kosten und was nachzukaufen ist (letzte 7 Tage).</div>
+    <div class="row">
+      <div><div class="t">Wann</div></div>
+      <div style="display:flex;gap:6px"><select data-k="weekly_day" style="width:140px"><option value="off">aus</option><option value="0">Montag</option><option value="1">Dienstag</option>
+        <option value="2">Mittwoch</option><option value="3">Donnerstag</option><option value="4">Freitag</option><option value="5">Samstag</option><option value="6">Sonntag</option></select>
+      <select data-k="weekly_hour" style="width:90px"><option value="0">00:00</option><option value="1">01:00</option><option value="2">02:00</option><option value="3">03:00</option><option value="4">04:00</option><option value="5">05:00</option><option value="6">06:00</option><option value="7">07:00</option><option value="8">08:00</option><option value="9">09:00</option><option value="10">10:00</option><option value="11">11:00</option><option value="12">12:00</option><option value="13">13:00</option><option value="14">14:00</option><option value="15">15:00</option><option value="16">16:00</option><option value="17">17:00</option><option value="18">18:00</option><option value="19">19:00</option><option value="20">20:00</option><option value="21">21:00</option><option value="22">22:00</option><option value="23">23:00</option></select></div>
+    </div>
+    <div class="row"><div><div class="t">Jetzt senden</div><div class="d">Zum Ausprobieren – geht sofort raus</div></div>
+      <button type="button" onclick="weeklyTest(this)">📊 Bericht senden</button></div>
+  </section>
+  <section class="card">
     <div class="label">ntfy</div>
     <div class="row">
       <div><div class="t">ntfy-Adresse</div><div class="d">Server + Thema, z. B. https://ntfy.sh/mein-thema. Leer = aus. Gilt auch für den Druckwächter</div></div>
@@ -1291,6 +1303,11 @@ function evGroup(g) {
 }
 function evAll(v) { save({notify_events: v ? EVG.flatMap(g => g[2].map(e => e[0])) : []}); }
 load();
+async function weeklyTest(b) {
+  b.disabled = true;
+  try { const r = await (await fetch("/api/notify/weekly", {method: "POST"})).json(); PH.toast(r.text ? "Wochenbericht gesendet" : "Gesendet"); }
+  catch { PH.toast("Senden fehlgeschlagen", true); } finally { b.disabled = false; }
+}
 </script>
 </body>
 </html>

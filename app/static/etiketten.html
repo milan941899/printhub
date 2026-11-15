@@ -55,10 +55,18 @@
     </div>
     <div class="field"><span class="lab">&nbsp;</span><button class="primary" id="qlbtn" hidden onclick="qlPrint()">🏷 Auf Brother drucken</button></div>
     <div class="field"><span class="lab">&nbsp;</span><button id="pbtn" class="primary" onclick="print()">🖨 Über Browser drucken</button></div>
+    <div class="field"><span class="lab">&nbsp;</span><button id="ibtn" onclick="asImages()" title="Für Handy-Etikettendrucker-Apps (Niimbot, Phomemo …)">📱 Als Bilder</button></div>
     <div class="field" style="flex:1;min-width:220px"><span class="lab">QR/NFC-Adresse</span><div class="muted small" id="base"></div></div>
   </div>
   <div class="muted small" id="qlhint" style="margin-top:10px"></div>
   <div class="muted small" style="margin-top:10px">Tipp: Für NFC denselben Link mit der App „NFC Tools“ auf den Tag schreiben (Lager → 🔗 bei der Spule). Beim Scannen öffnet sich die Zuweisung „welcher Slot?“.</div>
+</section>
+
+<section class="card noprint" id="imgs" hidden>
+  <div class="label">Etiketten als Bild</div>
+  <div class="muted small" style="margin:6px 0 10px">Bild antippen und halten → speichern, oder „Teilen“ – dann in der App deines Etikettendruckers öffnen.</div>
+  <div id="imgbtns" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
+  <div id="imglist" style="display:flex;flex-wrap:wrap;gap:12px"></div>
 </section>
 
 <div id="sheet"></div>
@@ -100,6 +108,24 @@ async function load() {
   render();
 }
 $("fmt").onchange = render;
+async function asImages() {
+  if (!L.length) return PH.toast("Keine Spulen ausgewählt", true);
+  $("imgs").hidden = false;
+  $("imglist").innerHTML = L.map(s => `<figure style="margin:0;text-align:center">
+      <img src="/api/labels/preview.png?spool=${s.id}" alt="Etikett #${s.id}" style="max-width:260px;width:100%;border:1px solid var(--line);border-radius:6px;background:#fff">
+      <figcaption class="small"><a href="/api/labels/preview.png?spool=${s.id}" download="etikett-${s.id}.png">⬇ #${s.id} speichern</a></figcaption></figure>`).join("");
+  $("imgbtns").innerHTML = navigator.canShare ? `<button class="primary" onclick="shareImgs(this)">📤 Alle teilen</button>` : "";
+  $("imgs").scrollIntoView({behavior: "smooth"});
+}
+async function shareImgs(b) {
+  b.disabled = true;
+  try {
+    const files = await Promise.all(L.map(async s => new File([await (await fetch(`/api/labels/preview.png?spool=${s.id}`)).blob()], `etikett-${s.id}.png`, {type: "image/png"})));
+    if (navigator.canShare({files})) await navigator.share({files, title: "Spulen-Etiketten"});
+    else PH.toast("Teilen geht hier nicht – Bilder einzeln speichern", true);
+  } catch (e) { if (e.name !== "AbortError") PH.toast("Teilen nicht möglich – Bilder einzeln speichern", true); }
+  finally { b.disabled = false; }
+}
 async function qlPrint() {
   if (!L.length) return PH.toast("Keine Spulen ausgewählt", true);
   const b = $("qlbtn"); b.disabled = true; PH.toast(`Sende ${L.length} Etikett(en) …`);

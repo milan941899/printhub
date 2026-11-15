@@ -47,8 +47,22 @@ class Store:
                 self.data["slots"][key] = spool_id
             else:
                 self.data["slots"].pop(key, None)
+            # Rollen-Verlauf: wann steckte welche Rolle in welchem Slot
+            lg = self.data.setdefault("slot_log", [])
+            now = int(time.time())
+            if old_spool and old_spool != spool_id:
+                lg.append({"t": now, "spool": old_spool, "slot": key, "act": "out"})
+            if spool_id is not None and spool_id != old_spool:
+                if moved_from:
+                    lg.append({"t": now, "spool": spool_id, "slot": moved_from, "act": "out"})
+                lg.append({"t": now, "spool": spool_id, "slot": key, "act": "in"})
+            del lg[:-3000]
             self._save()
             return old_spool, moved_from
+
+    def slot_log(self, spool_id):
+        with self.lock:
+            return [x for x in self.data.get("slot_log", []) if x["spool"] == spool_id]
 
     def slot_of_spool(self, spool_id):
         with self.lock:

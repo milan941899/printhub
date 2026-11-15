@@ -1104,3 +1104,7 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .blk:has(.camthumb.off) .camthumb.off { min-height:0 !important; aspect-ratio:auto !important; }
 
 .aspool .overlay { z-index:5; }   /* über Spule und Nummer, damit jeder Tipp im Slot ankommt */
+
+.rlog summary { cursor:pointer; font-size:13px; color:var(--muted); margin:6px 0; }
+.rlog-i { padding:4px 0; border-bottom:1px solid var(--line); }
+.rlog #e-log { max-height:240px; overflow:auto; }

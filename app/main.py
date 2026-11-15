@@ -2488,6 +2488,11 @@ def _sampler():
                 _watch_stock()
             except Exception as e:
                 log.debug("Lager-Überwachung: %s", e)
+        if tick % 12 == 3:              # jede Minute: Wochenbericht fällig?
+            try:
+                _weekly_report()
+            except Exception as e:
+                log.debug("Wochenbericht: %s", e)
         if tick % 720 == 90:            # stündlich
             try:
                 _watch_dry()
@@ -2605,6 +2610,85 @@ def _watch_stock():
     store._save()
     if low:
         notifier.send("stock_low", "Nachkaufen 🛒", "\n".join(low), "shopping_cart")
+
+
+def _slot_name(key):
+    pid, _, sk = key.partition(":")
+    p = printers.get(pid)
+    try:
+        return f"{p.name} – {p.slot_label(sk)}" if p else key
+    except Exception:
+        return f"{pid} – {sk}"
+
+
+async def api_spool_log(request):
+    """Rollen-Verlauf: Einlegen/Herausnehmen und Drucke mit dieser Rolle."""
+    sid = int(request.path_params["sid"])
+    ev = [{"t": x["t"], "act": x["act"], "slot": _slot_name(x["slot"])} for x in store.slot_log(sid)]
+    h = history.query({"spool": sid}, limit=100)
+    prints = [{"id": e["id"], "time": e["time"], "job": e.get("job"), "printer": e.get("printer"), "outcome": e.get("outcome"),
+               "grams": round(sum(u.get("grams") or 0 for u in e["usage"] if u.get("spool") == sid), 1)} for e in h["entries"]]
+    with history._db() as db:                  # Summe über alle Drucke (nicht nur die angezeigten)
+        r = db.execute("SELECT COUNT(DISTINCT print_id) n, SUM(grams) g FROM usage WHERE spool=?", (sid,)).fetchone()
+    return JSONResponse({"events": ev[::-1], "prints": prints, "count": r["n"] or 0, "total_g": round(r["g"] or 0, 1)})
+
+
+def _weekly_report(force=False):
+    """Wochenbericht (Telegram/ntfy): Drucke, Stunden, Filament, Kosten, Nachkaufen."""
+    day, hour = settings.get("weekly_day"), settings.get("weekly_hour")
+    if day in (None, "", "off") and not force:
+        return
+    now = time.localtime()
+    if not force:
+        if now.tm_wday != int(day) or now.tm_hour != int(hour or 20):
+            return
+        stamp = time.strftime("%Y-%W")
+        if store.data.get("weekly_sent") == stamp:
+            return
+        store.data["weekly_sent"] = stamp
+        store._save()
+    t1 = time.time(); t0 = t1 - 7 * 86400
+    rows = history.rows({"from": int(t0), "to": int(t1)})
+    prev = history.rows({"from": int(t0 - 7 * 86400), "to": int(t0)})
+    ok = sum(1 for r in rows if r.get("outcome") == "ok" or r.get("success"))
+    hrs = sum((r.get("duration") or 0) for r in rows) / 3600
+    grams = sum(sum(u.get("grams") or 0 for u in r["usage"]) for r in rows)
+    cost = sum((r.get("total_cost") or 0) for r in rows)
+    kwh = sum((r.get("kwh") or 0) for r in rows)
+    by = {}
+    for r in rows:
+        for u in r["usage"]:
+            n = u.get("spool_name") or u.get("material") or "ohne Spule"
+            by[n] = by.get(n, 0) + (u.get("grams") or 0)
+    top = sorted(by.items(), key=lambda x: -x[1])[:3]
+    eur = lambda v: f"{v:.2f} €".replace(".", ",")
+    lines = [f"🖨 {len(rows)} Drucke ({ok} erfolgreich)" + (f" · Vorwoche {len(prev)}" if prev else ""),
+             f"⏱ {hrs:.1f} h Druckzeit".replace(".", ","),
+             f"🧵 {grams / 1000:.2f} kg Filament".replace(".", ",") + (" – " + ", ".join(f"{n} {g:.0f} g" for n, g in top) if top else ""),
+             f"⚡ {kwh:.1f} kWh".replace(".", ",") + f" · 💶 {eur(cost)} gesamt"]
+    try:
+        mins = {k: v for k, v in store.data.get("min_stock", {}).items() if v}
+        if mins:
+            inv = spoolman.inventory()
+            full = {}
+            for sp in inv["spools"]:
+                fid = str((sp.get("filament") or {}).get("id"))
+                if not ((sp.get("used_weight") or 0) > 0.5 or sp.get("first_used")):
+                    full[fid] = full.get(fid, 0) + 1
+            names = {str(f["id"]): " ".join(x for x in [(f.get("vendor") or {}).get("name", ""), f.get("name") or "", f.get("material") or ""] if x)
+                     for f in inv["filaments"]}
+            low = [f"{mn - full.get(fid, 0)}× {names.get(fid, fid)}" for fid, mn in mins.items() if full.get(fid, 0) < mn]
+            if low:
+                lines.append("🛒 Nachkaufen: " + ", ".join(low))
+    except Exception as e:
+        log.debug("Wochenbericht Lager: %s", e)
+    notifier.send("weekly", "Wochenbericht 📊", "\n".join(lines), "bar_chart", force=force)
+    return lines
+
+
+async def api_weekly_test(request):
+    lines = await run_in_threadpool(_weekly_report, True)
+    return JSONResponse({"ok": True, "text": "\n".join(lines or [])})
 
 
 async def api_temps(request):
@@ -4191,6 +4275,8 @@ app = Starlette(
         Route("/api/lager/template", api_lager_template),
         Route("/api/lager/multi", api_lager_multi, methods=["POST"]),
         Route("/api/lager/stack", api_lager_stack, methods=["POST"]),
+        Route("/api/lager/spools/{sid:int}/log", api_spool_log),
+        Route("/api/notify/weekly", api_weekly_test, methods=["POST"]),
         Route("/api/lager/bulk", api_lager_bulk, methods=["POST"]),
         Route("/api/lager/vendor/{vid:int}", api_lager_vendor, methods=["POST"]),
         Route("/api/lager/names", api_lager_names, methods=["GET", "POST"]),

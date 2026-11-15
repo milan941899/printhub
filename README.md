@@ -55,7 +55,7 @@ Gemacht für **Bambu Lab A1 / A1 mini / P1** (über das Heimnetz, ohne Cloud) un
 | **Warteschlange** | Die Aufträge aus Bambuddy: starten, nach vorne holen, entfernen, per Ziehen umsortieren, **Startzeit planen**, Zeitplan-Vorschau („alles fertig morgen 12:00“), Filament-Check pro Auftrag |
 | **Druckwächter** | Startet Aufträge nur im **Druckfenster** (z. B. 07:00–22:30), prüft per Kamera, ob die **Platte leer** ist, schaltet **Licht** und **Steckdose**, schaltet nach Fehlern ab |
 | **Strom** | Drucker automatisch ausschalten nach dem Druck oder bei Leerlauf – aber nie, solange er druckt oder die Düse heiß ist |
-| **Meldungen** | Per **Telegram** (empfohlen) oder **ntfy**: Start, fertig (mit Kosten und Foto), Fehler, Platte belegt (mit Antwort-Knöpfen), Spule fast leer, Wartung fällig … Dringlichkeit pro Meldung einstellbar |
+| **Meldungen** | Per **Telegram** (empfohlen) oder **ntfy**: Start, fertig (mit Kosten und Foto), Fehler, Platte belegt (mit Antwort-Knöpfen), Spule fast leer, Wartung fällig … Dringlichkeit pro Meldung einstellbar. Dazu ein **Wochenbericht** (Drucke, Filament, Kosten, Nachkaufen) |
 | **Telegram-Bot** | Befehle wie `/status`, `/bild`, `/filament`, `/aufträge`, `/licht`, `/strom` – mit festen Knöpfen unten im Chat |
 | **Wartung** | Wartungsbuch (z. B. Stangen schmieren alle 50 h), Meldung wenn fällig |
 | **Handy** | Als App auf den Startbildschirm legen (PWA), Leiste unten wie in einer App, **Datensparmodus** im Mobilnetz |
@@ -432,6 +432,8 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
   Drucker, kommt eine Meldung mit Knopf „getrocknet“.
 - Leere Spulen ins **Archiv** (📦 an jeder Rolle, auch wenn sie noch einem Slot zugeordnet ist).
 - **Erkennungsnummern** (Chargen, Artikelnummern) siehst und bearbeitest du bei jeder Sorte unter ✎ als Chips.
+- **🕘 Verlauf dieser Rolle** (Rolle ✎): wann sie in welchem Slot eingelegt bzw. herausgenommen wurde und in welchen
+  Drucken sie wie viel verbraucht hat – mit Summe.
 
 ### 6.3.1 Rolle scannen
 
@@ -467,6 +469,8 @@ Wenn dein Drucker den Filamentverbrauch schon selbst an Spoolman bucht (z. B. ü
   Herstellern, die PrintHub noch nie gesehen hat. Gratis-Schlüssel unter [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 - **Wann:** *Nur wenn nötig* (wenn Material oder Farbe fehlen) oder *Immer* (KI und Server lesen gleichzeitig –
   ein Scan dauert dann etwa so lange wie die KI allein, meist 1–2 s).
+- PrintHub wartet höchstens **6 s** auf Google, dann gilt das eigene Ergebnis. Ist Google zweimal hintereinander zu
+  langsam, wird die KI für 15 Minuten nur noch bei Bedarf gefragt.
 - Ist Google gestört oder das Gratis-Limit erreicht, liest PrintHub automatisch allein weiter. Minutenlimit → kurz warten
   und nochmal; Tageslimit → KI pausiert bis 9 Uhr. **„Heute verbraucht“** zeigt die Anzahl Anfragen.
 - Nummern, die nur die KI liest, zählen als schwache Erkennungsnummer (Ausnahme: das eindeutige Bambu-Muster).
@@ -637,7 +641,7 @@ Darunter das **Protokoll** (Passwörter und Tokens werden darin unkenntlich gema
 | **Druckwächter** | Ein/aus, Bambuddy-Zugang, Druckfenster pro Tag, Puffer, Plattenprüfung, Referenzbilder, „Alles über den Druckwächter“, Licht, Ausschalten nach Fehler, Testmodus, Protokoll |
 | **Spulen** | Slot am Drucker setzen, Standort im Regal, „fast leer“-Grenze, QR-Adresse, Filament-Warnung + Reserve, Foto nach dem Druck, Etikettendrucker, **KI-Etiketterkennung** (Schlüssel, wann, Modell, heute verbraucht), gelernte Profile |
 | **Kosten** | Strompreis (€/kWh – wird für alle Kosten verwendet, aber nicht in der Übersicht angezeigt), Verschleiß (€/h), Ersatz-Filamentpreis |
-| **Meldungen** | ntfy, Telegram, Feineinstellungen (Fortschritt alle x %, Grenzen), Dringlichkeit, welche Meldung über welchen Weg |
+| **Meldungen** | **Wochenbericht** (Tag, Uhrzeit, „Bericht senden“), ntfy, Telegram, Feineinstellungen (Fortschritt alle x %, Grenzen), Dringlichkeit, welche Meldung über welchen Weg |
 | **Zugriff** | PIN-Schutz |
 | **Daten** | Sicherung herunterladen/zurückspielen, automatische Sicherung, Export (Verlauf, Statistik, Wartung), Import aus Bambuddy |
 | **Diagnose** | Alles prüfen, Protokoll |
@@ -669,6 +673,13 @@ Oder: Lager → 📷 Rolle scannen → Etikett fotografieren → **🖨 In den D
 **Neue Lieferung einlagern**
 Lager → ⋯ Mehr → 📚 Stapel → alle Etiketten aus der Galerie wählen → ⚠-Zeilen prüfen oder löschen → Haken
 „Etiketten drucken“ → Anlegen. Bei vielen Farben einer einzigen Sorte ist die **Serie** noch schneller.
+
+**Rolle reicht nicht für den Druck**
+Meldung + Hinweis in der Übersicht nennen gleich eine Rolle derselben Sorte aus dem Lager, die reicht –
+**Diese einlegen** tippen, Rolle tauschen, fertig. Auch die Warteschlangen-Prüfung schlägt sie vor.
+
+**Etiketten ohne Etikettendrucker am PC**
+Etiketten-Seite → **📱 Als Bilder** → speichern oder teilen und in der App des Handy-Etikettendruckers (Niimbot, Phomemo …) drucken.
 
 **Nachbestellen**
 Lager → ⋯ Mehr → 🛒 Einkaufsliste → 📋 Als Text kopieren.
