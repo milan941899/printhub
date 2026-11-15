@@ -1271,3 +1271,4 @@ table.list tr.dayrow td { background:var(--well); padding:8px 10px; font-size:13
 .ch-card.fold .ch-chev::before { content:"▸"; }
 .ch-card.fold > :not(.label) { display:none !important; }
 .ch-card.fold { padding-bottom:14px; }
+body.tg-on #tg-steps { display:none; }   /* verbunden: Einrichtungs-Schritte ausblenden */
