@@ -263,6 +263,21 @@ class BasePrinter:
                 out.append((s["key"], o))
         return out
 
+    def replacement(self, sp, need):
+        """Andere Rolle derselben Sorte im Lager (nicht in einem Slot), die für den Druck reicht –
+        die kleinste, die noch reicht (angebrochene zuerst aufbrauchen)."""
+        try:
+            alls = self.spoolman.spools()
+        except Exception:
+            return None
+        fid = sp.get("filament_id")
+        ok = [s for s in alls if s.get("filament_id") == fid and s["id"] != sp["id"] and not self.store.slot_of_spool(s["id"])
+              and s.get("remaining") is not None and float(s["remaining"]) >= need]
+        if not ok:
+            return None
+        r = min(ok, key=lambda s: float(s["remaining"]))
+        return {"id": r["id"], "rest": round(float(r["remaining"])), "location": r.get("location") or ""}
+
     def check_enough(self, job):
         st = self.settings
         if not st or not st.get("warn_short"):
@@ -282,14 +297,19 @@ class BasePrinter:
                 continue
             backups = self.backup_slots(key)
             extra = sum(float(o.get("remaining") or 0) for _, o in backups)
-            item = {"slot": self.slot_label(key), "spool": sp["id"], "need": round(grams), "rest": round(rest),
+            item = {"slot": self.slot_label(key), "key": key, "spool": sp["id"], "need": round(grams), "rest": round(rest),
                     "backup": [self.slot_label(k) for k, _ in backups], "ok": rest + extra >= grams + reserve}
+            if not item["ok"]:
+                item["swap"] = self.replacement(sp, grams + reserve)
             notes.append(item)
             if item["ok"]:
                 warn.append(f"{item['slot']}: Spule #{sp['id']} hat {round(rest)} g, Druck braucht ~{round(grams)} g – "
                             f"automatisches Nachfüllen aus {', '.join(item['backup'])} sollte einspringen.")
             else:
-                warn.append(f"{item['slot']}: Spule #{sp['id']} hat nur {round(rest)} g, Druck braucht ~{round(grams)} g!")
+                sw = item.get("swap")
+                warn.append(f"{item['slot']}: Spule #{sp['id']} hat nur {round(rest)} g, Druck braucht ~{round(grams)} g!" +
+                            (f"\n→ Im Lager reicht Rolle #{sw['id']} ({sw['rest']} g{', ' + sw['location'] if sw['location'] else ''})"
+                             if sw else "\n→ Keine passende Rolle derselben Sorte im Lager."))
         if notes:
             cur = self.store.get_job(self.id)
             if cur and cur.get("started") == job.get("started"):

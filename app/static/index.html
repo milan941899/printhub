@@ -448,7 +448,9 @@ function ringHtml(p, lastJob) {
   const center = p.printing
     ? `<div><div class="pct">${pct}<small>%</small></div><div class="st">${esc((p.stage && p.stage.short) || p.state)}</div></div>`
     : `<div><div class="pct" style="font-size:20px">${p.online ? "✓" : "–"}</div><div class="st">${esc(p.online ? p.state : "offline")}</div></div>`;
-  const short = (p.short || []).map(n => `<div class="${n.ok ? "muted" : "err"} small">⚠ ${esc(n.slot)}: ${n.rest} g übrig, braucht ~${n.need} g${n.ok ? ` – Ersatz: ${esc(n.backup.join(", "))}` : ""}</div>`).join("");
+  const short = (p.short || []).map(n => `<div class="${n.ok ? "muted" : "err"} small">⚠ ${esc(n.slot)}: ${n.rest} g übrig, braucht ~${n.need} g${n.ok ? ` – Ersatz: ${esc(n.backup.join(", "))}` : ""}
+    ${!n.ok && n.swap && n.key ? `<br>→ Im Lager reicht Rolle #${n.swap.id} (${n.swap.rest} g${n.swap.location ? ", " + esc(n.swap.location) : ""})
+      <button type="button" class="small-btn" onclick="assign('${p.id}','${esc(n.key)}',${n.swap.id})">Diese einlegen</button>` : ""}</div>`).join("");
   const info = p.printing ? `
       <div class="job" style="display:flex;gap:10px;align-items:center">${p.thumb ? `<img class="jobthumb" src="${p.thumb}" alt="" onclick="showImg('${p.thumb}', '${esc(p.job).replace(/'/g, "")}')">` : ""}<span>${esc(p.job || "Druck")}</span></div>
       ${stageHtml(p)}

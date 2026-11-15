@@ -119,6 +119,12 @@ class QueueCheck:
                 ln["spool"], ln["have"] = sp.get("name"), sp.get("remaining")
                 if sp.get("remaining") is not None and need and sp["remaining"] < need + reserve:
                     ln.update(state="bad", msg=f"Spule reicht nicht: {sp['remaining']:.0f} g da, {need:.0f} g nötig")
+                    alt = sorted((o for o in spools.values() if o.get("filament_id") == sp.get("filament_id") and o["id"] != sp["id"]
+                                  and not self.store.slot_of_spool(o["id"]) and (o.get("remaining") or 0) >= need + reserve),
+                                 key=lambda o: o["remaining"])
+                    if alt:
+                        ln["swap"] = {"id": alt[0]["id"], "rest": round(alt[0]["remaining"]), "key": key, "printer": printer.id}
+                        ln["msg"] += f" – im Lager reicht Rolle #{alt[0]['id']} ({alt[0]['remaining']:.0f} g)"
             elif ln["state"] == "ok":
                 ln.update(state="warn", msg=f"{ln['slot']}: keine Spule aus dem Lager zugeordnet – Rest unbekannt")
             lines.append(ln)
