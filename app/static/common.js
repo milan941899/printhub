@@ -1,6 +1,25 @@
 // Gemeinsam für alle PrintHub-Seiten: Theme, Navigation, Formatierung, Hinweise
 (function () {
   window.PH = {
+    // Inhalt eines Elements auf neues HTML bringen, ohne alles neu zu bauen: gleiche Knoten bleiben erhalten,
+    // nur geänderte Attribute/Texte werden angepasst (Animationen wie die Lüfter laufen dadurch ungestört weiter)
+    morph(el, html) {
+      const t = document.createElement(el.tagName === "svg" ? "div" : el.tagName);
+      t.innerHTML = html;
+      const sync = (a, b) => {
+        if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) { a.replaceWith(b); return; }
+        if (a.nodeType !== 1) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
+        for (const at of [...a.attributes]) if (!b.hasAttribute(at.name)) a.removeAttribute(at.name);
+        for (const at of b.attributes) if (a.getAttribute(at.name) !== at.value) a.setAttribute(at.name, at.value);
+        kids(a, b);
+      };
+      const kids = (a, b) => {
+        const A = [...a.childNodes], B = [...b.childNodes];
+        for (let i = 0; i < B.length; i++) { if (i < A.length) sync(A[i], B[i]); else a.appendChild(B[i]); }
+        for (let i = B.length; i < A.length; i++) A[i].remove();
+      };
+      kids(el, t);
+    },
     // Gemeinsame Zeitraum-Leiste für Verlauf und Statistik
     RANGES: [["cweek", "Diese Woche"], ["week", "7 Tage"], ["cmonth", "Dieser Monat"], ["lmonth", "Letzter Monat"], ["month", "30 Tage"],
              ["cyear", "Dieses Jahr"], ["year", "12 Monate"], ["all", "Gesamt"], ["custom", "📅 Zeitraum"]],

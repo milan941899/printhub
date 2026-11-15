@@ -815,7 +815,7 @@ function printerCard(p) {
 function fillPrinters() {
   for (const p of lastPrinters) {
     const el = document.getElementById("pc-" + p.id);
-    if (el) el.innerHTML = printerCard(p);
+    if (el) PH.morph(el, printerCard(p));   // nur Änderungen übernehmen – Lüfter & Co. laufen ruckelfrei weiter
   }
   HX.animate();  // Lüfter drehen (an der Seitenuhr verankert → läuft nach dem Neuzeichnen nahtlos weiter)
   placeCams();

@@ -13,8 +13,12 @@ const HX = {
     return `data-dur="${Math.round((0.28 + (1 - Math.min(100, pct) / 100) * 1.1) * 1000)}"`;
   },
   animate(root = document) {
-    root.querySelectorAll(".fanspin[data-dur]").forEach(el => {
-      if (el._anim) return;
+    root.querySelectorAll(".fanspin").forEach(el => {
+      const dur = el.dataset.dur || "";
+      if (el._dur === dur) return;                      // läuft schon mit dieser Drehzahl
+      if (el._anim) { el._anim.cancel(); el._anim = null; }
+      el._dur = dur;
+      if (!dur) return;                                 // Lüfter aus
       try {
         el._anim = el.animate([{transform: "rotate(0deg)"}, {transform: "rotate(360deg)"}], {duration: +el.dataset.dur, iterations: Infinity});
         el._anim.startTime = 0;
