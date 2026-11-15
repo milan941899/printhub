@@ -645,7 +645,7 @@ function applyFree() {
     if (!cont) continue;
     const L = bl(p.id), on = desk && L.pos && Object.keys(L.pos).length > 0;
     cont.classList.toggle("ff", !!on);
-    if (on) PHUI.freeLayout(cont, freePos(L.pos, cont, ".blk", 0.5), el => el.dataset.b === "progress");
+    if (on) PHUI.freeLayout(cont, freePos(L.pos, cont, ".blk", 0.5), el => el.dataset.b === "progress" || el.classList.contains("colb"));
     else { cont.style.height = ""; [...cont.children].forEach(el => { if (el.matches(".blk")) el.style.cssText = el.style.cssText.replace(/(left|top|width|height):[^;]+;?/g, ""); }); }
   }
   const board = document.getElementById("board");
@@ -851,10 +851,11 @@ function printerCard(p) {
   const lightBtn = p.light === undefined ? "" :
     `<button class="small-btn lightbtn ${p.light ? "on" : ""}" title="Licht ${p.light ? "aus" : "an"}schalten" onclick="light('${p.id}', ${!p.light})">💡 ${p.light ? "An" : p.light === false ? "Aus" : "Licht"}</button>`;
   const blocks = L.order.filter(k => !L.hidden.includes(k) && !(k === "camera" && !p.camera) && !(k === "e4" && !tiles[3])).map(k => {
-    const h = L.h[k] && k !== "temps" ? `--bh:${L.h[k]}px;` : "";
+    const col = ["ams", "temps", "maint"].includes(k) && isCol(p.id, k);      // zugeklappt → eigene Höhe ignorieren
+    const h = L.h[k] && k !== "temps" && !col ? `--bh:${L.h[k]}px;` : "";
     let bs = L.span[k] || BLK[k].span;
     if (k === "e3" && !tiles[3]) bs = Math.min(12, bs + (L.span.e4 || BLK.e4.span));   // ohne 4. Kachel: „Spulen“ füllt die Lücke
-    return `<div class="blk${h ? " hset" : ""}" data-b="${k}" style="--bs:${bs};${h}">${blkCtl(p.id, k)}${bodies[k]()}</div>`;
+    return `<div class="blk${h ? " hset" : ""}${col ? " colb" : ""}" data-b="${k}" style="--bs:${bs};${h}">${blkCtl(p.id, k)}${bodies[k]()}</div>`;
   }).join("");
   return `<div class="head">
       <h2><span class="icon">${esc(p.id.toUpperCase().slice(0, 3))}</span>${esc(p.name)}</h2>

@@ -184,7 +184,17 @@
   function freeLayout(cont, items, autoH) {
     // items: [{el, pos:{x,y,w,h}}] -> Anzeige-Positionen ohne Überlappung
     const cw = cont.clientWidth;
-    const rects = items.map(it => ({it, x: Math.max(0, Math.min(1, it.pos.x)) * cw, w: Math.min(1, it.pos.w) * cw, y: it.pos.y, h: it.pos.h}));
+    const rects = items.map(it => ({it, x: Math.max(0, Math.min(1, it.pos.x)) * cw, w: Math.min(1, it.pos.w) * cw, y: it.pos.y, h: it.pos.h, up: 0}));
+    // Bausteine mit automatischer Höhe (z. B. zugeklappt), die kleiner sind als gespeichert:
+    // alles darunter um den Unterschied nachrücken lassen, damit keine Lücke bleibt
+    for (const r of rects) {
+      if (!(autoH && autoH(r.it.el))) continue;
+      r.it.el.style.width = r.w + "px"; r.it.el.style.height = "";
+      const d = r.h - r.it.el.offsetHeight;
+      if (d <= 0) continue;
+      for (const o of rects) if (o !== r && o.y >= r.y + r.h - 1 && o.x < r.x + r.w - 1 && o.x + o.w > r.x + 1) o.up += d;
+    }
+    for (const r of rects) r.y = Math.max(0, r.y - r.up);
     rects.sort((a, b) => a.y - b.y || a.x - b.x);
     const placed = [];
     for (const r of rects) {
