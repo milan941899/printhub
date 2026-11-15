@@ -163,3 +163,31 @@
   let queued = false;
   new MutationObserver(() => { if (!queued) { queued = true; setTimeout(() => { queued = false; sync(); }, 0); } }).observe(document.documentElement, {subtree: true, attributes: true, attributeFilter: ["class"], childList: true});
 })();
+
+// Handy: Fenster am Griff (oberer Rand) nach unten wischen = schließen (wie Zurück-Taste)
+(function () {
+  let y0 = null, box = null;
+  document.addEventListener("touchstart", e => {
+    const b = e.target.closest && e.target.closest(".modal.open .mbox");
+    if (!b || innerWidth > 700) return;
+    const t = e.touches[0], top = b.getBoundingClientRect().top;
+    if (t.clientY - top > 36 || b.scrollTop > 0) return;       // nur am Griff bzw. ganz oben
+    y0 = t.clientY; box = b;
+  }, {passive: true});
+  document.addEventListener("touchmove", e => {
+    if (y0 == null) return;
+    const d = Math.max(0, e.touches[0].clientY - y0);
+    box.style.transform = `translateY(${d}px)`; box.style.transition = "none";
+  }, {passive: true});
+  document.addEventListener("touchend", e => {
+    if (y0 == null) return;
+    const d = (e.changedTouches[0].clientY - y0), b = box; y0 = null; box = null;
+    b.style.transition = "transform .18s"; b.style.transform = "";
+    if (d > 90) {
+      const btn = [...b.querySelectorAll(".mact button, button")].find(x => /^(Später weiter)$/.test(x.textContent.trim())) ||
+                  [...b.querySelectorAll(".mact button, button")].find(x => /^(Abbrechen|Schließen|Schliessen|✕|×)$/.test(x.textContent.trim()));
+      if (btn) btn.click();
+    }
+  });
+})();
+

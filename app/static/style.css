@@ -1121,3 +1121,17 @@ details.prep div { white-space:nowrap; display:flex; justify-content:space-betwe
 .br-scale i.big { height:20px; }
 .br-scale i.on { background:var(--c); }
 .br-lab { display:flex; justify-content:space-between; font-variant-numeric:tabular-nums; }
+
+/* Gleich breite Ziffern überall (Gewichte, Temperaturen, Zeiten stehen sauber untereinander) */
+body { font-variant-numeric: tabular-nums; }
+
+/* Handy: Fenster schieben sich von unten herein (Bottom-Sheet), Griff oben zum Wegwischen */
+@media (max-width: 700px) {
+  .modal { place-items:end stretch; padding:0 !important; }
+  .modal .mbox { width:100%; border-radius:22px 22px 0 0; max-height:88dvh; padding-bottom:max(16px, env(safe-area-inset-bottom));
+    box-shadow:0 -10px 40px #0008; animation:sheetUp .22s ease-out; }
+  .modal .mbox::before { content:""; display:block; flex:none; width:44px; height:5px; border-radius:3px; background:var(--muted);
+    opacity:.55; margin:-6px auto 2px; }
+  .modal .mbox > .mact { margin-bottom:calc(-16px - max(0px, env(safe-area-inset-bottom))); }
+}
+@keyframes sheetUp { from { transform:translateY(40px); opacity:.4; } to { transform:none; opacity:1; } }
