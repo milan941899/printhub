@@ -645,7 +645,7 @@ heißt, wird im Browser gespeichert – Handy und PC können also unterschiedlic
 
 | Reiter | Inhalt |
 |---|---|
-| **Allgemein** | Theme, Datensparmodus, Fortschritt im Browser-Tab. **Spulen-Darstellung** (nur dieses Gerät): Lochspule (Jayo/Sunlu), Kartonspule, Bambu-Spule, flacher Farbring oder nur Farbpunkt – bei 3D-Spulen mit Blickwinkel C–F und Deckkraft der Scheibe |
+| **Allgemein** | Theme, Datensparmodus, Fortschritt im Browser-Tab. **Spulen-Darstellung** (nur dieses Gerät): Lochspule (Jayo/Sunlu), Kartonspule, Bambu-Spule, flacher Farbring oder nur Farbpunkt – bei 3D-Spulen mit Blickwinkel A–D und Deckkraft der Scheibe |
 | **Übersicht** | **Kacheln** je Drucker frei wählbar (bis zu 6, getrennt für „beim Drucken“ und „im Leerlauf“): Leistung, Strom Druck/heute, Filament, Kosten, Spulen, WLAN, Drucke heute, Filament heute, Druckstunden Woche, Erfolgsrate, Nächster Auftrag, Lager, Trocknen, Wartung, Druckwächter. **Düse/Hotend**: Schema, Realistisch, Rundinstrumente oder Kompakt – mit Vorschau zum Antippen. Letzte Drucke, „▲ zuerst“, Bereiche zurücksetzen |
 | **Lager** | **Funktionen** ein/aus: Rolle scannen, Serie, Stapel, Archiv, Namen vereinheitlichen, Mindestbestand & Einkaufsliste, Reicht-noch-Prognose, Trocknen-Zähler. Spulen (Slot setzen, Standort, „fast leer“, QR-Adresse), Trocknungsgrenzen als Tabelle, Etikettendrucker, KI-Etiketterkennung, gelernte Bambu-Profile |
 | **Verlauf** | (nur dieses Gerät) Zeitraum beim Öffnen, Fehldrucke zeigen, Vorschaubilder, Spalten Filament/Strom/Kosten, nach Tagen gruppieren |
