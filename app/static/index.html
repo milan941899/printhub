@@ -817,6 +817,7 @@ function fillPrinters() {
     const el = document.getElementById("pc-" + p.id);
     if (el) el.innerHTML = printerCard(p);
   }
+  HX.animate();  // Lüfter drehen (an der Seitenuhr verankert → läuft nach dem Neuzeichnen nahtlos weiter)
   placeCams();
   applyFree();   // erst anordnen, dann messen (sonst wird die Raster-Breite gemessen)
   // Breite des Temperatur-Bausteins merken -> Diagramm in echter Größe

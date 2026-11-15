@@ -1249,3 +1249,4 @@ table.list tr.dayrow td { background:var(--well); padding:8px 10px; font-size:13
   .he-opt .hotend { padding:4px; border-radius:9px; }
   .he-opt span { font-size:12px; }
 }
+.fanspin { transform-box:fill-box; transform-origin:center; will-change:transform; }

@@ -860,6 +860,7 @@ function hePrev() {
   el.innerHTML = [["schema", "Schema"], ["real", "Realistisch"], ["gauge", "Rundinstrumente"], ["compact", "Kompakt"]].map(([v, l]) =>
     `<button type="button" class="he-opt ${cur === v ? "on" : ""}" onclick="PH.pref('hotend', null, '${v}'); hePrev(); PH.toast('Gespeichert ✓ (dieses Gerät)')">
       <div class="hotend">${hotendBody(p, info, v)}</div><span>${cur === v ? "✓ " : ""}${l}</span></button>`).join("");
+  HX.animate(el);
 }
 
 // ---------- Übersicht: Kacheln je Drucker (gespeichert im Layout der Übersicht, „ph-board“) ----------

@@ -6,10 +6,20 @@ const HX = {
   heat(t) { if (t == null || t < 45) return "#475569"; if (t < 120) return "#f59e0b"; if (t < 200) return "#f97316"; return "#ef4444"; },
   // Lüfter: Dauer je Umdrehung aus der Drehzahl; negative Verzögerung = Drehung läuft nach dem Neuzeichnen
   // (alle 3 s) nahtlos weiter, statt wieder bei 0° zu beginnen
+  // Drehung per Web-Animations-API, verankert an der Seitenuhr (startTime 0): nach jedem Neuzeichnen steht das Rad
+  // genau dort, wo es ohne Neuzeichnen wäre – kein Hängen/Springen alle paar Sekunden
   spin(pct) {
     if (!(pct > 0)) return "";
-    const dur = +(0.28 + (1 - Math.min(100, pct) / 100) * 1.1).toFixed(2);
-    return `animation-duration:${dur}s;animation-delay:-${((Date.now() / 1000) % dur).toFixed(3)}s`;
+    return `data-dur="${Math.round((0.28 + (1 - Math.min(100, pct) / 100) * 1.1) * 1000)}"`;
+  },
+  animate(root = document) {
+    root.querySelectorAll(".fanspin[data-dur]").forEach(el => {
+      if (el._anim) return;
+      try {
+        el._anim = el.animate([{transform: "rotate(0deg)"}, {transform: "rotate(360deg)"}], {duration: +el.dataset.dur, iterations: Infinity});
+        el._anim.startTime = 0;
+      } catch { el.classList.add("spin"); el.style.animationDuration = el.dataset.dur + "ms"; }
+    });
   },
   // Lüfterrad mit geschwungenen Flügeln (n Flügel, Nabe r0, außen r1) um (cx, cy)
   blades(cx, cy, n, r0, r1, fill, stroke) {
@@ -152,7 +162,7 @@ function hotendSvg(p, info, real = false) {
     ${fins}
     <rect class="fanbox" x="112" y="62" width="40" height="68" rx="6" fill="none" stroke-width="2"/>
     <circle class="fanc" cx="132" cy="96" r="15" fill="none" stroke-width="1.5"/>
-    <g class="${fanOn ? "spin" : ""}" style="${HX.spin(fan && fan.pct)}">
+    <g class="fanspin" ${HX.spin(fan && fan.pct)}>
       <circle cx="132" cy="96" r="13.5" fill="none"/>
       ${HX.blades(132, 96, 5, 3.2, 13, "var(--muted)", "none")}
       <circle cx="132" cy="96" r="3.6" class="fanf"/>
@@ -210,7 +220,7 @@ function hotendReal(p, info, k) {
     ${[[111, 72], [151, 72], [111, 112], [151, 112]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.2" fill="#0a0d12"/><circle cx="${x - .4}" cy="${y - .4}" r="1" fill="#6b7280" opacity=".6"/>`).join("")}
     <circle cx="131" cy="92" r="22" fill="#07090d"/>
     <circle cx="131" cy="92" r="22" fill="none" stroke="#000" stroke-width="1.5" opacity=".6"/>
-    <g class="${k.fanOn ? "spin" : ""}" style="${HX.spin(k.fan && k.fan.pct)}">
+    <g class="fanspin" ${HX.spin(k.fan && k.fan.pct)}>
       <circle cx="131" cy="92" r="20.5" fill="none"/>
       ${HX.blades(131, 92, 7, 6, 20, `url(#${id}bl)`, "#7b8496")}
     </g>
