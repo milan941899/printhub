@@ -1273,3 +1273,16 @@ table.list tr.dayrow td { background:var(--well); padding:8px 10px; font-size:13
 .ch-card.fold { padding-bottom:14px; }
 body.tg-on #tg-steps { display:none; }   /* verbunden: Einrichtungs-Schritte ausblenden */
 .ch-card.fold .row.keep:not(:has(+ .row.keep)) { border-bottom:0; padding-bottom:0; }
+
+/* Druckwächter: Unterbereiche + Speichern-Leiste */
+.nrtabs { margin:0 0 12px; display:flex; overflow-x:auto; scrollbar-width:none; flex-wrap:nowrap; }
+.nrtabs button { white-space:nowrap; flex:none; }
+.nr-grid { margin-bottom:12px; }
+[data-tab="waechter"] > section.card[data-nrt] { margin-bottom:12px; }
+.nr-auto { color:var(--acc); margin:4px 0 6px; }
+.nr-savebar { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(76px + env(safe-area-inset-bottom)); z-index:60; display:flex; gap:10px; align-items:center;
+  background:var(--card); border:1px solid var(--acc); border-radius:14px; padding:10px 12px 10px 16px; box-shadow:0 8px 30px var(--shadow); max-width:calc(100vw - 24px); }
+.nr-savebar span { font-size:13px; font-weight:700; white-space:nowrap; color:var(--warn); }
+.nr-savebar button { white-space:nowrap; }
+.nr-savebar[hidden] { display:none; }
+@media (min-width:701px) { .nr-savebar { bottom:24px; } }

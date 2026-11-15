@@ -186,21 +186,6 @@
   <div class="nr-save" style="margin-top:12px"><button class="primary" onclick="pcSave()">💾 Speichern &amp; PrintHub neu starten</button>
     <span class="muted small" id="pc-state"></span></div>
 
-  <section class="card" style="margin-top:16px">
-    <div class="label">⚡ Strom-Verwaltung</div>
-    <div class="d muted small" style="margin:6px 0 4px">PrintHub schaltet den Drucker nach dem Druck oder nach Leerlauf aus – aber nie während eines Drucks, solange die Düse heiß ist,
-      ein Auftrag gleich startet oder der Druckwächter auf deine Antwort wartet. Geschaltet wird über Bambuddys Steckdose (Bambuddy bleibt im Bild), notfalls direkt über die Shelly.</div>
-    <div class="row"><div><div class="t">Automatisch ausschalten</div><div class="d" id="pw-hint">Ersetzt Bambuddys „Auto Aus“</div></div>
-      <label class="switch"><input type="checkbox" data-k="power_auto" onchange="setTimeout(pwHint, 700)"><span></span></label></div>
-    <div class="row"><div><div class="t">Nach dem Druck</div><div class="d">Wartezeit nach Druckende</div></div>
-      <div class="unit-in"><input type="number" min="0" max="240" step="1" data-k="power_after_min" style="width:80px"> min</div></div>
-    <div class="row"><div><div class="t">Leerlauf</div><div class="d">Eingeschaltet, aber kein Druck (z. B. von Hand eingeschaltet und vergessen)</div></div>
-      <div class="unit-in"><input type="number" min="5" max="600" step="5" data-k="power_idle_min" style="width:80px"> min</div></div>
-    <div class="row"><div><div class="t">Erst aus unter</div><div class="d">Düsentemperatur – schont das Hotend</div></div>
-      <div class="unit-in"><input type="number" min="30" max="80" step="1" data-k="power_off_temp" style="width:80px"> °C</div></div>
-    <div class="row" id="pw-bb-row" hidden><div><div class="t">Bambuddy „Auto Aus“</div><div class="d" id="pw-bb">–</div></div>
-      <button class="small-btn" id="pw-bb-btn" onclick="pwBambuddy()">In Bambuddy ausschalten</button></div>
-  </section>
 <div class="set-grid" style="margin-top:14px">
   <section class="card">
     <div class="label">Beim Drucken</div>
@@ -323,8 +308,9 @@
 <!-- ============ Druckwächter (früher Nachtruhe) ============ -->
 <div data-tab="waechter">
   <section class="card nr-status" id="nr-status">Lade …</section>
-  <form id="nr-form" class="set-grid" onsubmit="event.preventDefault();saveNR()">
-    <section class="card">
+  <div class="seg nrtabs" id="nrtabs"><button type="button" data-v="fenster">🕘 Druckfenster</button><button type="button" data-v="platte">📷 Platte</button><button type="button" data-v="strom">⚡ Strom &amp; Licht</button><button type="button" data-v="verbindung">🔗 Verbindung</button><button type="button" data-v="protokoll">📜 Protokoll</button></div>
+  <form id="nr-form" class="set-grid nr-grid" onsubmit="event.preventDefault();saveNR()">
+    <section class="card" data-nrt="fenster">
       <div class="label">Druckfenster</div>
       <div class="d muted small" style="margin:6px 0 8px">Ein wartender Auftrag startet nur, wenn er bis „Bis“ (minus Puffer) fertig wird. Leere Felder pro Tag = Standard bzw. Wochenende.</div>
       <div class="row"><div><div class="t">Standard (alle Tage)</div></div>
@@ -335,8 +321,10 @@
         <div class="unit-in"><input type="number" min="0" max="240" name="PUFFER_MIN" style="width:80px"> min</div></div>
       <table class="list small nr-week"><tr><th>Tag</th><th>Ab</th><th>Bis</th><th title="An diesem Tag gar nicht drucken"><span class="lg">kein Druck</span><span class="sm">aus</span></th><th>gilt</th></tr>
         <tbody id="nr-days"></tbody></table>
+      <div class="row"><div><div class="t">Alles über den Druckwächter starten</div><div class="d">Neue Aufträge in Bambuddy werden sofort auf „manuell starten“ gestellt – Bambuddy startet nichts selbst, sondern der Druckwächter (Druckfenster, Licht, Plattenprüfung)</div></div>
+        <label class="switch"><input type="checkbox" name="ALLES_UEBER_WAECHTER"><span></span></label></div>
     </section>
-    <section class="card">
+    <section class="card" data-nrt="platte">
       <div class="label">Plattenprüfung (Kamera)</div>
       <div class="row"><div><div class="t">Vor dem Start prüfen, ob die Platte leer ist</div><div class="d">Über die Plattenerkennung von Bambuddy</div></div>
         <label class="switch"><input type="checkbox" name="PLATTE_PRUEFEN"><span></span></label></div>
@@ -348,9 +336,10 @@
         <div class="unit-in"><input type="number" min="1" max="20" name="PLATTE_VERSUCHE" style="width:70px"> × alle <input type="number" min="1" max="120" name="PLATTE_WARTE_MIN" style="width:70px"> min</div></div>
       <div class="row"><div><div class="t">Kamerafotos in den Meldungen</div></div>
         <label class="switch"><input type="checkbox" name="KAMERA_BILD"><span></span></label></div>
-      <div class="row"><div><div class="t">Alles über den Druckwächter starten</div><div class="d">Neue Aufträge in Bambuddy werden sofort auf „manuell starten“ gestellt – Bambuddy startet nichts selbst, sondern der Druckwächter (Druckfenster, Licht, Plattenprüfung)</div></div>
-        <label class="switch"><input type="checkbox" name="ALLES_UEBER_WAECHTER"><span></span></label></div>
-      <div class="label" style="margin-top:14px">Licht &amp; Ausschalten</div>
+    </section>
+    <section class="card" data-nrt="strom">
+      <div class="label">💡 Licht &amp; nach Fehler ausschalten</div>
+      <div class="d small nr-auto">Macht der Druckwächter – mit „Speichern“ übernehmen</div>
       <div class="row"><div><div class="t">Licht aus nach Druckende</div></div>
         <div class="unit-in"><input type="number" min="0" max="3600" name="LICHT_AUS_NACH" style="width:80px"> s</div></div>
       <div class="row"><div><div class="t">Nach Fehlschlag/Abbruch Drucker ausschalten</div><div class="d">Sobald die Düse abgekühlt ist</div></div>
@@ -358,9 +347,9 @@
       <div class="row"><div><div class="t">Abgekühlt unter</div></div>
         <div class="unit-in"><input type="number" min="20" max="120" name="AUS_TEMP" style="width:80px"> °C</div></div>
     </section>
-    <section class="card">
+    <section class="card" data-nrt="verbindung">
       <div class="label">Meldungen</div>
-      <div class="d muted small" style="margin:6px 0 10px">Der Druckwächter schickt über die ntfy-Adresse aus <a href="#meldungen">Benachrichtigungen</a>. Welche Meldungen du bekommst, stellst du dort ein (Gruppe „Druckwächter“). Die Antwort-Knöpfe laufen über „Thema-antwort“.</div>
+      <div class="d muted small" style="margin:6px 0 10px">Der Druckwächter schickt über die Wege aus <a href="#meldungen">Benachrichtigungen</a> (Telegram / ntfy). Welche Meldungen du bekommst, stellst du dort ein (Gruppe „Druckwächter“). Die Antwort-Knöpfe laufen über „Thema-antwort“.</div>
       <div class="label" style="margin-top:4px">Bambuddy</div>
       <div class="row"><div><div class="t">Adresse</div></div><input type="url" name="BAMBUDDY_URL" style="width:230px"></div>
       <div class="row"><div><div class="t">API-Schlüssel</div><div class="d">Braucht Rechte für Warteschlange, Smart Plug und Kamera</div></div><input type="password" name="BAMBUDDY_API_KEY" data-secret autocomplete="off" style="width:230px"></div>
@@ -369,10 +358,24 @@
       <div class="row"><div><div class="t">Testmodus</div><div class="d">Nur ins Log schreiben, nichts schalten oder starten</div></div>
         <label class="switch"><input type="checkbox" name="DRY_RUN"><span></span></label></div>
     </section>
-    <div class="nr-save"><button class="primary" type="submit">💾 Druckwächter-Einstellungen speichern</button>
-      <span class="muted small">Wird sofort übernommen – du bekommst eine Bestätigung per ntfy.</span></div>
   </form>
-  <section class="card" style="margin-top:16px" id="plate-card">
+  <section class="card" data-nrt="strom">
+    <div class="label">⚡ Automatisch ausschalten</div>
+    <div class="d small nr-auto">Wird sofort gespeichert · funktioniert auch ohne Druckwächter</div>
+    <div class="d muted small" style="margin:6px 0 4px">PrintHub schaltet den Drucker nach dem Druck oder nach Leerlauf aus – aber nie während eines Drucks, solange die Düse heiß ist,
+      ein Auftrag gleich startet oder der Druckwächter auf deine Antwort wartet. Geschaltet wird über Bambuddys Steckdose (Bambuddy bleibt im Bild), notfalls direkt über die Shelly.</div>
+    <div class="row"><div><div class="t">Automatisch ausschalten</div><div class="d" id="pw-hint">Ersetzt Bambuddys „Auto Aus“</div></div>
+      <label class="switch"><input type="checkbox" data-k="power_auto" onchange="setTimeout(pwHint, 700)"><span></span></label></div>
+    <div class="row"><div><div class="t">Nach dem Druck</div><div class="d">Wartezeit nach Druckende</div></div>
+      <div class="unit-in"><input type="number" min="0" max="240" step="1" data-k="power_after_min" style="width:80px"> min</div></div>
+    <div class="row"><div><div class="t">Leerlauf</div><div class="d">Eingeschaltet, aber kein Druck (z. B. von Hand eingeschaltet und vergessen)</div></div>
+      <div class="unit-in"><input type="number" min="5" max="600" step="5" data-k="power_idle_min" style="width:80px"> min</div></div>
+    <div class="row"><div><div class="t">Erst aus unter</div><div class="d">Düsentemperatur – schont das Hotend</div></div>
+      <div class="unit-in"><input type="number" min="30" max="80" step="1" data-k="power_off_temp" style="width:80px"> °C</div></div>
+    <div class="row" id="pw-bb-row" hidden><div><div class="t">Bambuddy „Auto Aus“</div><div class="d" id="pw-bb">–</div></div>
+      <button class="small-btn" id="pw-bb-btn" onclick="pwBambuddy()">In Bambuddy ausschalten</button></div>
+  </section>
+  <section class="card" id="plate-card" data-nrt="platte">
     <div class="section-h"><div><span class="label">Plattenerkennung in PrintHub</span>
       <div class="d muted small" style="margin-top:4px">Nimm Referenzbilder der <b>leeren</b> Platte auf – gern mehrere (Licht an/aus, verschiedene Platten). Geprüft wird gegen das ähnlichste. Den Prüfbereich legst du als Vieleck mit beliebig vielen Punkten fest (oder als Rechteck). Steht die Platte auf manchen Bildern anders, bekommt jedes Referenzbild über „⬠ Bereich für dieses Bild“ sein eigenes Vieleck. Die Abweichung ist der Anteil veränderter Fläche – schon ein kleines Teil ergibt 1–5 %, deshalb ist die Schwelle hier niedriger als bei Bambuddy.</div></div>
       <select id="pl-printer" style="width:auto"></select></div>
@@ -406,11 +409,13 @@
     </div>
   </section>
 
-  <section class="card" style="margin-top:16px">
+  <section class="card" data-nrt="protokoll">
     <div class="section-h"><span class="label">Protokoll</span>
       <span class="unit-in small"><label><input type="checkbox" id="nr-hms" checked> HMS-Meldungen</label><button class="small-btn" onclick="loadNR()">⟳</button></span></div>
     <pre id="nr-log" class="nr-log">–</pre>
   </section>
+  <div class="nr-savebar" id="nr-savebar" hidden><span>⚠ Nicht gespeichert</span>
+    <button type="button" class="small-btn" onclick="nrUndo()">Verwerfen</button><button class="primary" type="submit" form="nr-form">💾 Speichern</button></div>
 </div>
 
 <!-- ============ Lager ============ -->
@@ -769,6 +774,7 @@ function setSearch() {
   setSearchClear();
   if (!q) { document.body.classList.remove("searching"); showTab(location.hash.slice(1) || "allgemein"); return; }
   document.body.classList.add("searching");
+  document.querySelectorAll("[data-nrt]").forEach(el => el.hidden = false);
   document.querySelectorAll("[data-tab]").forEach(el => {
     el.hidden = false;
     // alles außer Karten (Hinweise, Knöpfe, Listen) während der Suche ausblenden
@@ -918,12 +924,17 @@ function showTab(t) {
   if (t === "diagnose") t = "system";
   if ($("set-q") && $("set-q").value) { $("set-q").value = ""; document.body.classList.remove("searching"); setSearchClear(); }
   if (!document.querySelector(`[data-tab="${t}"]`)) t = "allgemein";
+  const curTab = (document.querySelector("#tabs a.on") || {}).dataset?.t;
+  if (curTab === "waechter" && t !== "waechter" && nrDirty) {
+    if (!confirm("Druckwächter: Es gibt ungespeicherte Änderungen. Trotzdem wechseln und die Änderungen verwerfen?")) { history.replaceState(null, "", "#waechter"); return; }
+    nrDirty = false; nrBar();
+  }
   document.querySelectorAll("[data-tab]").forEach(el => el.hidden = el.dataset.tab !== t);
   document.querySelectorAll("#tabs a").forEach(a => a.classList.toggle("on", a.dataset.t === t));
   if (t === "wartung") loadMaint();
   if (t === "dienste") loadServices();
-  if (t === "drucker") { pcLoad(); pwHint(); }
-  if (t === "waechter") { loadNR(true); plInit(); }
+  if (t === "drucker") pcLoad();
+  if (t === "waechter") { loadNR(true); plInit(); pwHint(); nrTab(); }
   if (t === "lager") loadProfiles();
   if (t === "uebersicht") { tileCfg(); hePrev(); }
   if (t === "meldungen") tgLoad();
@@ -1139,6 +1150,7 @@ function fillNR() {
     nrf()["DRUCK_AB_" + k].disabled = nrf()["DRUCK_BIS_" + k].disabled = cb.checked; nrDirty = true; effNR();
   });
   nrDirty = false; effNR();
+  if ($("nrtabs")) nrTab();
 }
 function effNR() {   // was gilt tatsächlich an jedem Tag?
   const v = n => nrf()[n] ? nrf()[n].value : "";
@@ -1150,7 +1162,20 @@ function effNR() {   // was gilt tatsächlich an jedem Tag?
     $("effm-" + k).textContent = $("eff-" + k).textContent;
   }
 }
-document.addEventListener("input", e => { if (e.target.form && e.target.form.id === "nr-form") { nrDirty = true; effNR(); } });
+document.addEventListener("input", e => { if (e.target.form && e.target.form.id === "nr-form") { nrDirty = true; effNR(); nrBar(); } });
+document.addEventListener("change", e => { if (e.target.form && e.target.form.id === "nr-form") { nrDirty = true; nrBar(); if (e.target.name === "PLATTE_QUELLE") nrTab(); } });
+// Unterbereiche des Druckwächters
+function nrTab(v) {
+  v = v || PH.pref("nr_tab", "fenster");
+  if (v !== PH.pref("nr_tab", "fenster")) PH.pref("nr_tab", null, v);
+  document.querySelectorAll("#nrtabs button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  const ph = nrf().PLATTE_QUELLE && nrf().PLATTE_QUELLE.value === "printhub";
+  document.querySelectorAll('[data-tab="waechter"] [data-nrt]').forEach(el => el.hidden = el.dataset.nrt !== v || (el.id === "plate-card" && !ph));
+}
+document.querySelectorAll("#nrtabs button").forEach(b => b.onclick = () => nrTab(b.dataset.v));
+function nrBar() { $("nr-savebar").hidden = !nrDirty; }
+function nrUndo() { nrDirty = false; fillNR(); nrBar(); nrTab(); PH.toast("Änderungen verworfen"); }
+window.addEventListener("beforeunload", e => { if (nrDirty) { e.preventDefault(); e.returnValue = ""; } });
 $("nr-hms") && ($("nr-hms").onchange = () => loadNR());
 async function saveNR() {
   const body = {};
@@ -1163,7 +1188,7 @@ async function saveNR() {
   for (const [k] of NR_DAYS) if (nrf().querySelector(`[data-off="${k}"]`).checked) { body["DRUCK_AB_" + k] = "aus"; body["DRUCK_BIS_" + k] = ""; }
   const r = await (await fetch("/api/nachtruhe", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();
   if (r.error) return PH.toast(r.error, true);
-  NR = r; nrDirty = false; fillNR(); PH.toast("Gespeichert – der Wächter übernimmt es sofort ✓");
+  NR = r; nrDirty = false; fillNR(); nrBar(); PH.toast("Gespeichert – der Wächter übernimmt es sofort ✓");
 }
 async function nrAct(a) {
   const q = {off: "Druckwächter ausschalten? Dann startet niemand mehr wartende Aufträge automatisch.", "stop-legacy": "Alten Container bambuddy-nachtruhe jetzt stoppen?"}[a];

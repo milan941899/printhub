@@ -53,7 +53,7 @@ Gemacht für **Bambu Lab A1 / A1 mini / P1** (über das Heimnetz, ohne Cloud) un
 | **Verlauf** | Alle Drucke mit Modellbild und Foto nach dem Druck, Filter, Monatsübersicht, CSV-Export; dazu der Verlauf der Warteschlange |
 | **Statistik** | Drucke, Erfolgsrate, Druckstunden, Filament, Strom, Kosten – pro Woche, Monat, Jahr; frei anordnenbare Kacheln |
 | **Warteschlange** | Die Aufträge aus Bambuddy: starten, nach vorne holen, entfernen, per Ziehen umsortieren, **Startzeit planen**, Zeitplan-Vorschau („alles fertig morgen 12:00“), Filament-Check pro Auftrag |
-| **Druckwächter** | Startet Aufträge nur im **Druckfenster** (z. B. 07:00–22:30), prüft per Kamera, ob die **Platte leer** ist, schaltet **Licht** und **Steckdose**, schaltet nach Fehlern ab |
+| **Druckwächter** | Unterteilt in **Druckfenster**, **Platte** (Plattenprüfung, Referenzbilder), **Strom & Licht** (automatisch ausschalten – macht PrintHub, auch ohne Druckwächter –, Licht aus, Ausschalten nach Fehler), **Verbindung** (Bambuddy, Testmodus) und **Protokoll**. Änderungen am Druckwächter werden mit der Leiste „💾 Speichern“ übernommen |
 | **Strom** | Drucker automatisch ausschalten nach dem Druck oder bei Leerlauf – aber nie, solange er druckt oder die Düse heiß ist |
 | **Meldungen** | Per **Telegram** (empfohlen) oder **ntfy**: Start, fertig (mit Kosten und Foto), Fehler, Platte belegt (mit Antwort-Knöpfen), Spule fast leer, Wartung fällig … Dringlichkeit pro Meldung einstellbar. Dazu ein **Wochenbericht** (Drucke, Filament, Kosten, Nachkaufen) |
 | **Telegram-Bot** | Befehle wie `/status`, `/bild`, `/filament`, `/aufträge`, `/licht`, `/strom` – mit festen Knöpfen unten im Chat |
@@ -650,7 +650,7 @@ heißt, wird im Browser gespeichert – Handy und PC können also unterschiedlic
 | **Lager** | **Funktionen** ein/aus: Rolle scannen, Serie, Stapel, Archiv, Namen vereinheitlichen, Mindestbestand & Einkaufsliste, Reicht-noch-Prognose, Trocknen-Zähler. Spulen (Slot setzen, Standort, „fast leer“, QR-Adresse), Trocknungsgrenzen als Tabelle, Etikettendrucker, KI-Etiketterkennung, gelernte Bambu-Profile |
 | **Verlauf** | (nur dieses Gerät) Zeitraum beim Öffnen, Fehldrucke zeigen, Vorschaubilder, Spalten Filament/Strom/Kosten, nach Tagen gruppieren |
 | **Statistik** | (nur dieses Gerät) Zeitraum beim ersten Öffnen, Wochenstart Montag/Sonntag |
-| **Drucker** | Drucker anlegen/ändern/testen, Strom-Verwaltung. **Beim Drucken**: Filament-Warnung + Reserve, Ersatzrolle vorschlagen, Reste aufbrauchen, Foto nach dem Druck |
+| **Drucker** | Drucker anlegen/ändern/testen, **Beim Drucken**: Filament-Warnung + Reserve, Ersatzrolle vorschlagen, Reste aufbrauchen, Foto nach dem Druck |
 | **Dienste** | Adressen von Spoolman, Bambuddy, OctoEverywhere; Container-Namen für Status und Neustart |
 | **Wartung** | Wartungsbuch |
 | **Druckwächter** | Ein/aus, Bambuddy-Zugang, Druckfenster pro Tag, Puffer, Plattenprüfung, Referenzbilder, „Alles über den Druckwächter“, Licht, Ausschalten nach Fehler, Testmodus, Protokoll |
