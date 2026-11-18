@@ -321,7 +321,7 @@
         <div class="unit-in"><input type="number" min="0" max="240" name="PUFFER_MIN" style="width:80px"> min</div></div>
       <table class="list small nr-week"><tr><th>Tag</th><th>Ab</th><th>Bis</th><th title="An diesem Tag gar nicht drucken"><span class="lg">kein Druck</span><span class="sm">aus</span></th><th>gilt</th></tr>
         <tbody id="nr-days"></tbody></table>
-      <div class="row"><div><div class="t">Alles über den Druckwächter starten</div><div class="d">Neue Aufträge in Bambuddy werden sofort auf „manuell starten“ gestellt – Bambuddy startet nichts selbst, sondern der Druckwächter (Druckfenster, Licht, Plattenprüfung)</div></div>
+      <div class="row"><div><div class="t">Alles über den Druckwächter starten</div><div class="d">Neue Aufträge in Bambuddy werden sofort auf „manuell starten“ gestellt – Bambuddy startet nichts selbst, sondern der Druckwächter (Druckfenster, Licht, Plattenprüfung). Bei Klipper-Druckern (z. B. U1) sorgt die Startsperre dafür, dass auch Display, Orca und Fluidd nicht am Wächter vorbei starten</div></div>
         <label class="switch"><input type="checkbox" name="ALLES_UEBER_WAECHTER"><span></span></label></div>
     </section>
     <section class="card" data-nrt="platte">
@@ -359,6 +359,17 @@
         <label class="switch"><input type="checkbox" name="DRY_RUN"><span></span></label></div>
     </section>
   </form>
+  <section class="card" data-nrt="verbindung" id="nr-klipper" hidden>
+    <div class="label">Klipper-Drucker (Moonraker)</div>
+    <div class="d muted small" style="margin:6px 0 10px">Hier übernimmt die <b>Warteschlange von Moonraker</b> die Rolle von Bambuddy: In Orca nur <b>hochladen</b>, der Auftrag landet in der Warteschlange, und der Druckwächter startet ihn (Druckfenster, Einschalten, Licht, Plattenprüfung).
+      Damit niemand am Wächter vorbei startet, kommt ein kleines Makro in die Klipper-Konfiguration: die <b>Startsperre</b>. Ein Druck vom Display, aus Orca („Hochladen und drucken“) oder aus Fluidd wird dann abgewiesen und landet stattdessen in der Warteschlange.</div>
+    <div id="nr-kl-list"></div>
+    <details class="nr-kl-macro"><summary class="small">Makro anzeigen (printhub-startsperre.cfg)</summary>
+      <div class="d muted small" style="margin:6px 0">Paxx-Firmware: Datei nach <code>printer_data/config/extended/klipper/</code> kopieren, sonst mit <code>[include printhub-startsperre.cfg]</code> in die printer.cfg holen. Danach Klipper neu starten.
+        Notfall: <code>PRINTHUB_SPERRE AUS=1</code> in der Konsole schaltet die Sperre ab.</div>
+      <pre id="nr-kl-cfg" class="nr-log" style="max-height:260px">–</pre>
+      <button type="button" class="small-btn" onclick="nrKlCopy()">📋 Kopieren</button></details>
+  </section>
   <section class="card" data-nrt="strom">
     <div class="label">⚡ Automatisch ausschalten</div>
     <div class="d small nr-auto">Wird sofort gespeichert · funktioniert auch ohne Druckwächter</div>
@@ -1176,9 +1187,26 @@ async function loadNR(fillForm) {
   const el = $("nr-log"); const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
   el.innerHTML = lines.length ? lines.map(l => `<span class="${/Fehler|fehlgeschlagen|nicht erreichbar|⚠|abgebrochen/i.test(l) ? "le" : /HMS/.test(l) ? "lh" : /Starte|Freigabe|eingeschaltet|übernommen/i.test(l) ? "lo" : ""}">${esc(l)}</span>`).join("\n") : "Noch keine Einträge.";
   if (atEnd || fillForm) el.scrollTop = el.scrollHeight;
+  nrKlipper();
   if (fillForm || !nrDirty) fillNR();
   clearTimeout(nrTimer);
   if (!document.querySelector('[data-tab="waechter"]').hidden) nrTimer = setTimeout(() => loadNR(), 5000);
+}
+function nrKlipper() {
+  const list = NR.klipper || [], box = $("nr-klipper");
+  box.hidden = !list.length;
+  if (!list.length) return;
+  const yes = (ok, a, b) => `<span style="color:${ok ? "var(--ok)" : "var(--warn)"}">${ok ? "✓ " + a : "⚠ " + b}</span>`;
+  $("nr-kl-list").innerHTML = list.map(k => `<div class="row"><div><div class="t">${esc(k.name)}${k.online ? "" : ` <span class="muted small">(nicht erreichbar)</span>`}</div>
+      <div class="d">${yes(k.queue, `Warteschlange aktiv${k.queue_state ? " · " + esc(k.queue_state) : ""}`, "Warteschlange fehlt – in moonraker.conf <code>[job_queue]</code> eintragen")}
+        · ${yes(k.lock, `Startsperre aktiv${k.lock_version ? " (v" + k.lock_version + ")" : ""}`, "Startsperre nicht installiert")}
+        ${k.blocked ? `<br>Zuletzt abgewiesen: ${esc(k.blocked)}` : ""}</div></div>
+      ${k.lock ? "" : `<button type="button" class="small-btn" onclick="document.querySelector('.nr-kl-macro').open=true">Einrichten</button>`}</div>`).join("");
+  if (NR.klipper_macro && $("nr-kl-cfg").textContent === "–") $("nr-kl-cfg").textContent = NR.klipper_macro;
+}
+async function nrKlCopy() {
+  try { await navigator.clipboard.writeText($("nr-kl-cfg").textContent); PH.toast("Makro kopiert ✓"); }
+  catch { PH.toast("Kopieren nicht möglich – Text markieren und kopieren", true); }
 }
 function fillNR() {
   const c = NR.config;

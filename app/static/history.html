@@ -32,8 +32,8 @@
   <div id="v-queue" hidden>
     <section class="card">
       <div class="section-h"><div><span class="label">Was mit deinen Aufträgen passiert ist</span>
-        <div class="d muted small" style="margin-top:4px">Aus Bambuddy (fertig, abgebrochen …), vom Druckwächter (wartet, Platte belegt, gestartet) und aus PrintHub (Knöpfe, Telegram).</div></div>
-        <div class="seg" id="qh-src"><button data-v="" class="on">Alles</button><button data-v="Druckwächter">Druckwächter</button><button data-v="Bambuddy">Bambuddy</button><button data-v="PrintHub">PrintHub</button></div></div>
+        <div class="d muted small" style="margin-top:4px">Aus Bambuddy und Moonraker (fertig, abgebrochen …), vom Druckwächter (wartet, Platte belegt, gestartet) und aus PrintHub (Knöpfe, Telegram).</div></div>
+        <div class="seg" id="qh-src"><button data-v="" class="on">Alles</button><button data-v="Druckwächter">Druckwächter</button><button data-v="Bambuddy">Bambuddy</button><button data-v="Moonraker">Moonraker</button><button data-v="PrintHub">PrintHub</button></div></div>
       <div id="qh" class="qh muted small">Lade …</div>
     </section>
   </div>
@@ -102,7 +102,7 @@ document.querySelectorAll("#qh-src button").forEach(b => b.onclick = () => {
   document.querySelectorAll("#qh-src button").forEach(x => x.classList.toggle("on", x === b)); qhDraw();
 });
 async function qhLoad() {
-  try { const d = await (await fetch("/api/queue/history")).json(); QH = d.entries || []; if (!d.enabled) { $("qh").textContent = "Bambuddy ist nicht eingerichtet."; return; } } catch { return; }
+  try { const d = await (await fetch("/api/queue/history")).json(); QH = d.entries || []; if (!d.enabled) { $("qh").textContent = "Keine Warteschlange eingerichtet (Bambuddy oder Klipper-Drucker)."; return; } } catch { return; }
   qhDraw();
 }
 function qhDraw() {

@@ -461,6 +461,9 @@ table.list.small td, table.list.small th { padding:5px 6px; font-size:12px; }
 .queue .qm .w { color:var(--warn); }
 .queue .qb { display:flex; gap:6px; }
 .qtag { font-size:10px; font-weight:800; letter-spacing:.6px; text-transform:uppercase; padding:1px 7px; border-radius:99px; background:#22d3ee22; color:var(--acc); margin-left:6px; }
+.qsrc { font-size:10px; font-weight:700; padding:0 6px; border-radius:6px; margin-right:6px; border:1px solid var(--line); color:var(--muted); }
+.qsrc.mr { color:#f97316; border-color:#f9731655; }
+.qsrc.bb { color:#22c55e; border-color:#22c55e55; }
 .mchip { background:#f59e0b22; border:1px solid var(--warn); color:var(--warn); border-radius:99px; padding:2px 9px; font-size:12px; font-weight:700; text-decoration:none; }
 .mline { display:grid; grid-template-columns:minmax(0,1.4fr) 1fr auto auto; gap:10px; align-items:center; padding:6px 0; border-top:1px solid var(--line); font-size:13px; }
 .mline:first-of-type { margin-top:8px; }

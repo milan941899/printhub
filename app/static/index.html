@@ -524,7 +524,7 @@ const BLK = {
   e5: {t: "Kachel 5", span: 3}, e6: {t: "Kachel 6", span: 3},
   camera: {t: "Kamera", span: 4}, ams: {t: "Spulen", span: 12}, temps: {t: "Temperaturverlauf", span: 12}, maint: {t: "Wartung", span: 12},
 };
-const PAGE = {services: {t: "Dienste", span: 6}, queue: {t: "Warteschlange (Bambuddy)", span: 6}, history: {t: "Letzte Drucke", span: 6}};
+const PAGE = {services: {t: "Dienste", span: 6}, queue: {t: "Warteschlange", span: 6}, history: {t: "Letzte Drucke", span: 6}};
 let layout = {page: {order: [], span: {}, hidden: []}, blk: {}, collapsed: {}};
 try {
   const l = JSON.parse(localStorage.getItem("ph-board") || "null");
@@ -635,8 +635,8 @@ function renderBoard() {
     const st = `style="--ps:${pageSpan(k)}"`;
     if (k === "services") return `<section class="pblk" data-b="services" ${st}>${ctl}<div id="svchips" class="svchips" onclick="this.parentNode.classList.toggle('svopen')"></div><div id="svcs" class="svcs"></div></section>`;
     if (k === "queue") return `<section class="pblk card queue" data-b="queue" ${st} id="queuecard">${ctl}
-      <div class="section-h"><span class="label">Warteschlange · Bambuddy</span><a id="q-open" href="#" target="_blank" class="small">In Bambuddy öffnen ↗</a></div>
-      <div id="queue" class="muted small">${queueOn ? "Lade …" : "Bambuddy ist nicht eingerichtet oder die Warteschlange ist in den Einstellungen ausgeschaltet."}</div></section>`;
+      <div class="section-h"><span class="label">Warteschlange</span><a id="q-open" href="#" target="_blank" class="small" hidden>In Bambuddy öffnen ↗</a></div>
+      <div id="queue" class="muted small">${queueOn ? "Lade …" : "Keine Warteschlange eingerichtet (Bambuddy oder Klipper-Drucker) oder in den Einstellungen ausgeschaltet."}</div></section>`;
     if (k === "history") return `<section class="pblk card" data-b="history" ${st}>${ctl}
       <div class="section-h"><span class="label">Letzte Drucke</span><a href="/verlauf" class="small">Alle Drucke &amp; Auswertung →</a></div>
       <div id="history" class="muted">Noch keine Drucke erfasst.</div></section>`;
@@ -940,7 +940,8 @@ async function loadQueue() {
     const d = await (await fetch("/api/queue")).json();
     if (!d.enabled) return;
     X.queue = d.items || [];
-    document.getElementById("q-open").href = (d.url || "") + "/queue";
+    const qo = document.getElementById("q-open");
+    qo.hidden = !d.url; if (d.url) qo.href = d.url + "/queue";
     const el = document.getElementById("queue");
     if (d.error) { el.innerHTML = `<span class="err">${esc(d.error)}</span>`; return; }
     if (!d.items.length) { el.textContent = "Nichts in der Warteschlange."; return; }
@@ -959,16 +960,18 @@ async function loadQueue() {
         return `<div class="qtip ${l.swap ? "bad" : ""}">${l.swap ? "→ Im Lager reicht" : "♻ Rest aufbrauchen:"} Rolle #${o.id} (${o.rest} g${o.location ? ", " + esc(o.location) : ""})${l.tip ? ` reicht für die ${Math.round(l.grams)} g` : ""}
           <button type="button" class="small-btn" onclick="qAssign('${esc(o.printer)}','${esc(o.key)}',${o.id})">In ${esc(l.slot || "Slot")} einlegen</button></div>`;
       }).join("") : "";
-      return `<div class="qi" data-q="${q.id}">
+      const qid = esc(String(q.id)), mr = q.src === "moonraker";
+      const thumb = q.thumb_url || (q.thumb ? `/api/bambuddy/thumb?p=${encodeURIComponent(q.thumb)}` : "");
+      return `<div class="qi" data-q="${qid}">
       ${q.status === "pending" ? `<span class="qgrip" title="Ziehen: Reihenfolge ändern">⠿</span>` : `<span class="qgrip off"></span>`}
-      <div class="qimg" style="${q.thumb ? `background-image:url('/api/bambuddy/thumb?p=${encodeURIComponent(q.thumb)}')` : ""}">${q.thumb ? "" : "🧊"}</div>
+      <div class="qimg" style="${thumb ? `background-image:url('${thumb}')` : ""}">${thumb ? "" : "🧊"}</div>
       <div style="min-width:0"><div class="qn">${esc(q.name)}${q.status === "printing" ? `<span class="qtag">druckt</span>` : q.manual ? `<span class="qtag">wartet auf Start</span>` : ""}</div>
-        <div class="qm">${esc(q.printer)}${q.seconds ? " · ⏱ " + PH.dur(q.seconds) : ""}${q.grams ? " · " + PH.g(q.grams) : ""}${q.plate ? " · " + esc(q.plate) : ""}
+        <div class="qm"><span class="qsrc ${mr ? "mr" : "bb"}" title="${mr ? "Warteschlange in Moonraker (Klipper)" : "Warteschlange in Bambuddy"}">${mr ? "Moonraker" : "Bambuddy"}</span>${esc(q.printer)}${q.seconds ? " · ⏱ " + PH.dur(q.seconds) : ""}${q.grams ? " · " + PH.g(q.grams) : ""}${q.plate ? " · " + esc(q.plate) : ""}
           ${q.waiting && q.status === "pending" ? ` · <span class="w">${esc(q.waiting)}</span>` : ""}</div>${chk}${tips}${pl}</div>
-      <div class="qb">${q.status === "pending" ? `<button class="small-btn primary" onclick="qAct(${q.id},'jetzt')" title="${d.waechter ? "Über den Druckwächter: einschalten, Licht, Plattenprüfung, dann Start" : "Bambuddy startet sofort"}">▶ Jetzt</button>
-        <button class="small-btn${q.scheduled ? " on" : ""}" onclick="qPlan(${q.id})" title="Startzeit planen">🕘</button>
-        <button class="small-btn" onclick="qAct(${q.id},'top')" title="Nach vorne holen">⬆</button>
-        <button class="small-btn" onclick="qAct(${q.id},'cancel')" title="Aus der Warteschlange nehmen">🗑</button>` : ""}</div>
+      <div class="qb">${q.status === "pending" ? `<button class="small-btn primary" onclick="qAct('${qid}','jetzt')" title="${d.waechter ? `Über den Druckwächter: einschalten, Licht, Plattenprüfung, dann ${mr ? "Freigabe und Start in Moonraker" : "Start"}` : mr ? "Moonraker startet sofort" : "Bambuddy startet sofort"}">▶ Jetzt</button>
+        <button class="small-btn${q.scheduled ? " on" : ""}" onclick="qPlan('${qid}')" title="Startzeit planen">🕘</button>
+        <button class="small-btn" onclick="qAct('${qid}','top')" title="Nach vorne holen">⬆</button>
+        <button class="small-btn" onclick="qAct('${qid}','cancel')" title="Aus der Warteschlange nehmen">🗑</button>` : ""}</div>
     </div>`; }).join("");
     qWaechter = d.waechter;
     if (DESK()) applyFree();            // Kachel wächst/schrumpft mit der Anzahl Aufträge
@@ -1031,15 +1034,16 @@ async function qPlanSave(clear, force) {
 async function qAct(id, action) {
   const name = (document.querySelector(`.qi[data-q="${id}"] .qn`) || {}).textContent || "Auftrag";
   if (action === "cancel" && !confirm(`„${name}“ aus der Warteschlange nehmen?`)) return;
-  if (action === "jetzt" && !confirm(qWaechter ? `„${name}“ jetzt starten?\nDer Druckwächter schaltet ein, macht Licht an, prüft die Platte und startet – ohne Rücksicht aufs Druckfenster.`
-                                              : `„${name}“ jetzt starten? Bambuddy schickt ihn sofort an den Drucker.`)) return;
+  const mr = (qData[id] || {}).src === "moonraker";
+  if (action === "jetzt" && !confirm(qWaechter ? `„${name}“ jetzt starten?\nDer Druckwächter schaltet ein, macht Licht an, prüft die Platte und startet – ohne Rücksicht aufs Druckfenster.${mr ? "\nBeim Klipper-Drucker gibt er dafür die Startsperre frei." : ""}`
+                                              : `„${name}“ jetzt starten? ${mr ? "Moonraker" : "Bambuddy"} schickt ihn sofort an den Drucker.`)) return;
   const r = await (await fetch(`/api/queue/${id}/${action}`, {method: "POST"})).json();
   PH.toast(r.error || r.message || "✓", !!r.error);
   setTimeout(loadQueue, 800);
 }
 // Reihenfolge der Aufträge per Ziehen
 PHUI.sortable(document.getElementById("board"), {items: ".qi", handle: ".qgrip:not(.off)", key: "q", axis: "y", onDrop: async keys => {
-  const r = await (await fetch("/api/queue/reorder", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ids: keys.map(Number)})})).json();
+  const r = await (await fetch("/api/queue/reorder", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ids: keys.map(k => /^\d+$/.test(k) ? Number(k) : k)})})).json();
   PH.toast(r.error || "Reihenfolge gespeichert ✓", !!r.error); loadQueue();
 }});
 

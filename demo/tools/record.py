@@ -101,3 +101,8 @@ if SECRET.search(txt):
     sys.exit("Abbruch: echte IP/Geheimnis in den Aufnahmen gefunden: " + SECRET.search(txt).group(0))
 open(os.path.join(OUT, "fixtures.json"), "w").write(txt)
 print(len(fix), "Antworten,", len(scans), "Scans,", len(txt) // 1024, "KB")
+
+# Snapmaker U1 + gemeinsame Warteschlange nachträglich einbauen (serve_demo hat nur einen einfachen Klipper-Drucker)
+sys.path.insert(0, os.path.dirname(__file__))
+import demo_u1  # noqa: E402
+demo_u1.main()
