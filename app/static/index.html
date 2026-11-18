@@ -30,6 +30,7 @@
   <button class="small-btn edit-tg" id="edit" onclick="toggleEdit()" title="Bausteine verschieben, Größe ändern, aus- und einblenden">✎ Anordnen</button>
   <nav class="nav"><a href="/">Übersicht</a><a href="/lager">Lager</a><a href="/verlauf">Verlauf</a><a href="/statistik">Statistik</a><a href="/einstellungen">Einstellungen</a></nav>
 </header>
+<nav id="psw" class="psw" hidden></nav>
 <main id="board" class="board"></main>
 <div id="lightbox" onclick="if(event.target===this)closeCam()">
   <div class="lbbox">
@@ -633,7 +634,7 @@ function renderBoard() {
   const html = keys.map(k => {
     const ctl = `<span class="pgrip" title="Ziehen zum Verschieben">⠿</span><button class="px edit-only" title="ausblenden" onclick="hideBlk('','${k}')">👁</button><span class="prz" title="Breite ziehen"></span>`;
     const st = `style="--ps:${pageSpan(k)}"`;
-    if (k === "services") return `<section class="pblk" data-b="services" ${st}>${ctl}<div id="svchips" class="svchips" onclick="this.parentNode.classList.toggle('svopen')"></div><div id="svcs" class="svcs"></div></section>`;
+    if (k === "services") return `<section class="pblk${PH.pref("sv_open", false) ? " svopen" : ""}" data-b="services" ${st}>${ctl}<div id="svchips" class="svchips" onclick="svToggle(this.parentNode)"></div><div id="svcs" class="svcs"></div></section>`;
     if (k === "queue") return `<section class="pblk card queue" data-b="queue" ${st} id="queuecard">${ctl}
       <div class="section-h"><span class="label">Warteschlange</span><a id="q-open" href="#" target="_blank" class="small" hidden>In Bambuddy öffnen ↗</a></div>
       <div id="queue" class="muted small">${queueOn ? "Lade …" : "Keine Warteschlange eingerichtet (Bambuddy oder Klipper-Drucker) oder in den Einstellungen ausgeschaltet."}</div></section>`;
@@ -812,7 +813,51 @@ function printerCard(p) {
     ${p.error ? `<div class="err" style="margin-bottom:8px">${esc(p.error)}</div>` : ""}
     <div class="pgrid12">${blocks}</div>`;
 }
+// ---------- Drucker-Umschalter (Handy): oben ein Knopf je Drucker, darunter nur der gewählte ----------
+const SW_MQ = matchMedia("(max-width:700px)");
+function swOn() { return lastPrinters.length > 1 && (SW_MQ.matches ? PH.pref("sw_phone", true) : PH.pref("sw_desk", false)); }
+let swAuto = true;   // beim Öffnen: druckt einer, wird er gezeigt
+function swSel() {
+  let id = PH.pref("sw_sel", "");
+  if (!lastPrinters.some(p => p.id === id)) id = (lastPrinters[0] || {}).id;
+  if (swAuto) {
+    const cur = lastPrinters.find(p => p.id === id), pr = lastPrinters.find(p => p.printing);
+    if (pr && !(cur && cur.printing)) id = pr.id;
+    if (lastPrinters.length) swAuto = false;
+  }
+  return id;
+}
+function swPick(id) { PH.pref("sw_sel", null, id); swDraw(); fillPrinters(); }
+function swDraw() {
+  const nav = document.getElementById("psw"), on = swOn();
+  document.body.classList.toggle("psw-on", on); nav.hidden = !on;
+  if (!on) return;
+  const sel = swSel();
+  nav.innerHTML = lastPrinters.map(p => {
+    const st = !p.online ? ["off", "offline"] : p.printing ? ["run", `${Math.round(p.progress || 0)} %${p.remaining_min != null ? " · " + fmtMin(p.remaining_min) : ""}`]
+      : p.error ? ["err", "Fehler"] : ["idle", "bereit"];
+    return `<button type="button" class="psw-b ${p.id === sel ? "on" : ""} ${st[0]}" onclick="swPick('${p.id}')">
+      <span class="psw-d"></span><span class="psw-n">${esc(p.name)}</span><span class="psw-s">${st[1]}</span>
+      ${p.printing ? `<i class="psw-p" style="width:${Math.round(p.progress || 0)}%"></i>` : ""}</button>`;
+  }).join("");
+  document.querySelectorAll(".pblk.pcard").forEach(c => c.classList.toggle("psw-hide", c.dataset.pid !== sel));
+}
+// Wischen auf der Druckerkarte: links/rechts zum nächsten Drucker
+(() => {
+  let x0 = null, y0 = 0;
+  document.addEventListener("touchstart", e => { if (!swOn() || !e.target.closest(".pcard")) return; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, {passive: true});
+  document.addEventListener("touchend", e => {
+    if (x0 == null) return;
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
+    if (Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6 || e.target.closest(".ams, .tchart, input, select")) return;
+    const ids = lastPrinters.map(p => p.id), i = ids.indexOf(swSel());
+    swPick(ids[(i + (dx < 0 ? 1 : -1) + ids.length) % ids.length]);
+  }, {passive: true});
+})();
+SW_MQ.addEventListener("change", () => { swDraw(); fillPrinters(); });
+
 function fillPrinters() {
+  swDraw();
   for (const p of lastPrinters) {
     const el = document.getElementById("pc-" + p.id);
     if (el) PH.morph(el, printerCard(p));   // nur Änderungen übernehmen – Lüfter & Co. laufen ruckelfrei weiter
@@ -893,16 +938,21 @@ async function ctl(id, action) {
 }
 
 // ---------- Dienste-Kacheln & Bambuddy-Warteschlange ----------
+function svToggle(el) { el.classList.toggle("svopen"); PH.pref("sv_open", null, el.classList.contains("svopen")); }
 async function loadServices() {
   if (!document.getElementById("svcs")) return;
   try {
     const d = await (await fetch("/api/services")).json();
     X.services = d.services;
     const chips = document.getElementById("svchips");
-    if (chips) chips.innerHTML = d.services.map(s => {
-      const st = s.online === false || s.error ? "bad" : s.warn ? "warn" : s.online === true ? "on" : "";
-      return `<span class="svchip ${st}" title="${esc(s.name)}"><i></i>${s.icon} ${esc(s.name)}</span>`;
-    }).join("") + `<span class="svchip more">Details ▾</span>`;
+    // Handy: eine aufklappbare Karte „Dienste“ mit Zusammenfassung; Details beim Antippen
+    if (chips) {
+      const stOf = s => s.online === false || s.error ? "bad" : s.warn ? "warn" : s.online === true ? "on" : "";
+      const n = t => d.services.filter(s => stOf(s) === t).length, bad = n("bad"), warn = n("warn"), ok = n("on");
+      chips.innerHTML = `<span class="sv-t">Dienste</span>
+        <span class="sv-ic">${d.services.map(s => `<span class="sv-i ${stOf(s)}" title="${esc(s.name)}">${s.icon}</span>`).join("")}</span>
+        <span class="sv-sum ${bad ? "bad" : warn ? "warn" : "on"}">${bad ? `⚠ ${bad} gestört` : warn ? `⚠ ${warn} Hinweis` : `✓ alle ${ok} ok`}</span><span class="sv-chev"></span>`;
+    }
     document.getElementById("svcs").innerHTML = d.services.map(s => {
       const c = (s.containers || [])[0];
       const dot = s.online === true ? "on" : s.online === false ? "bad" : "";

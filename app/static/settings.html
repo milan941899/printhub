@@ -95,6 +95,22 @@
 <!-- ============ Übersicht ============ -->
 <div class="set-grid" data-tab="uebersicht">
   <section class="card">
+    <div class="label">Mehrere Drucker <span class="muted small">(nur dieses Gerät)</span></div>
+    <div class="row">
+      <div><div class="t">Umschalter auf dem Handy</div><div class="d">Oben ein Knopf je Drucker mit Status – darunter nur der gewählte. Wischen wechselt. Druckt einer, wird er beim Öffnen gezeigt</div></div>
+      <label class="switch"><input type="checkbox" data-p="sw_phone" data-def="1"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="t">Umschalter auch am PC</div><div class="d">Aus: am breiten Bildschirm alle Drucker nebeneinander</div></div>
+      <label class="switch"><input type="checkbox" data-p="sw_desk"><span></span></label>
+    </div>
+  </section>
+  <section class="card">
+    <div class="label">Bereiche je Drucker <span class="muted small">(nur dieses Gerät)</span></div>
+    <div class="d muted small" style="margin:6px 0 4px">Was auf diesem Gerät in der Druckerkarte erscheint – z. B. am Handy ohne Temperaturverlauf, am PC alles.</div>
+    <div id="blkcfg" class="blkcfg muted small">Lade …</div>
+  </section>
+  <section class="card">
     <div class="label">Kacheln <span class="muted small">(nur dieses Gerät)</span></div>
     <div class="d muted small" style="margin:6px 0 4px">Bis zu 6 Kacheln je Drucker – getrennt für „beim Drucken“ und „im Leerlauf“. Reihenfolge mit ▲▼.</div>
     <div id="tilecfg" class="tilecfg muted small">Lade …</div>
@@ -956,6 +972,27 @@ async function tileCfg() {
   $("tilecfg").classList.remove("muted", "small");
   $("tilecfg").innerHTML = TC_PR.map(p => `<div class="tc-pr"><div class="t">${esc(p.name)}</div><div class="tc-cols">${col(p.id, "print", "🖨 Beim Drucken")}${col(p.id, "idle", "💤 Im Leerlauf")}</div></div>`).join("");
 }
+// Bereiche je Drucker: nutzt dasselbe „ausgeblendet“ wie 👁 im Anordnen-Modus der Übersicht
+const BLK_NAMES = [["progress", "Fortschritt"], ["hotend", "Düse"], ["tiles", "Kacheln"], ["camera", "Kamera"], ["ams", "Spulen / AMS"], ["temps", "Temperaturverlauf"], ["maint", "Wartung"]];
+const TILE_KEYS = ["e1", "e2", "e3", "e4", "e5", "e6"];
+async function blkCfg() {
+  if (!TC_PR) { try { TC_PR = ((await (await fetch("/api/state")).json()).printers || []).map(p => ({id: p.id, name: p.name})); } catch { TC_PR = []; } }
+  const b = tcBoard();
+  $("blkcfg").classList.remove("muted", "small");
+  $("blkcfg").innerHTML = TC_PR.map(p => {
+    const hid = ((b.blk || {})[p.id] || {}).hidden || [];
+    return `<div class="tc-pr"><div class="t">${esc(p.name)}</div><div class="checks blk-checks">${BLK_NAMES.map(([k, l]) => {
+      const on = k === "tiles" ? !TILE_KEYS.every(t => hid.includes(t)) : !hid.includes(k);
+      return `<label><input type="checkbox" ${on ? "checked" : ""} onchange="blkSet('${p.id}','${k}',this.checked)"> ${l}</label>`; }).join("")}</div></div>`;
+  }).join("") || "Keine Drucker eingerichtet.";
+}
+function blkSet(pid, k, on) {
+  const b = tcBoard(); b.blk ||= {}; const L = b.blk[pid] ||= {order: [], span: {}, h: {}, hidden: []};
+  const keys = k === "tiles" ? TILE_KEYS : [k];
+  L.hidden = on ? L.hidden.filter(x => !keys.includes(x)) : [...new Set([...L.hidden, ...keys])];
+  try { localStorage.setItem("ph-board", JSON.stringify(b)); } catch {}
+  PH.toast("Gespeichert ✓ (dieses Gerät)");
+}
 function tcMove(pid, mode, i, d) { const l = tcGet(pid, mode); [l[i], l[i + d]] = [l[i + d], l[i]]; tcSet(pid, mode, l); }
 function tcDel(pid, mode, i) { const l = tcGet(pid, mode); l.splice(i, 1); tcSet(pid, mode, l); }
 function tcAdd(pid, mode, k) { tcSet(pid, mode, [...tcGet(pid, mode), k]); }
@@ -996,7 +1033,7 @@ function showTab(t) {
   if (t === "drucker") pcLoad();
   if (t === "waechter") { loadNR(true); plInit(); pwHint(); nrTab(); }
   if (t === "lager") loadProfiles();
-  if (t === "uebersicht") { tileCfg(); hePrev(); }
+  if (t === "uebersicht") { tileCfg(); hePrev(); blkCfg(); }
   if (t === "meldungen") tgLoad();
   if (t === "daten") bkLoad();
   if (t === "system" || t === "diagnose") { if (!DG) dgRun(); lgLoad(); }

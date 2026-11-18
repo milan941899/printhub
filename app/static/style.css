@@ -761,10 +761,20 @@ html, body, .board, .board * { overflow-anchor:none; }
 /* ---------- Handy: Dienste als kompakte Statuszeile (antippen = Details) ---------- */
 .svchips { display:none; }
 @media (max-width:700px) {
-  .pblk[data-b="services"] .svchips { display:flex; flex-wrap:wrap; gap:6px; cursor:pointer; }
+  .pblk[data-b="services"] { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:10px 12px; }
+  .pblk[data-b="services"] .svchips { display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none; }
   .pblk[data-b="services"]:not(.svopen) .svcs { display:none; }
   .pblk[data-b="services"].svopen .svcs { margin-top:10px; }
-  .pblk[data-b="services"].svopen .svchip.more { color:var(--acc); }
+  .sv-t { font-size:11px; font-weight:800; letter-spacing:1px; text-transform:uppercase; color:var(--muted); }
+  .sv-ic { display:flex; gap:3px; flex:1; min-width:0; overflow:hidden; }
+  .sv-i { position:relative; font-size:15px; line-height:1; }
+  .sv-i::after { content:""; position:absolute; right:-2px; bottom:-2px; width:7px; height:7px; border-radius:50%; background:var(--muted); border:1.5px solid var(--card); }
+  .sv-i.on::after { background:var(--ok); } .sv-i.warn::after { background:var(--warn); } .sv-i.bad::after { background:var(--err); }
+  .sv-sum { font-size:12.5px; font-weight:700; white-space:nowrap; } .sv-sum.on { color:var(--ok); } .sv-sum.warn { color:var(--warn); } .sv-sum.bad { color:var(--err); }
+  .sv-chev::before { content:"▸"; color:var(--muted); font-size:12px; } .svopen .sv-chev::before { content:"▾"; }
+  /* mit Drucker-Umschalter: Umschalter direkt über der Druckerkarte, Dienste darunter */
+  body.psw-on .board > .pblk[data-b="services"] { order:5; }
+  body.psw-on .board > .pblk[data-b="queue"] { order:6; } body.psw-on .board > .pblk[data-b="history"] { order:7; }
 }
 .svchip { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:99px; background:var(--tile); border:1px solid var(--line);
   font-size:12.5px; font-weight:700; color:var(--fg); white-space:nowrap; }
@@ -1314,3 +1324,20 @@ body.tg-on #tg-steps { display:none; }   /* verbunden: Einrichtungs-Schritte aus
 .fil-top { padding-left:18px; }
 .dtab tbody tr:not(.dexp) td.dname { box-shadow:inset 7px 0 0 var(--fc, transparent); padding-left:14px; }
 .btile { border-left:6px solid var(--fc, var(--line)); }
+
+/* Drucker-Umschalter (Handy) */
+.psw { display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; margin:0 0 10px; padding:2px; position:sticky; top:0; z-index:20;
+  background:linear-gradient(var(--bg) 70%, transparent); }
+.psw::-webkit-scrollbar { display:none; }
+.psw[hidden] { display:none; }
+.psw-b { flex:1 0 auto; min-width:140px; position:relative; overflow:hidden; display:grid; grid-template-columns:auto 1fr; grid-template-rows:auto auto; column-gap:8px; align-items:center;
+  text-align:left; padding:9px 12px 10px; border-radius:14px; border:1.5px solid var(--line); background:var(--card); color:inherit; font:inherit; cursor:pointer; }
+.psw-b.on { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc) inset; }
+.psw-d { grid-row:1 / 3; width:10px; height:10px; border-radius:50%; background:var(--muted); }
+.psw-b.run .psw-d { background:var(--acc); box-shadow:0 0 8px var(--acc); } .psw-b.idle .psw-d { background:var(--ok); }
+.psw-b.err .psw-d { background:var(--err); } .psw-b.off .psw-d { background:var(--off, #475569); }
+.psw-n { font-weight:800; font-size:15px; white-space:nowrap; } .psw-s { font-size:12px; color:var(--muted); white-space:nowrap; }
+.psw-b.run .psw-s { color:var(--acc); font-weight:700; }
+.psw-p { position:absolute; left:0; bottom:0; height:3px; background:var(--acc); border-radius:0 2px 2px 0; }
+body.psw-on .pblk.pcard.psw-hide { display:none !important; }
+.blk-checks { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:6px; } .blk-checks label { display:flex; gap:6px; align-items:center; font-size:14px; }
