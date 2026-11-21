@@ -221,7 +221,7 @@ function row(e) {
   const d = new Date(e.time * 1000);
   const ok = e.result === "fertig";
   const uses = e.usage.map(u => `<span class="use-chip${canBook(u) ? " bookable" : ""}" title="${esc(u.slot)}${u.booked ? "" : " – nicht gebucht: " + esc(u.error || "") + (canBook(u) ? " · antippen zum Abbuchen" : "")}"${canBook(u) ? ` onclick="bkOpen(${esc(JSON.stringify({id: u.id, slot: u.slot, grams: u.grams, job: e.job, printer: e.printer}))})"` : ""}>
-      <span class="dot" style="background:${u.color || "transparent"}"></span>${u.spool ? `<a href="?spool=${u.spool}" onclick="event.preventDefault();filterSpool(${u.spool})">#${u.spool}</a> ` : ""}${esc(u.spool_name || (u.material ? u.material + " (Bambuddy)" : u.slot))} · ${String(u.grams).replace(".", ",")} g${u.booked || u.slot === "aus Bambuddy" ? "" : " ⚠"}</span>`).join("");
+      <span class="dot" style="background:${u.color || "transparent"}"></span>${u.spool ? `<a href="?spool=${u.spool}" onclick="event.preventDefault();filterSpool(${u.spool})">#${u.spool}</a> ` : ""}${esc(u.spool_name || (u.material ? u.material + " (Bambuddy)" : u.slot))} · ${String(u.grams).replace(".", ",")} g${u.booked || u.slot === "aus Bambuddy" ? "" : selfBooked(u) ? " 🖨" : " ⚠"}</span>`).join("");
   const pm = PH.pref("hist_pics", "both");
   if (pm === "thumb") e = {...e, photo: null}; else if (pm === "photo") e = {...e, thumb: null};
   const imgs = pm === "none" ? [] : [e.thumb, e.photo].filter(Boolean);
@@ -266,7 +266,9 @@ async function load(reset = true) {
 
 function filterSpool(id) { $("f-spool").value = String(id); load(); window.scrollTo({top: 0, behavior: "smooth"}); }
 // ---------- Nachträglich abbuchen: Verbrauch ohne Spule (⚠) einer Spule zuordnen ----------
-const canBook = u => !u.booked && u.id && u.grams > 0 && u.slot !== "aus Bambuddy";
+// „Buchung deaktiviert“ = der Drucker bucht selbst (z. B. U1/SpoolLink) → nicht nochmal anbieten
+const selfBooked = u => !u.booked && u.spool && u.error === "Buchung deaktiviert";
+const canBook = u => !u.booked && !selfBooked(u) && u.id && u.grams > 0 && u.slot !== "aus Bambuddy";
 let BK = null;
 async function bkOpen(u) {
   BK = {u, spools: null};
