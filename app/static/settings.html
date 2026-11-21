@@ -1650,7 +1650,8 @@ let PC = [];
 async function pcLoad() {
   const d = await (await fetch("/api/printer-config")).json();
   if (d.error) return PH.toast(d.error, true);
-  PC = d.printers.map(p => ({...p, _old_id: p.id}));
+  const run = new Map((d.running || []).map(r => [r.id, r])), mis = new Map((d.missing || []).map(m => [m.id, m]));
+  PC = d.printers.map(p => ({...p, _old_id: p.id, _st: run.has(p.id) ? (run.get(p.id).online ? "on" : "off") : (mis.get(p.id) || {}).error || "nicht geladen"}));
   pcDraw();
 }
 const pcf = (i, k, label, desc, attrs = "", type = "text") => `<div class="row"><div><div class="t">${label}</div>${desc ? `<div class="d">${desc}</div>` : ""}</div>
@@ -1659,7 +1660,7 @@ const pcf = (i, k, label, desc, attrs = "", type = "text") => `<div class="row">
 function pcDraw() {
   $("pc-list").innerHTML = PC.map((p, i) => {
     const bambu = p.type !== "moonraker";
-    return `<section class="card pc-card"><div class="section-h"><h2 style="margin:0;font-size:17px">${esc(p.name || p.id || "Neuer Drucker")}<span class="muted small" style="font-weight:500;margin-left:8px">${esc(p.host || "")}</span></h2>
+    return `<section class="card pc-card"><div class="section-h"><h2 style="margin:0;font-size:17px">${esc(p.name || p.id || "Neuer Drucker")}<span class="muted small" style="font-weight:500;margin-left:8px">${esc(p.host || "")}</span>${p._st ? `<span class="small" style="font-weight:500;margin-left:8px;color:${p._st === "on" ? "var(--ok)" : p._st === "off" ? "var(--muted)" : "var(--err)"}">${p._st === "on" ? "● verbunden" : p._st === "off" ? "○ offline" : "✕ " + esc(p._st)}</span>` : ""}</h2>
         <div class="unit-in"><button class="small-btn" onclick="pcTest(${i})">🔌 Verbindung testen</button><button class="small-btn" onclick="pcDel(${i})">🗑 Entfernen</button></div></div>
       <div class="set-grid" style="gap:0 24px">
         <div>

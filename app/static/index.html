@@ -993,7 +993,9 @@ async function refresh(force) {
     const hEl = document.getElementById("history"); if (hEl) hEl.innerHTML = historyHtml(lastHistory);
     if (st.theme && st.theme !== document.documentElement.dataset.theme) PH.setTheme(st.theme);
     const online = st.printers.filter(p => p.online).length;
-    document.getElementById("summary").textContent = `${online} von ${st.printers.length} verbunden`;
+    const miss = st.missing || [];
+    document.getElementById("summary").textContent = `${online} von ${st.printers.length + miss.length} verbunden`
+      + miss.map(m => ` · „${m.name}“ nicht geladen (${m.error})`).join("");
     document.getElementById("live").style.background = online ? "" : "var(--off)";
     if (!!st.queue !== queueOn) { queueOn = !!st.queue; renderBoard(); }
     document.getElementById("notify-state").textContent = `Benachrichtigungen: ${st.notify ? "an (ntfy)" : "aus"}`;

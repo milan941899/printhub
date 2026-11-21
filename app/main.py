@@ -133,16 +133,42 @@ def _restart_on_start(printer, job):
 
 
 printers = {}
+load_errors = {}          # Kürzel -> Grund, warum ein eingetragener Drucker nicht geladen wurde
 for pc in cfg.get("printers", []):
-    p = TYPES[pc["type"]](pc, store, spoolman)
-    p.notifier = notifier
-    p.settings = settings
-    p.history = history
-    p.media_dir = MEDIA_DIR
-    p.on_job_start.append(_restart_on_start)
-    if pc.get("shelly"):
-        p.shelly = Shelly(pc["shelly"], store, pc["id"], int(pc.get("shelly_channel", 0)))
-    printers[pc["id"]] = p
+    try:
+        p = TYPES[pc["type"]](pc, store, spoolman)
+        p.notifier = notifier
+        p.settings = settings
+        p.history = history
+        p.media_dir = MEDIA_DIR
+        p.on_job_start.append(_restart_on_start)
+        if pc.get("shelly"):
+            p.shelly = Shelly(pc["shelly"], store, pc["id"], int(pc.get("shelly_channel", 0)))
+        printers[pc["id"]] = p
+    except Exception as e:  # ein kaputter Eintrag darf die anderen Drucker nicht verhindern
+        log.exception("Drucker %s konnte nicht geladen werden", pc.get("id"))
+        load_errors[str(pc.get("id") or "?")] = f"{e.__class__.__name__}: {e}"
+
+_cfg_cache = {"mt": None, "list": []}
+
+
+def _cfg_printers():
+    """Drucker laut config.yaml (nach Änderungszeit zwischengespeichert)."""
+    try:
+        mt = os.path.getmtime(CONFIG)
+        if mt != _cfg_cache["mt"]:
+            _cfg_cache["list"] = [{"id": str(pc.get("id")), "name": pc.get("name") or pc.get("id")}
+                                  for pc in (_read_cfg().get("printers") or [])]
+            _cfg_cache["mt"] = mt
+    except (OSError, yaml.YAMLError):
+        pass
+    return _cfg_cache["list"]
+
+
+def _missing_printers():
+    """Eingetragen, aber nicht in Betrieb: Ladefehler oder seit dem Speichern nicht neu gestartet."""
+    return [{**c, "error": load_errors.get(c["id"]) or "seit dem Speichern nicht neu gestartet"}
+            for c in _cfg_printers() if c["id"] not in printers]
 
 # Druckwächter: Zugang zu PrintHub (Plattenerkennung) – Kamera des (ersten) Bambu-Druckers
 _plate_pid = next((p.id for p in printers.values() if p.type == "bambu" and p.camera), "")
@@ -2485,7 +2511,7 @@ async def api_state(request):
         st["maint_due"] = maint_due.get(p.id, 0)
         out.append(st)
     n = int(settings["history_on_dashboard"])
-    return JSONResponse({"printers": out, "history": history.recent(n) if n else [], "spoolman_error": sp_err,
+    return JSONResponse({"printers": out, "missing": _missing_printers(), "history": history.recent(n) if n else [], "spoolman_error": sp_err,
                          "notify": notifier.enabled, "theme": settings["theme"],
                          "queue": settings["queue_on_dashboard"] and bambuddy.enabled})
 
@@ -3507,7 +3533,7 @@ async def api_printer_config(request):
                 d[k + "_set"] = bool(pc.get(k))
             out.append(d)
         running = [{"id": p.id, "online": p.online} for p in printers.values()]
-        return JSONResponse({"printers": out, "running": running, "path": CONFIG})
+        return JSONResponse({"printers": out, "running": running, "missing": _missing_printers(), "path": CONFIG})
     body = await request.json()
     try:
         c = await run_in_threadpool(_read_cfg)
