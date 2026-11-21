@@ -376,11 +376,11 @@ class MoonrakerPrinter(BasePrinter):
             # alle Kanäle setzen (RGB + Weiß); Leuchten ohne Weiß-Kanal lehnen WHITE ab → dann nur RGB
             v = 1 if on else 0
             led = lp.split(" ", 1)[1]
-            g = f"SET_LED LED={led} RED={v} GREEN={v} BLUE={v} WHITE={v}"
+            g = f"SET_LED LED={led} RED={v} GREEN={v} BLUE={v} WHITE={v} SYNC=0"   # SYNC=0: sofort, nicht erst nach den Druckbewegungen
         r = self.s.post(self.base + "/printer/gcode/script", params={"script": g}, headers=self.headers, timeout=10)
         if not r.ok and not lp.startswith("output_pin "):
             log.info("[%s] Licht mit WHITE abgelehnt (%s) – versuche nur RGB", self.id, r.text[:200])
-            g = f"SET_LED LED={led} RED={v} GREEN={v} BLUE={v}"
+            g = f"SET_LED LED={led} RED={v} GREEN={v} BLUE={v} SYNC=0"
             r = self.s.post(self.base + "/printer/gcode/script", params={"script": g}, headers=self.headers, timeout=10)
         if not r.ok:
             try:
