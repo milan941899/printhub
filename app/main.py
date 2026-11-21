@@ -2471,6 +2471,11 @@ async def api_state(request):
         st["track_usage"] = p.track_usage
         st["camera"] = p.camera is not None
         st["cam_stream"] = bool(p.camera is not None and hasattr(p.camera, "stream_url") and _stream_ok(p))
+        st["cam_webrtc"] = bool(p.camera is not None and isinstance(getattr(p.camera, "_webrtc", False), str))
+        if p.camera is not None and hasattr(p.camera, "webrtc_url") and getattr(p.camera, "_webrtc", False) is False \
+                and not getattr(p.camera, "_wlook", False):
+            p.camera._wlook = True
+            threading.Thread(target=p.camera.webrtc_url, daemon=True).start()
         st["energy"] = p.energy_status()
         job = store.get_job(p.id)
         st["thumb"] = f"/media/{job['thumb']}" if job and job.get("thumb") else None
@@ -4392,6 +4397,22 @@ def _stream_ok(p):
         return False
 
 
+async def api_camera_webrtc(request):
+    """WebRTC-Verbindungsaufbau (camera-streamer) über den Tower durchreichen; das Video läuft danach direkt
+    vom Drucker zum Browser (im Heimnetz bzw. über VPN)."""
+    p = printers.get(request.path_params["pid"])
+    cam = p.camera if p else None
+    url = await run_in_threadpool(cam.webrtc_url) if cam is not None and hasattr(cam, "webrtc_url") else None
+    if not url:
+        return JSONResponse({"error": "Keine WebRTC-Kamera"}, status_code=404)
+    body = await request.body()
+    try:
+        r = await run_in_threadpool(lambda: cam.s.post(url, data=body, headers={**cam.headers, "Content-Type": "application/json"}, timeout=10))
+    except Exception as e:
+        return JSONResponse({"error": f"Kamera nicht erreichbar: {e}"}, status_code=503)
+    return Response(r.content, status_code=r.status_code, media_type=r.headers.get("Content-Type", "application/json"))
+
+
 async def api_camera_stream(request):
     """Videostream der Kamera durchreichen (Snapmaker U1/Klipper: wie in Fluidd), damit es auch über VPN geht."""
     p = printers.get(request.path_params["pid"])
@@ -4535,6 +4556,7 @@ app = Starlette(
         Route("/api/printers/{pid}/light", api_light, methods=["POST"]),
         Route("/api/printers/{pid}/camera.jpg", api_camera),
         Route("/api/printers/{pid}/camera.mjpg", api_camera_stream),
+        Route("/api/printers/{pid}/webrtc", api_camera_webrtc, methods=["POST"]),
         Route("/api/printers/{pid}/{action}", api_control, methods=["POST"]),
         Mount("/static", StaticFiles(directory=STATIC), name="static"),
     ],

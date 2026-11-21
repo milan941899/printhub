@@ -198,6 +198,17 @@ class SnapshotCamera:
             raise RuntimeError("Keine Webcam in Moonraker eingerichtet – 'camera_url' in der config.yaml setzen")
         return urljoin(self.web_base + "/", cams[0]["snapshot_url"])
 
+    def webrtc_url(self):
+        """WebRTC-Adresse von camera-streamer (Snapmaker U1: /webcam/webrtc) – zwischengespeichert."""
+        if getattr(self, "_webrtc", False) is not False:
+            return self._webrtc
+        try:
+            c = next((c for c in self._cams() if "webrtc" in (c.get("service") or "") and c.get("stream_url")), None)
+            self._webrtc = urljoin(self.web_base + "/", c["stream_url"]) if c else None
+        except Exception:
+            return None
+        return self._webrtc
+
     def stream_url(self):
         """MJPEG-Stream der Kamera – None, wenn keiner da ist.
         Snapmaker U1 meldet „webrtc-camerastreamer“ (/webcam/webrtc); camera-streamer liefert daneben aber auch

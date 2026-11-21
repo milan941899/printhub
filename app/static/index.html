@@ -36,6 +36,7 @@
   <div class="lbbox">
     <div class="lbhead"><b id="lbtitle">Kamera</b><button class="small-btn" onclick="closeCam()">✕ Schließen</button></div>
     <img id="lbimg" alt="Kamera groß">
+    <video id="lbvid" autoplay muted playsinline hidden></video>
   </div>
 </div>
 <div class="modal" id="m-pick">
@@ -84,11 +85,38 @@ let bigCam = null;
 const camStreamOk = id => ((typeof lastPrinters !== "undefined" ? lastPrinters : []).find(p => p.id === id) || {}).cam_stream;
 const camLiveSmall = () => PH.pref("cam_small", "snap") === "live" && !PH.saving() && !PH.cellular();
 const streamUrl = id => `/api/printers/${id}/camera.mjpg?t=${Date.now()}`;
+// WebRTC (camera-streamer, z. B. Snapmaker U1): Aufbau über den Tower, Video direkt vom Drucker → flüssig wie in Fluidd
+const camWebrtcOk = id => ((typeof lastPrinters !== "undefined" ? lastPrinters : []).find(p => p.id === id) || {}).cam_webrtc;
+async function rtcStart(id, video) {
+  const url = `/api/printers/${id}/webrtc`;
+  const post = b => fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(b)});
+  const offer = await (await post({type: "request", res: ""})).json();
+  if (!offer || !offer.sdp) throw new Error(offer && offer.error || "keine Antwort");
+  const pc = new RTCPeerConnection({sdpSemantics: "unified-plan", iceServers: offer.iceServers || []});
+  pc.addTransceiver("video", {direction: "recvonly"});
+  pc.ontrack = e => { if (e.track.kind === "video") video.srcObject = e.streams[0] || new MediaStream([e.track]); };
+  pc.onicecandidate = e => { if (e.candidate) post({type: "remote_candidate", id: offer.id, candidates: [e.candidate]}).catch(() => {}); };
+  await pc.setRemoteDescription(offer);
+  const ans = await pc.createAnswer();
+  await pc.setLocalDescription(ans);
+  await post({type: "answer", id: offer.id, sdp: pc.localDescription.sdp});
+  return pc;
+}
+function rtcStop(o) { try { o && o.pc && o.pc.close(); } catch {} if (o && o.video) { o.video.srcObject = null; } }
+let bigRtc = null;
 function openCam(id) {
   bigCam = id;
   const lb = document.getElementById("lightbox");
   const c = cams[id];
-  if (camStreamOk(id) && !PH.saving()) {
+  const vid = document.getElementById("lbvid"), im0 = document.getElementById("lbimg");
+  vid.hidden = true; im0.hidden = false;
+  if (camWebrtcOk(id) && !PH.saving()) {
+    if (c && c.img.src) im0.src = c.img.src;      // bis das Video da ist: letztes Bild
+    const me = bigRtc = {video: vid, pc: null};
+    const tmo = setTimeout(() => { if (bigRtc === me && vid.hidden) { rtcStop(me); bigRtc = null; } }, 8000);   // kein Video → Einzelbilder
+    vid.onplaying = () => { if (bigRtc === me) { clearTimeout(tmo); vid.hidden = false; im0.hidden = true; } };
+    rtcStart(id, vid).then(pc => { if (bigRtc === me) me.pc = pc; else pc.close(); }).catch(() => { if (bigRtc === me) { clearTimeout(tmo); bigRtc = null; } });
+  } else if (camStreamOk(id) && !PH.saving()) {
     const im = document.getElementById("lbimg");
     im.onerror = () => { im.onerror = null; im.dataset.stream = ""; };   // Stream geht nicht → wieder Einzelbilder
     im.dataset.stream = "1"; im.src = streamUrl(id);
@@ -99,6 +127,8 @@ function openCam(id) {
 }
 function closeCam() {
   bigCam = null; document.getElementById("lightbox").classList.remove("open");
+  if (bigRtc) { rtcStop(bigRtc); bigRtc = null; }
+  document.getElementById("lbvid").hidden = true; document.getElementById("lbimg").hidden = false;
   const im = document.getElementById("lbimg");
   if (im.dataset.stream) { im.dataset.stream = ""; im.removeAttribute("src"); }   // Stream beenden
 }
@@ -120,8 +150,20 @@ async function camTick() {
     c.wrap.classList.toggle("off", !!off);
     if (off) { c.msg.textContent = "📷 Kamera aus – Drucker offline"; if (c.img.src) { c.img.removeAttribute("src"); c.url = null; } continue; }
     if (c.msg.textContent.startsWith("📷 Kamera aus")) c.msg.textContent = "verbinde …";
-    const bigStream = big && document.getElementById("lbimg").dataset.stream;
+    const bigStream = big && (document.getElementById("lbimg").dataset.stream || bigRtc);
     // kleines Bild als Live-Stream (pro Gerät einstellbar): einmal setzen, dann läuft es von selbst
+    // kleines Bild per WebRTC (wenn „Live-Stream“ eingestellt)
+    const liveR = camWebrtcOk(id) && camLiveSmall() && c.visible && c.wrap.isConnected && !c.noRtc;
+    if (liveR) {
+      if (!c.rtc) {
+        const v = document.createElement("video"); v.autoplay = v.muted = v.playsInline = true; v.className = "camvid"; v.hidden = true;
+        c.wrap.insertBefore(v, c.img); c.rtc = {video: v, pc: null};
+        const me = c.rtc, tmo = setTimeout(() => { if (c.rtc === me && v.hidden) { rtcStop(me); v.remove(); c.rtc = null; c.noRtc = true; } }, 8000);
+        v.onplaying = () => { clearTimeout(tmo); v.hidden = false; c.img.hidden = true; c.msg.textContent = ""; };
+        rtcStart(id, v).then(pc => { if (c.rtc === me) me.pc = pc; else pc.close(); }).catch(() => { clearTimeout(tmo); if (c.rtc === me) { v.remove(); c.rtc = null; c.noRtc = true; } });
+      }
+      if (c.rtc) continue;
+    } else if (c.rtc) { rtcStop(c.rtc); c.rtc.video.remove(); c.rtc = null; c.img.hidden = false; }
     const liveS = camStreamOk(id) && camLiveSmall() && c.visible && c.wrap.isConnected;
     if (liveS) {
       if (!c.live) { c.live = true; c.img.onerror = () => { c.live = false; c.noStream = true; }; if (!c.noStream) { c.img.src = streamUrl(id); c.msg.textContent = ""; } }

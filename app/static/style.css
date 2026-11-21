@@ -1342,3 +1342,6 @@ body.tg-on #tg-steps { display:none; }   /* verbunden: Einrichtungs-Schritte aus
 body.psw-on .pblk.pcard.psw-hide { display:none !important; }
 .blk-checks { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:6px; } .blk-checks label { display:flex; gap:6px; align-items:center; font-size:14px; }
 .hx-cham { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; } .hx-cham span { font-size:12.5px; color:var(--muted); background:var(--tile); border:1px solid var(--line); border-radius:99px; padding:3px 10px; } .hx-cham b { color:var(--fg); }
+#lbvid { width:100%; max-height:calc(100vh - 110px); object-fit:contain; border-radius:10px; background:#000; display:block; }
+#lbvid[hidden], #lbimg[hidden], .camvid[hidden] { display:none; }
+.camthumb .camvid { width:100%; height:100%; object-fit:cover; display:block; }
