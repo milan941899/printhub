@@ -199,13 +199,33 @@ class SnapshotCamera:
         return urljoin(self.web_base + "/", cams[0]["snapshot_url"])
 
     def stream_url(self):
-        """MJPEG-Stream (wie Fluidd ihn zeigt) – None, wenn die Kamera keinen anbietet."""
+        """MJPEG-Stream der Kamera – None, wenn keiner da ist.
+        Snapmaker U1 meldet „webrtc-camerastreamer“ (/webcam/webrtc); camera-streamer liefert daneben aber auch
+        MJPEG unter /webcam/stream. Kandidaten werden einmal geprüft (Content-Type multipart) und gemerkt."""
         if getattr(self, "_stream", False) is not False:
             return self._stream
         try:
-            cams = [c for c in self._cams() if c.get("stream_url") and c.get("service", "mjpegstreamer") in
-                    ("mjpegstreamer", "mjpegstreamer-adaptive", "mjpeg", "")]
-            self._stream = urljoin(self.web_base + "/", cams[0]["stream_url"]) if cams else None
+            cand = []
+            for c in self._cams():
+                su = c.get("stream_url") or ""
+                if not su:
+                    continue
+                if "webrtc" in (c.get("service") or "") or su.rstrip("/").endswith("webrtc"):
+                    base = su.rstrip("/").rsplit("/", 1)[0]
+                    cand += [base + "/stream", base + "/?action=stream", base + "/mjpeg"]
+                else:
+                    cand.append(su)
+            cand += ["/webcam/stream", "/webcam/?action=stream"]
+            self._stream = None
+            for u in dict.fromkeys(cand):
+                url = urljoin(self.web_base + "/", u)
+                try:
+                    with self.s.get(url, headers=self.headers, stream=True, timeout=(3, 5)) as r:
+                        if r.ok and "multipart" in r.headers.get("Content-Type", ""):
+                            self._stream = url
+                            break
+                except Exception:
+                    continue
         except Exception:
             self._looking = False                       # später erneut versuchen
             return None
