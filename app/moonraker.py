@@ -156,7 +156,11 @@ class MoonrakerPrinter(BasePrinter):
         job = self.store.get_job(self.id)
         if state in ACTIVE:
             if job is None and prev not in ACTIVE:
-                self.job_started(ps.get("filename") or "Druck", {"filename": ps.get("filename", "")})
+                hm = (st.get("print_task_config") or {}).get("extruder_map_table")
+                extra = {"filename": ps.get("filename", "")}
+                if isinstance(hm, list) and hm:
+                    extra["head_map"] = hm[:32]
+                self.job_started(ps.get("filename") or "Druck", extra)
             elif job is not None:
                 pd = ps.get("print_duration") or 0
                 rem = pd / progress - pd if progress and progress > 0.02 and pd > 60 else None
@@ -191,8 +195,28 @@ class MoonrakerPrinter(BasePrinter):
             grams = self._grams_from_gcode(fn)
         if grams is None:
             raise ValueError("Keine Angabe 'filament used [g]' im G-Code gefunden")
-        # Annahme: Filament 1 -> T0, Filament 2 -> T1 usw. (so ordnet Snapmaker Orca standardmäßig zu)
-        return [(f"T{i}", g) for i, g in enumerate(grams) if g > 0 and i < self.channels]
+        # Snapmaker U1: der Drucker ordnet Slicer-Filament → Kopf frei zu (print_task_config.extruder_map_table,
+        # z. B. [1, 3, 2, 0] = Filament 1 auf T1, Filament 2 auf T3 …). Ohne Tabelle: Filament 1 → T0 usw.
+        m = self._map_table(job)
+        out = {}
+        for i, g in enumerate(grams):
+            if g <= 0:
+                continue
+            h = m[i] if m and i < len(m) and isinstance(m[i], int) and 0 <= m[i] < self.channels else i
+            if h < self.channels:
+                out[f"T{h}"] = out.get(f"T{h}", 0) + g
+        return list(out.items())
+
+    def _map_table(self, job):
+        """Zuordnung Filament → Kopf; beim Druckstart gemerkt, damit sie zum Druck passt."""
+        if job.get("head_map"):
+            return job["head_map"]
+        with self.lock:
+            m = (self.status_data.get("print_task_config") or {}).get("extruder_map_table")
+        if isinstance(m, list) and m:
+            job["head_map"] = m[:self.channels * 8]
+            return job["head_map"]
+        return None
 
     def _grams_from_gcode(self, fn):
         url = self.base + "/server/files/gcodes/" + quote(fn)
