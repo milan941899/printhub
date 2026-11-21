@@ -63,6 +63,28 @@ class MoonrakerPrinter(BasePrinter):
         else:
             self.camera = None
 
+    def shutdown_host(self, timeout=60):
+        """Vor dem Stromabschalten: Linux im Drucker sauber herunterfahren und warten, bis Moonraker weg ist.
+        Gibt eine kurze Beschreibung zurück. Ist der Drucker schon nicht erreichbar, passiert nichts."""
+        try:
+            self.s.get(self.base + "/server/info", headers=self.headers, timeout=3).raise_for_status()
+        except Exception:
+            return "war schon aus"
+        try:
+            self.s.post(self.base + "/machine/shutdown", headers=self.headers, timeout=5)
+        except Exception:
+            pass            # Verbindung reißt beim Herunterfahren oft schon ab – zählt nicht als Fehler
+        t0 = time.time()
+        time.sleep(3)
+        while time.time() - t0 < timeout:
+            try:
+                self.s.get(self.base + "/server/info", headers=self.headers, timeout=2)
+            except Exception:
+                time.sleep(8)          # Netz ist weg – kurz warten, bis das System ganz unten ist
+                return f"heruntergefahren ({int(time.time() - t0)} s)"
+            time.sleep(2)
+        return f"nach {timeout} s noch erreichbar – trotzdem ausgeschaltet"
+
     def _extruders(self):
         return ["extruder"] + [f"extruder{i}" for i in range(1, self.channels)]
 

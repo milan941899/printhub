@@ -101,6 +101,11 @@ class Power:
                 raise ValueError(f"Ausschalten gesperrt: {why}")
         pid = self._plug(p, s)
         err = None
+        down = ""
+        # Klipper-Drucker (U1): erst sauber herunterfahren, dann Strom weg – aber nur, wenn es überhaupt eine Steckdose gibt
+        if not on and hasattr(p, "shutdown_host") and (pid or p.shelly):
+            down = p.shutdown_host()
+            log.info("[%s] vor dem Ausschalten: %s", p.id, down)
         if pid:
             try:
                 self.bb.plug_control(pid, on)
@@ -119,7 +124,7 @@ class Power:
             if on:
                 s.update(on_since=now, last_active=now, ended_at=None)
         log.info("[%s] Drucker %s (%s, %s)", p.id, "eingeschaltet" if on else "ausgeschaltet", reason, via)
-        return via
+        return via + (f", {down}" if down else "")
 
     def safe_off(self, p):
         try:
