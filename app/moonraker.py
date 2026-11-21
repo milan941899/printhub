@@ -164,6 +164,13 @@ class MoonrakerPrinter(BasePrinter):
         th = (st.get("toolhead") or {}).get("extruder")
         cur = f"T{(th or 'extruder').replace('extruder', '') or '0'}" if th else None
         heads = self.store.data.setdefault("heads", {}).setdefault(self.id, {})
+        if state == "printing":
+            # höchste Z-Höhe des Drucks merken: so weit darf das Bett bei der Plattenprüfung nie hochfahren
+            z = ((st.get("gcode_move") or {}).get("gcode_position") or [0, 0, 0])[2]
+            mz = self.store.data.setdefault("max_z", {})
+            prog = (st.get("virtual_sdcard") or {}).get("progress") or 0
+            if z and z < 400 and 0.01 < prog < 0.995 and z > (mz.get(self.id) or 0) + 0.5:   # ohne Start-/End-G-Code
+                mz[self.id] = round(z, 1)
         if state == "printing" and cur:
             h = heads.setdefault(cur, {"sec": 0.0, "changes": 0})
             if self._head_t and self._head_cur:
@@ -202,6 +209,7 @@ class MoonrakerPrinter(BasePrinter):
                 extra = {"filename": ps.get("filename", "")}
                 if isinstance(hm, list) and hm:
                     extra["head_map"] = hm[:32]
+                self.store.data.setdefault("max_z", {})[self.id] = 0     # neue Höhe messen
                 self.job_started(ps.get("filename") or "Druck", extra)
             elif job is not None:
                 pd = ps.get("print_duration") or 0
@@ -469,6 +477,89 @@ class MoonrakerPrinter(BasePrinter):
             except Exception:
                 msg = r.text
             raise ValueError(f"Klipper lehnt das Licht ab: {str(msg)[:160]}")
+
+    # --- Warteschlange (Moonraker [job_queue]) und Startsperre ----------------------------------------
+    def _api(self, method, path, timeout=10, **kw):
+        r = self.s.request(method, self.base + path, headers=self.headers, timeout=timeout, **kw)
+        if not r.ok:
+            try:
+                msg = r.json().get("error", {}).get("message") or r.text
+            except Exception:
+                msg = r.text
+            raise RuntimeError(f"Moonraker {r.status_code}: {str(msg)[:200]}")
+        return (r.json() or {}).get("result")
+
+    def queue_status(self):
+        """{"jobs": [{"job_id", "filename", "time_added"}], "state": "paused"|"ready"|…} – None = keine Warteschlange."""
+        try:
+            res = self._api("GET", "/server/job_queue/status", timeout=5)
+        except RuntimeError as e:
+            if "404" in str(e):
+                return None
+            raise
+        return {"jobs": res.get("queued_jobs") or [], "state": res.get("queue_state")}
+
+    def queue_add(self, filenames):
+        return self._api("POST", "/server/job_queue/job", json={"filenames": list(filenames), "reset": False})
+
+    def queue_remove(self, job_ids):
+        return self._api("DELETE", "/server/job_queue/job", params={"job_ids": ",".join(job_ids)})
+
+    def queue_pause(self):
+        return self._api("POST", "/server/job_queue/pause")
+
+    def lock_info(self):
+        """Startsperre installiert? (Makro PRINTHUB_SPERRE) → {"lock", "version", "off"}."""
+        objs = self._api("GET", "/printer/objects/list", timeout=5).get("objects") or []
+        if "gcode_macro PRINTHUB_SPERRE" not in objs or "gcode_macro PRINTHUB_FREIGABE" not in objs:
+            return {"lock": False}
+        st = self._api("GET", "/printer/objects/query?gcode_macro%20PRINTHUB_SPERRE", timeout=5)
+        m = (st.get("status") or {}).get("gcode_macro PRINTHUB_SPERRE") or {}
+        return {"lock": True, "version": m.get("version"), "off": bool(m.get("aus"))}
+
+    def gcode_messages(self, count=100):
+        """Letzte Konsolenzeilen [{"message", "time", "type"}]."""
+        return self._api("GET", "/server/gcode_store", params={"count": count}, timeout=5).get("gcode_store") or []
+
+    def file_meta(self, fn):
+        try:
+            return self._api("GET", "/server/files/metadata", params={"filename": fn}, timeout=10) or {}
+        except RuntimeError:
+            return {}
+
+    def file_thumb(self, fn):
+        """Größtes Vorschaubild einer G-Code-Datei (bytes) oder None."""
+        meta = self.file_meta(fn)
+        th = sorted(meta.get("thumbnails") or [], key=lambda t: t.get("width") or 0)
+        if not th:
+            return None
+        folder = fn.rsplit("/", 1)[0] + "/" if "/" in fn else ""
+        r = self.s.get(self.base + "/server/files/gcodes/" + quote(folder + th[-1]["relative_path"]), headers=self.headers, timeout=10)
+        return r.content if r.ok else None
+
+    def gcode(self, script, timeout=30):
+        return self._api("POST", "/printer/gcode/script", params={"script": script}, timeout=timeout)
+
+    def release_start(self, fn):
+        """Startsperre für 60 s freigeben und die Datei starten."""
+        self.gcode("PRINTHUB_FREIGABE", timeout=10)
+        self._api("POST", "/printer/print/start", params={"filename": fn}, timeout=15)
+
+    def plate_pose(self, x, y, z, min_z=None):
+        """Prüfposition fürs Plattenfoto anfahren: X/Y referenzieren falls nötig, Bett auf Höhe z (nie unter min_z),
+        Kopf nach x/y. Gibt die tatsächlich angefahrene Höhe zurück (None = Z nicht referenziert, Bett bleibt stehen)."""
+        with self.lock:
+            homed = ((self.status_data.get("toolhead") or {}).get("homed_axes") or "").lower()
+        if "x" not in homed or "y" not in homed:
+            self.gcode("G28 X Y", timeout=120)
+        cmds = ["G90"]
+        zz = None
+        if "z" in homed and z is not None:
+            zz = max(float(z), float(min_z or 0))
+            cmds.append(f"G1 Z{zz:.1f} F600")
+        cmds += [f"G1 X{float(x):.1f} Y{float(y):.1f} F6000", "M400"]
+        self.gcode("\n".join(cmds), timeout=120)
+        return zz
 
     def control(self, action):
         path = {"pause": "/printer/print/pause", "resume": "/printer/print/resume", "stop": "/printer/print/cancel"}.get(action)

@@ -353,7 +353,7 @@ def plaene():
         return {}
     try:
         with open(PLANS, encoding="utf-8") as f:
-            return {int(k): v for k, v in json.load(f).items()}
+            return {int(k): v for k, v in json.load(f).items() if str(k).isdigit()}   # „u1:…“ = Klipper-Wächter
     except Exception:
         return {}
 

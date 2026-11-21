@@ -48,6 +48,7 @@ from .power import Power
 from .queuecheck import QueueCheck
 from . import schedule as sched
 from .nachtruhe import read_env
+from .klipper_guard import KlipperGuard
 from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 from .store import Store
 
@@ -142,6 +143,8 @@ for pc in cfg.get("printers", []):
         p.history = history
         p.media_dir = MEDIA_DIR
         p.auto_assign = pc.get("auto_assign", True)
+        p.plate_pose_cfg = {"on": bool(pc.get("plate_pose")), "x": pc.get("plate_x", 135), "y": pc.get("plate_y", 10),
+                            "z": pc.get("plate_z", 30)}
         p.on_job_start.append(_restart_on_start)
         if pc.get("shelly"):
             p.shelly = Shelly(pc["shelly"], store, pc["id"], int(pc.get("shelly_channel", 0)))
@@ -213,6 +216,8 @@ def _tg_status():
 
 telegram = Telegram(settings, TG_INBOX, _tg_status)
 power = Power(settings, printers, bambuddy, notifier, os.path.join(DATA_DIR, "nachtruhe", "zustand.json"))
+kguard = KlipperGuard(printers, plate, power, notifier, store, nachtruhe, read_env, lambda: _plans(), lambda d: _plans_save(d),
+                      lambda: _wcfg(), lambda *a: _qlog(*a))
 qcheck = QueueCheck(bambuddy, store, lambda: _spool_map(), lambda: settings.get("short_reserve_g") or 10,
                     lambda: (settings.get("rest_tip_max") or 0) if settings.get("rest_tip") else 0,
                     lambda: settings.get("swap_suggest", True))
@@ -2556,11 +2561,15 @@ async def api_state(request):
         st["shelly"] = bool(p.shelly)
         st["power"] = power.info(p)
         st["maint_due"] = maint_due.get(p.id, 0)
+        if p.type == "moonraker":
+            qi = kguard.info(p)
+            if qi:
+                st["queue"] = qi
         out.append(st)
     n = int(settings["history_on_dashboard"])
     return JSONResponse({"printers": out, "missing": _missing_printers(), "history": history.recent(n) if n else [], "spoolman_error": sp_err,
                          "notify": notifier.enabled, "theme": settings["theme"],
-                         "queue": settings["queue_on_dashboard"] and bambuddy.enabled})
+                         "queue": settings["queue_on_dashboard"] and (bambuddy.enabled or _klipper_queue_on())})
 
 
 MANIFEST = {
@@ -3283,8 +3292,12 @@ def _printer_for_item(q):
     return bambus[0] if len(bambus) == 1 else None
 
 
+def _klipper_queue_on():
+    return any(kguard.info(p) for p in printers.values() if p.type == "moonraker")
+
+
 def _queue_checked():
-    items = bambuddy.queue()
+    items = bambuddy.queue() if bambuddy.enabled else []
     for q in items:
         if q.get("status") == "pending":
             try:
@@ -3299,7 +3312,7 @@ def _queue_checked():
 def _plans():
     try:
         with open(PLANS, encoding="utf-8") as f:
-            return {int(k): v for k, v in json.load(f).items()}
+            return {(int(k) if str(k).isdigit() else k): v for k, v in json.load(f).items()}
     except Exception:
         return {}
 
@@ -3349,7 +3362,8 @@ def _fenster_text(win, d):
 
 
 def _queue_plan(items):
-    """Vorschau an die Aufträge hängen (q['plan']) – Rückgabe: Zusammenfassung."""
+    """Vorschau an die Aufträge hängen (q['plan']) – Rückgabe: Zusammenfassung.
+    Jeder Drucker hat seine eigene Zeitleiste: Bambuddy-Aufträge zusammen, Klipper-Aufträge je Drucker."""
     win, tz = _wcfg()
     now = _local_now(tz)
     pl = _plans()
@@ -3357,38 +3371,51 @@ def _queue_plan(items):
     if any(k not in ids for k in pl):                  # erledigte/gelöschte Pläne aufräumen
         _plans_save({k: v for k, v in pl.items() if k in ids})
     forced = {k for k, v in pl.items() if v.get("force") and k in ids}
-    left, druckt = None, None
+    groups = {}
     for q in items:
-        if q.get("status") == "printing":
-            druckt = q
-            p = _printer_for_item(q)
-            try:
-                rem = p.status().get("remaining_min") if p else None
-            except Exception:
-                rem = None
-            left = (rem * 60) if rem else (q.get("seconds") or 0) // 2
-    pend, lokal = [], {}
-    for q in items:
-        if q.get("status") == "pending":
-            lokal[q["id"]] = _to_local(q.get("scheduled"), tz)
-            q["forced"] = q["id"] in forced
-            pend.append({**q, "scheduled": lokal[q["id"]]})
-    if not pend:
-        out, ende = {}, None
-    else:
-        out, ende = sched.plan(pend, win, now, left, forced)
-    for q in items:
-        if q.get("status") == "pending":
-            q["plan"] = out.get(q["id"])
-            d = lokal.get(q["id"])
-            q["sched_text"] = sched.wann(d, now) if d else ""
+        groups.setdefault(q.get("pid") if q.get("src") == "moonraker" else "_bb", []).append(q)
     summary = {"now": now.timestamp()}
-    if druckt and left:
-        e = now + _td(seconds=left)
-        summary["printing_until"] = f"{sched.wann(e, now)}"
-        ende = max(ende or 0, e.timestamp())
-    if ende:
-        summary["end"] = sched.wann(_dt.fromtimestamp(ende), now)
+    ende_all = None
+    for gk, grp in groups.items():
+        left, druckt = None, None
+        if gk != "_bb":
+            p = printers.get(gk)
+            try:
+                stp = p.status() if p and p.online else {}
+            except Exception:
+                stp = {}
+            if stp.get("printing") or stp.get("paused"):
+                druckt = True
+                left = (stp.get("remaining_min") or 30) * 60
+        for q in grp:
+            if q.get("status") == "printing":
+                druckt = q
+                p = _printer_for_item(q)
+                try:
+                    rem = p.status().get("remaining_min") if p else None
+                except Exception:
+                    rem = None
+                left = (rem * 60) if rem else (q.get("seconds") or 0) // 2
+        pend, lokal = [], {}
+        for q in grp:
+            if q.get("status") == "pending":
+                lokal[q["id"]] = _to_local(q.get("scheduled"), tz)
+                q["forced"] = q["id"] in forced
+                pend.append({**q, "scheduled": lokal[q["id"]]})
+        out, ende = sched.plan(pend, win, now, left, forced) if pend else ({}, None)
+        for q in grp:
+            if q.get("status") == "pending":
+                q["plan"] = out.get(q["id"])
+                d = lokal.get(q["id"])
+                q["sched_text"] = sched.wann(d, now) if d else ""
+        if druckt and left and "printing_until" not in summary:
+            e = now + _td(seconds=left)
+            summary["printing_until"] = f"{sched.wann(e, now)}"
+            ende = max(ende or 0, e.timestamp())
+        if ende:
+            ende_all = max(ende_all or 0, ende)
+    if ende_all:
+        summary["end"] = sched.wann(_dt.fromtimestamp(ende_all), now)
     summary["window"] = f"heute {_fenster_text(win, now)}"
     return summary
 
@@ -3404,6 +3431,8 @@ def _parse_when(s, now):
 
 
 def _queue_set_plan(qid, b, by="PrintHub"):
+    if ":" in str(qid):
+        return _kqueue_set_plan(str(qid), b, by)
     items = {q["id"]: q for q in bambuddy.queue()}
     q = items.get(int(qid))
     if not q or q.get("status") != "pending":
@@ -3444,6 +3473,41 @@ def _queue_set_plan(qid, b, by="PrintHub"):
     return {"ok": True, "message": f"Geplant ✓ {txt}{hint}"}
 
 
+def _kqueue_set_plan(qid, b, by):
+    """Klipper-Auftrag planen: Moonraker kennt keine Startzeit → steht nur in PrintHubs Plänen."""
+    q = next((x for x in kguard.items() if x["id"] == qid), None)
+    if not q:
+        raise LookupError("Auftrag nicht (mehr) wartend")
+    win, tz = _wcfg()
+    now = _local_now(tz)
+    pl = _plans()
+    if b.get("mode") == "clear":
+        pl.pop(qid, None)
+        _plans_save(pl)
+        _qlog(qid, q["name"], f"Planung entfernt ({by})")
+        return {"ok": True, "message": "Planung entfernt ✓"}
+    secs = q.get("seconds") or 0
+    when = _parse_when(b.get("time"), now)
+    if b.get("mode") == "end":
+        if not secs:
+            raise ValueError("Druckdauer unbekannt – „Fertig um“ geht nur mit bekannter Dauer")
+        when = sched.plan_start_for_end(win, when, secs)
+    if when < now - _td(minutes=1):
+        raise ValueError(f"Start {when:%d.%m. %H:%M} liegt in der Vergangenheit")
+    force = bool(b.get("force"))
+    end = when + _td(seconds=secs)
+    if not force and secs and not win.im_fenster(when, secs):
+        return {"ok": False, "needs_confirm": True,
+                "message": f"Start {sched.wann(when, now)} → fertig {end:%H:%M} liegt außerhalb des Druckfensters "
+                           f"({_fenster_text(win, when)}, {win.puffer} min Puffer). Trotzdem so planen?"}
+    utc = (when.replace(tzinfo=tz) if tz else when.astimezone()).astimezone(_tz.utc)
+    pl[qid] = {"when": utc.strftime("%Y-%m-%dT%H:%M:%SZ"), "force": force, "by": by, "time": time.time()}
+    _plans_save(pl)
+    txt = f"Start {sched.wann(when, now)}" + (f" → fertig {end:%H:%M}" if secs else "")
+    _qlog(qid, q["name"], f"geplant: {txt}" + (" (trotz Druckfenster)" if force else "") + f" ({by})")
+    return {"ok": True, "message": f"Geplant ✓ {txt}"}
+
+
 def _qlog(qid, name, text):
     with store.lock:
         lst = store.data.setdefault("queue_log", [])
@@ -3454,6 +3518,8 @@ def _qlog(qid, name, text):
 
 def _queue_action(qid, action, by="PrintHub"):
     """jetzt (über den Druckwächter) · top · cancel. Gibt Kurztext zurück."""
+    if ":" in str(qid):
+        return kguard.action(str(qid), action, by)
     items = {q["id"]: q for q in bambuddy.queue()}
     q = items.get(int(qid))
     if not q:
@@ -3482,13 +3548,19 @@ def _queue_action(qid, action, by="PrintHub"):
 
 
 async def api_queue(request):
-    if not bambuddy.enabled:
+    kl = _klipper_queue_on()
+    if not bambuddy.enabled and not kl:
         return JSONResponse({"enabled": False, "items": []})
+    err = None
     try:
         items = await run_in_threadpool(_queue_checked)
     except Exception as e:
-        return JSONResponse({"enabled": True, "items": [], "error": str(e) if isinstance(e, PermissionError)
-                             else f"Bambuddy nicht erreichbar ({e.__class__.__name__})"})
+        items = []
+        err = str(e) if isinstance(e, PermissionError) else f"Bambuddy nicht erreichbar ({e.__class__.__name__})"
+        if not kl:
+            return JSONResponse({"enabled": True, "items": [], "error": err})
+    if kl:
+        items += await run_in_threadpool(kguard.items)
     try:
         summary = await run_in_threadpool(_queue_plan, items)
     except Exception as e:
@@ -3524,8 +3596,16 @@ async def api_queue_action(request):
 async def api_queue_reorder(request):
     b = await request.json()
     ids = [int(x) for x in b.get("ids") or [] if str(x).isdigit()]
+    kids = {}
+    for x in b.get("ids") or []:
+        if ":" in str(x):
+            pid, jid = str(x).split(":", 1)
+            kids.setdefault(pid, []).append(jid)
     try:
-        await run_in_threadpool(bambuddy.reorder, ids)
+        for pid, jids in kids.items():
+            await run_in_threadpool(kguard.reorder, pid, jids)
+        if ids:
+            await run_in_threadpool(bambuddy.reorder, ids)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     return JSONResponse({"ok": True})
@@ -3663,7 +3743,7 @@ PCFG_FIELDS = {   # Schlüssel -> Typ
     "id": "str", "name": "str", "type": "str", "host": "str", "serial": "str", "access_code": "secret",
     "port": "int", "web_port": "int", "channels": "int", "api_key": "secret", "light_pin": "str",
     "shelly": "str", "shelly_channel": "int", "camera_url": "str", "camera": "bool", "track_usage": "bool",
-    "auto_assign": "bool",
+    "auto_assign": "bool", "plate_pose": "bool", "plate_x": "int", "plate_y": "int", "plate_z": "int",
 }
 PCFG_SECRET = {"access_code", "api_key"}
 
@@ -3853,6 +3933,8 @@ async def api_plate_check(request):
         if q.get("light") == "1" and hasattr(p, "set_light"):
             await run_in_threadpool(p.set_light, True)
             await asyncio_sleep(4)
+        if p.type == "moonraker" and q.get("pose", "1") == "1":
+            await run_in_threadpool(kguard.pose, p)      # gleiche Prüfposition wie beim Druckwächter
         jpg = await run_in_threadpool(p.camera.snapshot)
         r = await run_in_threadpool(plate.check, pid, jpg, q.get("threshold"), q.get("plate_type", ""))
     except LookupError as e:
@@ -3867,6 +3949,8 @@ async def api_plate_check(request):
 async def api_plate_snapshot(request):
     try:
         p = _cam_printer(request.path_params["pid"])
+        if request.query_params.get("pose", "1") == "1" and p.type == "moonraker":
+            await run_in_threadpool(kguard.pose, p)
         jpg = await run_in_threadpool(p.camera.snapshot)
     except Exception as e:
         msg = str(e)
@@ -3875,6 +3959,50 @@ async def api_plate_snapshot(request):
             msg = friendly(e)
         return JSONResponse({"error": msg}, status_code=503)
     return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+async def api_gcode_thumb(request):
+    """Vorschaubild einer G-Code-Datei auf einem Klipper-Drucker (für die Warteschlange)."""
+    p = printers.get(request.path_params["pid"])
+    fn = request.query_params.get("fn") or ""
+    if not p or p.type != "moonraker" or not fn or ".." in fn:
+        return Response(status_code=404)
+    key = (p.id, fn)
+    if key not in _thumb_cache:
+        try:
+            _thumb_cache[key] = await run_in_threadpool(p.file_thumb, fn)
+        except Exception:
+            return Response(status_code=404)
+        if len(_thumb_cache) > 200:
+            _thumb_cache.pop(next(iter(_thumb_cache)))
+    data = _thumb_cache.get(key)
+    if not data:
+        return Response(status_code=404)
+    return Response(data, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
+
+
+_thumb_cache = {}
+
+
+async def api_plate_pose(request):
+    """Prüfposition testen (Einstellungen → Drucker): mit den übergebenen Werten anfahren, Kamerabild zurück."""
+    p = printers.get(request.path_params["pid"])
+    if not p or p.type != "moonraker":
+        return JSONResponse({"error": "Nur für Klipper-Drucker"}, status_code=400)
+    b = await request.json()
+    if p.status().get("printing") or p.status().get("paused"):
+        return JSONResponse({"error": "Es läuft ein Druck"}, status_code=409)
+    old = getattr(p, "plate_pose_cfg", {})
+    try:
+        p.plate_pose_cfg = {"on": True, "x": int(b.get("x", 135)), "y": int(b.get("y", 10)), "z": int(b.get("z", 30))}
+        txt = await run_in_threadpool(kguard.pose, p)
+        jpg = await run_in_threadpool(p.camera.snapshot)
+    except Exception as e:
+        return JSONResponse({"error": str(e)[:300]}, status_code=502)
+    finally:
+        p.plate_pose_cfg = old
+    import base64 as _b64
+    return JSONResponse({"ok": True, "text": txt, "img": "data:image/jpeg;base64," + _b64.b64encode(jpg).decode()})
 
 
 # ---------- Nachtruhe ----------
@@ -3887,6 +4015,13 @@ async def api_nachtruhe(request):
         log.info("Nachtruhe-Einstellungen gespeichert: %s", ", ".join(k for k in clean if "KEY" not in k and "TOKEN" not in k))
     st = await run_in_threadpool(nachtruhe.state)
     st["log"] = await run_in_threadpool(nachtruhe.tail, int(request.query_params.get("n", 200)))
+    st["klipper"] = kguard.klipper_list()
+    if st["klipper"]:
+        try:
+            with open(os.path.join(os.path.dirname(__file__), "klipper", "printhub-startsperre.cfg"), encoding="utf-8") as f:
+                st["klipper_macro"] = f.read()
+        except OSError:
+            pass
     return JSONResponse(st)
 
 
@@ -4391,6 +4526,8 @@ def _tg_button(data):
         except Exception as e:
             return str(e)[:190], []
         return msg[:190], []
+    if parts[1] == "kw" and len(parts) >= 5:
+        return str(kguard.button(parts[2], parts[3], ":".join(parts[4:])))[:190], []
     if parts[1] == "power" and len(parts) == 4:
         p = printers.get(parts[2])
         if not p:
@@ -4633,6 +4770,7 @@ async def lifespan(app):
     threading.Thread(target=autobackup.loop, daemon=True).start()
     threading.Thread(target=telegram.loop, daemon=True).start()
     threading.Thread(target=power.loop, daemon=True).start()
+    kguard.start()
     threading.Thread(target=nachtruhe.supervise, daemon=True).start()
     yield
     nachtruhe._stop()
@@ -4730,6 +4868,8 @@ app = Starlette(
         Route("/api/plate/{pid}", api_plate, methods=["GET", "PUT"]),
         Route("/api/plate/{pid}/check", api_plate_check, methods=["GET", "POST"]),
         Route("/api/plate/{pid}/snapshot.jpg", api_plate_snapshot),
+        Route("/api/printers/{pid}/gcode-thumb", api_gcode_thumb),
+        Route("/api/printers/{pid}/plate-pose", api_plate_pose, methods=["POST"]),
         Route("/api/plate/{pid}/ref", api_plate_ref, methods=["POST"]),
         Route("/api/plate/{pid}/ref/{name}", api_plate_ref, methods=["GET", "PUT", "DELETE"]),
         Route("/api/backup", api_backup),
