@@ -15,6 +15,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
 <script src="/static/common.js"></script>
+<style>.use-chip.bookable{cursor:pointer;border-color:var(--warn,#f59e0b)}.use-chip.bookable:hover{filter:brightness(1.1)}</style>
 </head>
 <body>
 <header>
@@ -84,6 +85,15 @@
   <div class="lbbox">
     <div class="lbhead"><b id="lbtitle"></b><button class="small-btn" onclick="document.getElementById('lightbox').classList.remove('open')">✕ Schließen</button></div>
     <div id="lbpics" class="lbpics"></div>
+  </div>
+</div>
+<div class="modal" id="m-book">
+  <div class="mbox card pick">
+    <h2 id="bk-title">Nachträglich abbuchen</h2>
+    <div class="muted small" id="bk-sub"></div>
+    <input id="bk-q" type="search" placeholder="Suchen: Hersteller, Farbe, Material …" autocomplete="off" oninput="bkRender()">
+    <div id="bk-list"></div>
+    <div class="mact"><button type="button" onclick="bkClose()">Abbrechen</button></div>
   </div>
 </div>
 <script>
@@ -210,7 +220,7 @@ function applyCols() {
 function row(e) {
   const d = new Date(e.time * 1000);
   const ok = e.result === "fertig";
-  const uses = e.usage.map(u => `<span class="use-chip" title="${esc(u.slot)}${u.booked ? "" : " – nicht gebucht: " + esc(u.error || "")}">
+  const uses = e.usage.map(u => `<span class="use-chip${canBook(u) ? " bookable" : ""}" title="${esc(u.slot)}${u.booked ? "" : " – nicht gebucht: " + esc(u.error || "") + (canBook(u) ? " · antippen zum Abbuchen" : "")}"${canBook(u) ? ` onclick="bkOpen(${esc(JSON.stringify({id: u.id, slot: u.slot, grams: u.grams, job: e.job, printer: e.printer}))})"` : ""}>
       <span class="dot" style="background:${u.color || "transparent"}"></span>${u.spool ? `<a href="?spool=${u.spool}" onclick="event.preventDefault();filterSpool(${u.spool})">#${u.spool}</a> ` : ""}${esc(u.spool_name || (u.material ? u.material + " (Bambuddy)" : u.slot))} · ${String(u.grams).replace(".", ",")} g${u.booked || u.slot === "aus Bambuddy" ? "" : " ⚠"}</span>`).join("");
   const pm = PH.pref("hist_pics", "both");
   if (pm === "thumb") e = {...e, photo: null}; else if (pm === "photo") e = {...e, thumb: null};
@@ -255,6 +265,43 @@ async function load(reset = true) {
 }
 
 function filterSpool(id) { $("f-spool").value = String(id); load(); window.scrollTo({top: 0, behavior: "smooth"}); }
+// ---------- Nachträglich abbuchen: Verbrauch ohne Spule (⚠) einer Spule zuordnen ----------
+const canBook = u => !u.booked && u.id && u.grams > 0 && u.slot !== "aus Bambuddy";
+let BK = null;
+async function bkOpen(u) {
+  BK = {u, spools: null};
+  $("bk-title").textContent = `${String(u.grams).replace(".", ",")} g nachträglich abbuchen`;
+  $("bk-sub").textContent = `${u.slot} · ${u.job || ""}`;
+  $("bk-q").value = ""; $("bk-list").innerHTML = `<div class="muted" style="padding:12px 0">Lade Spulen …</div>`;
+  $("m-book").classList.add("open");
+  const r = await (await fetch("/api/spools")).json();
+  if (!BK) return;
+  if (r.error) { $("bk-list").innerHTML = `<div class="muted">${esc(r.error)}</div>`; return; }
+  BK.spools = r; bkRender();
+}
+function bkClose() { BK = null; $("m-book").classList.remove("open"); }
+function bkRender() {
+  if (!BK || !BK.spools) return;
+  const q = $("bk-q").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  let list = BK.spools.filter(s => q.every(w => `${s.id} ${s.name} ${s.material} ${s.location || ""}`.toLowerCase().includes(w)));
+  // zuerst die Spulen, die gerade an einem Kopf/Slot hängen, dann zuletzt benutzte, dann nach Name
+  const t = s => s.last_used ? Date.parse(s.last_used) || 0 : 0;
+  list.sort((a, b) => (b.slot ? 1 : 0) - (a.slot ? 1 : 0) || t(b) - t(a) || a.name.localeCompare(b.name, "de"));
+  $("bk-list").innerHTML = list.slice(0, 60).map(s => `<div class="pk-row"><button type="button" class="pk-main" onclick="bkSet(${s.id})">
+      <span class="dot" style="background:${s.color || "transparent"}"></span>
+      <span class="pk-t"><span class="pk-n">#${s.id} ${esc(s.name)}</span>${s.material ? `<span class="pk-m">${esc(s.material)}</span>` : ""}
+      <span class="pk-i">${s.remaining != null ? Math.round(s.remaining) + " g übrig" : ""}${s.slot ? " · 🖨 " + esc(s.slot) : s.location ? " · " + esc(s.location) : ""}</span></span></button></div>`).join("")
+    || `<div class="muted" style="padding:12px 0">Nichts gefunden.</div>`;
+}
+async function bkSet(id) {
+  const u = BK.u, sp = BK.spools.find(s => s.id === id);
+  if (!confirm(`${String(u.grams).replace(".", ",")} g von #${id} ${sp ? sp.name : ""} abbuchen?`)) return;
+  bkClose();
+  const r = await (await fetch(`/api/history/usage/${u.id}/book`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({spool_id: id})})).json();
+  PH.toast(r.error || r.message, !!r.error);
+  if (!r.error) load();
+}
+
 async function del(id) {
   if (!confirm("Diesen Eintrag aus dem Verlauf löschen?\n(Spoolman wird dadurch nicht verändert.)")) return;
   await fetch(`/api/history/${id}`, {method: "DELETE"});

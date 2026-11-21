@@ -117,6 +117,24 @@ class History:
             r = db.execute("SELECT thumb, photo FROM prints WHERE id=?", (pid,)).fetchone()
         return [x for x in (r or []) if x]
 
+    def usage_row(self, uid):
+        with self._db() as db:
+            r = db.execute("SELECT * FROM usage WHERE id=?", (int(uid),)).fetchone()
+        return dict(r) if r else None
+
+    def book_usage(self, uid, spool, name, material, color, cost, remaining):
+        """Nachträglich gebucht: Verbrauchszeile auf die Spule setzen und Filament-/Gesamtkosten des Drucks neu rechnen."""
+        with self.lock, self._db() as db:
+            db.execute("UPDATE usage SET spool=?, spool_name=?, material=?, color=?, cost=?, booked=1, error=NULL, remaining=?"
+                       " WHERE id=?", (spool, name, material, color, cost, remaining, int(uid)))
+            pid = db.execute("SELECT print_id FROM usage WHERE id=?", (int(uid),)).fetchone()[0]
+            costs = [r[0] for r in db.execute("SELECT cost FROM usage WHERE print_id=?", (pid,)) if r[0] is not None]
+            fc = round(sum(costs), 2) if costs else None
+            p = db.execute("SELECT energy_cost, wear_cost FROM prints WHERE id=?", (pid,)).fetchone()
+            parts = [x for x in (p["energy_cost"], fc, p["wear_cost"]) if x is not None]
+            db.execute("UPDATE prints SET filament_cost=?, total_cost=? WHERE id=?",
+                       (fc, round(sum(parts), 2) if parts else None, pid))
+
     def delete(self, pid):
         with self.lock, self._db() as db:
             db.execute("DELETE FROM usage WHERE print_id=?", (pid,))

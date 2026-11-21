@@ -421,6 +421,48 @@ async def api_history_delete(request):
     return JSONResponse({"ok": True})
 
 
+async def api_history_book(request):
+    """Verbrauch eines Drucks nachträglich von einer Spule abbuchen (z. B. Kopf war keiner Spule zugewiesen)."""
+    uid = int(request.path_params["uid"])
+    b = await request.json()
+    try:
+        sid = int(b.get("spool_id") or 0)
+    except (TypeError, ValueError):
+        sid = 0
+    if not sid:
+        return JSONResponse({"error": "Keine Spule gewählt"}, status_code=400)
+    u = await run_in_threadpool(history.usage_row, uid)
+    if not u:
+        return JSONResponse({"error": "Eintrag nicht gefunden"}, status_code=404)
+    if u.get("booked"):
+        return JSONResponse({"error": "Schon gebucht"}, status_code=409)
+
+    def run():
+        sp = spoolman.spool(sid)
+        if not sp:
+            raise LookupError(f"Spule #{sid} gibt es in Spoolman nicht")
+        res = spoolman.use(sid, float(u["grams"] or 0))
+        cpg = None
+        if sp.get("price") and sp.get("initial"):
+            cpg = float(sp["price"]) / float(sp["initial"])
+        elif settings.get("fallback_price_kg"):
+            cpg = float(settings.get("fallback_price_kg")) / 1000
+        rest = (res or {}).get("remaining_weight")
+        history.book_usage(uid, sid, sp.get("name"), sp.get("material"), sp.get("color"),
+                           round(cpg * float(u["grams"] or 0), 2) if cpg else None,
+                           round(rest) if rest is not None else None)
+        return sp, rest
+    try:
+        sp, rest = await run_in_threadpool(run)
+    except LookupError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": f"Spoolman: {e}"}, status_code=502)
+    log.info("Nachgebucht: %s g von Spule #%s (Verlauf, Zeile %s)", u["grams"], sid, uid)
+    return JSONResponse({"ok": True, "message": f"{str(u['grams']).replace('.', ',')} g von #{sid} {sp.get('name')} abgebucht"
+                         + (f" – noch {round(rest)} g" if rest is not None else "")})
+
+
 async def api_settings(request):
     if request.method == "PUT":
         try:
@@ -4539,6 +4581,7 @@ app = Starlette(
         Route("/api/history/stats", api_history_stats),
         Route("/api/history/export.csv", api_history_csv),
         Route("/api/history/{pid:int}", api_history_delete, methods=["DELETE"]),
+        Route("/api/history/usage/{uid:int}/book", api_history_book, methods=["POST"]),
         Route("/api/settings", api_settings, methods=["GET", "PUT"]),
         Route("/api/profiles", api_profiles),
         Route("/api/profiles/{fid}", api_profiles, methods=["DELETE"]),
