@@ -106,6 +106,27 @@ def _first_jpeg_from_stream(resp, limit=5_000_000):
     raise RuntimeError("Kein JPEG im Kamerastream gefunden")
 
 
+def _open_stream(session, url, headers):
+    r = session.get(url, headers=headers, stream=True, timeout=(5, 20))
+    r.raise_for_status()
+    ctype = r.headers.get("Content-Type", "")
+    if "multipart" not in ctype:
+        r.close()
+        raise RuntimeError("Kamera liefert keinen MJPEG-Stream")
+
+    def gen():
+        import time as _t
+        end = _t.time() + 600                       # höchstens 10 Minuten am Stück (Browser verbindet dann neu)
+        try:
+            for chunk in r.iter_content(16384):
+                yield chunk
+                if _t.time() > end:
+                    break
+        finally:
+            r.close()
+    return ctype, gen()
+
+
 class UrlCamera:
     """Beliebige Kamera-URL: JPEG-Snapshot, MJPEG-Stream oder RTSP (über ffmpeg)."""
 
@@ -115,6 +136,16 @@ class UrlCamera:
         self.s = requests.Session()
         self.cache, self.cache_time = None, 0
         self.lock = threading.Lock()
+
+    def stream_url(self):
+        u = self.url.lower()
+        return self.url if any(k in u for k in ("action=stream", ".mjpg", "mjpeg", "/stream")) else None
+
+    def stream(self):
+        url = self.stream_url()
+        if not url:
+            raise RuntimeError("Kamera bietet keinen Videostream")
+        return _open_stream(self.s, url, self.headers)
 
     def _grab(self, wait):
         if self.url.lower().startswith(("rtsp://", "rtsps://")):
@@ -156,14 +187,36 @@ class SnapshotCamera:
         self.s = requests.Session()
         self.lock = threading.Lock()
 
-    def _resolve(self):
+    def _cams(self):
         r = self.s.get(self.moonraker_base + "/server/webcams/list", headers=self.headers, timeout=5)
         r.raise_for_status()
-        cams = r.json().get("result", {}).get("webcams", [])
-        cams = [c for c in cams if c.get("enabled", True) and c.get("snapshot_url")]
+        return [c for c in r.json().get("result", {}).get("webcams", []) if c.get("enabled", True)]
+
+    def _resolve(self):
+        cams = [c for c in self._cams() if c.get("snapshot_url")]
         if not cams:
             raise RuntimeError("Keine Webcam in Moonraker eingerichtet – 'camera_url' in der config.yaml setzen")
         return urljoin(self.web_base + "/", cams[0]["snapshot_url"])
+
+    def stream_url(self):
+        """MJPEG-Stream (wie Fluidd ihn zeigt) – None, wenn die Kamera keinen anbietet."""
+        if getattr(self, "_stream", False) is not False:
+            return self._stream
+        try:
+            cams = [c for c in self._cams() if c.get("stream_url") and c.get("service", "mjpegstreamer") in
+                    ("mjpegstreamer", "mjpegstreamer-adaptive", "mjpeg", "")]
+            self._stream = urljoin(self.web_base + "/", cams[0]["stream_url"]) if cams else None
+        except Exception:
+            self._looking = False                       # später erneut versuchen
+            return None
+        return self._stream
+
+    def stream(self):
+        """Nimmt den MJPEG-Stream entgegen und reicht ihn stückweise weiter (für die flüssige Großansicht)."""
+        url = self.stream_url()
+        if not url:
+            raise RuntimeError("Kamera bietet keinen Videostream")
+        return _open_stream(self.s, url, self.headers)
 
     def snapshot(self, wait=10):
         with self.lock:

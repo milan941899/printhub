@@ -18,7 +18,7 @@ from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -2470,6 +2470,7 @@ async def api_state(request):
         st["slots"] = slots
         st["track_usage"] = p.track_usage
         st["camera"] = p.camera is not None
+        st["cam_stream"] = bool(p.camera is not None and hasattr(p.camera, "stream_url") and _stream_ok(p))
         st["energy"] = p.energy_status()
         job = store.get_job(p.id)
         st["thumb"] = f"/media/{job['thumb']}" if job and job.get("thumb") else None
@@ -4375,6 +4376,34 @@ async def api_camera(request):
     return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
+def _stream_ok(p):
+    """Hat die Kamera einen Videostream? Moonraker-Kameras werden einmal im Hintergrund nachgeschlagen."""
+    cam = p.camera
+    try:
+        if hasattr(cam, "_cams"):                      # Moonraker: Ergebnis zwischengespeichert
+            if getattr(cam, "_stream", False) is False:
+                if not getattr(cam, "_looking", False):
+                    cam._looking = True
+                    threading.Thread(target=cam.stream_url, daemon=True).start()
+                return False
+            return bool(cam._stream)
+        return bool(cam.stream_url())
+    except Exception:
+        return False
+
+
+async def api_camera_stream(request):
+    """Videostream der Kamera durchreichen (Snapmaker U1/Klipper: wie in Fluidd), damit es auch über VPN geht."""
+    p = printers.get(request.path_params["pid"])
+    if not p or not p.camera or not hasattr(p.camera, "stream"):
+        return JSONResponse({"error": "Keine Videostream-Kamera"}, status_code=404)
+    try:
+        ctype, it = await run_in_threadpool(p.camera.stream)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    return StreamingResponse(it, media_type=ctype, headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app):
     for p in printers.values():
@@ -4505,6 +4534,7 @@ app = Starlette(
         Route("/api/bambuddy/thumb", api_bambuddy_thumb),
         Route("/api/printers/{pid}/light", api_light, methods=["POST"]),
         Route("/api/printers/{pid}/camera.jpg", api_camera),
+        Route("/api/printers/{pid}/camera.mjpg", api_camera_stream),
         Route("/api/printers/{pid}/{action}", api_control, methods=["POST"]),
         Mount("/static", StaticFiles(directory=STATIC), name="static"),
     ],

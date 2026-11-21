@@ -80,16 +80,28 @@ function placeCams() {
   }
 }
 let bigCam = null;
+// Videostream (z. B. Snapmaker U1): Großansicht immer flüssig, klein nur wenn eingestellt und nicht unterwegs/sparsam
+const camStreamOk = id => ((typeof lastPrinters !== "undefined" ? lastPrinters : []).find(p => p.id === id) || {}).cam_stream;
+const camLiveSmall = () => PH.pref("cam_small", "snap") === "live" && !PH.saving() && !PH.cellular();
+const streamUrl = id => `/api/printers/${id}/camera.mjpg?t=${Date.now()}`;
 function openCam(id) {
   bigCam = id;
   const lb = document.getElementById("lightbox");
   const c = cams[id];
-  if (c && c.img.src) document.getElementById("lbimg").src = c.img.src;
+  if (camStreamOk(id) && !PH.saving()) {
+    const im = document.getElementById("lbimg");
+    im.onerror = () => { im.onerror = null; im.dataset.stream = ""; };   // Stream geht nicht → wieder Einzelbilder
+    im.dataset.stream = "1"; im.src = streamUrl(id);
+  } else if (c && c.img.src) document.getElementById("lbimg").src = c.img.src;
   document.getElementById("lbtitle").textContent = (lastPrinters.find(p => p.id === id) || {}).name || "Kamera";
   lb.classList.add("open");
   camTick();
 }
-function closeCam() { bigCam = null; document.getElementById("lightbox").classList.remove("open"); }
+function closeCam() {
+  bigCam = null; document.getElementById("lightbox").classList.remove("open");
+  const im = document.getElementById("lbimg");
+  if (im.dataset.stream) { im.dataset.stream = ""; im.removeAttribute("src"); }   // Stream beenden
+}
 function showImg(src, title) {
   bigCam = null;
   document.getElementById("lbimg").src = src;
@@ -108,9 +120,19 @@ async function camTick() {
     c.wrap.classList.toggle("off", !!off);
     if (off) { c.msg.textContent = "📷 Kamera aus – Drucker offline"; if (c.img.src) { c.img.removeAttribute("src"); c.url = null; } continue; }
     if (c.msg.textContent.startsWith("📷 Kamera aus")) c.msg.textContent = "verbinde …";
+    const bigStream = big && document.getElementById("lbimg").dataset.stream;
+    // kleines Bild als Live-Stream (pro Gerät einstellbar): einmal setzen, dann läuft es von selbst
+    const liveS = camStreamOk(id) && camLiveSmall() && c.visible && c.wrap.isConnected;
+    if (liveS) {
+      if (!c.live) { c.live = true; c.img.onerror = () => { c.live = false; c.noStream = true; }; if (!c.noStream) { c.img.src = streamUrl(id); c.msg.textContent = ""; } }
+      if (!c.noStream && (bigStream || !big)) continue;
+    } else if (c.live) { c.live = false; c.img.removeAttribute("src"); c.url = null; }
+    if (bigStream && !c.live) {   // Großansicht läuft als Stream – klein normal weiter, aber nicht doppelt laden
+      if (now - c.last < 3000) continue;
+    }
     // klein: alle 3 s (Mobilfunk 10 s, Datensparmodus nur auf Antippen), nur wenn sichtbar · groß: so schnell wie möglich
     const every = PH.saving() ? Infinity : PH.cellular() ? 10000 : 3000;
-    if (c.busy || (!big && (now - c.last < every || !c.wrap.isConnected || !c.visible))) {
+    if (c.busy || ((!big || bigStream) && (now - c.last < every || !c.wrap.isConnected || !c.visible))) {
       if (!big && every === Infinity && !c.url) c.msg.textContent = "Datensparmodus – antippen für Bild";
       continue;
     }
@@ -120,7 +142,7 @@ async function camTick() {
       if (!r.ok) { c.msg.textContent = (await r.json()).error || "Kein Bild"; }
       else {
         const u = URL.createObjectURL(await r.blob());
-        c.img.src = u; if (big) document.getElementById("lbimg").src = u;
+        c.img.src = u; if (big && !bigStream) document.getElementById("lbimg").src = u;
         if (c.url) setTimeout(((old) => () => URL.revokeObjectURL(old))(c.url), 2000);
         c.url = u; c.msg.textContent = "";
       }

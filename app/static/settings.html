@@ -106,6 +106,13 @@
     </div>
   </section>
   <section class="card">
+    <div class="label">Kamera <span class="muted small">(nur dieses Gerät)</span></div>
+    <div class="row">
+      <div><div class="t">Kleines Kamerabild</div><div class="d">Live-Stream ist flüssig wie in Fluidd (nur Kameras mit Videostream, z. B. Snapmaker U1). Über Mobilfunk und im Datensparmodus immer Einzelbild. Die Großansicht (antippen) läuft immer als Stream, wenn möglich</div></div>
+      <select data-p="cam_small" style="width:170px"><option value="snap">Einzelbild alle 3 s</option><option value="live">Live-Stream</option></select>
+    </div>
+  </section>
+  <section class="card">
     <div class="label">Bereiche je Drucker <span class="muted small">(nur dieses Gerät)</span></div>
     <div class="d muted small" style="margin:6px 0 4px">Was auf diesem Gerät in der Druckerkarte erscheint – z. B. am Handy ohne Temperaturverlauf, am PC alles.</div>
     <div id="blkcfg" class="blkcfg muted small">Lade …</div>
@@ -926,7 +933,7 @@ new MutationObserver(() => masonryInit()).observe(document.body, {childList: tru
 function prefInit() {
   document.querySelectorAll("select[data-p=hist_range], select[data-p=stats_range]").forEach(sel =>
     sel.innerHTML = PH.RANGES.filter(r => r[0] !== "custom").map(([v, l]) => `<option value="${v}">${l}</option>`).join(""));
-  const defs = {hist_range: "all", stats_range: "month", hist_pics: "both", hotend: "schema", week_start: "mo"};
+  const defs = {cam_small: "snap", hist_range: "all", stats_range: "month", hist_pics: "both", hotend: "schema", week_start: "mo"};
   document.querySelectorAll("[data-p]").forEach(el => {
     const k = el.dataset.p;
     if (el.type === "checkbox") { el.checked = !!PH.pref(k, el.dataset.def === "1"); el.onchange = () => { PH.pref(k, null, el.checked); PH.toast("Gespeichert ✓ (dieses Gerät)"); }; }
