@@ -50,7 +50,7 @@ class BasePrinter:
         def run():
             time.sleep(max(0, delay))
             try:
-                jpg = self.camera.snapshot()
+                jpg = self.end_photo()()
                 name = self.save_media("foto", jpg, "jpg")
                 if name and self.history:
                     self.history.set_photo(pid, name)
@@ -59,9 +59,17 @@ class BasePrinter:
                 log.warning("[%s] Foto nach Druckende fehlgeschlagen: %s", self.id, e)
         threading.Thread(target=run, daemon=True).start()
 
+    def end_photo(self):
+        """Foto fürs Druckende: Kamera am Druckkopf (z. B. Snapmaker U1) parkt nach dem Druck und zeigt dann nur
+        die Docks – deshalb das kurz vor Schluss gemerkte Bild nehmen, sonst ein frisches."""
+        shot = getattr(self, "_last_shot", None)
+        if shot and time.time() - shot[0] < 900:
+            return lambda: shot[1]
+        return self.camera.snapshot
+
     def notify(self, event, title, message, tags="", priority="default", buttons=None, click=None):
         if self.notifier:
-            photo = self.camera.snapshot if self.camera else None
+            photo = (self.end_photo() if event in ("finish", "fail") else self.camera.snapshot) if self.camera else None
             self.notifier.send(event, f"{self.name}: {title}", message, tags, priority, photo=photo,
                                buttons=buttons, click=click)
 
@@ -206,6 +214,7 @@ class BasePrinter:
 
     # --- Job-Verwaltung ------------------------------------------------------
     def job_started(self, name, extra=None):
+        self._last_shot = None
         job = {"name": name, "started": int(time.time()), "filaments": None, "max_progress": 0.0,
                "energy_start": self._energy_now()}
         if extra:

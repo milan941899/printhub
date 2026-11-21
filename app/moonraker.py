@@ -186,8 +186,29 @@ class MoonrakerPrinter(BasePrinter):
                 rem = pd / progress - pd if progress and progress > 0.02 and pd > 60 else None
                 self.update_progress(progress, rem)
                 self.track_layer((ps.get("info") or {}).get("current_layer"))
+                self._grab_end_shot(progress)
         elif job is not None and state in ("complete", "cancelled", "error", "standby"):
             self.job_ended(state == "complete", progress)
+
+    def _grab_end_shot(self, progress):
+        """Kamera sitzt beim U1 am Druckkopf: ab 90 % regelmäßig ein Bild merken, solange der Kopf noch überm Teil ist."""
+        if not self.camera or not progress or progress < 0.9 or getattr(self, "_shot_busy", False):
+            return
+        last = getattr(self, "_last_shot", None)
+        if last and time.time() - last[0] < (15 if progress >= 0.97 else 45):
+            return
+        self._shot_busy = True
+
+        def run():
+            try:
+                jpg = self.camera.snapshot()
+                if jpg and self.status_data.get("print_stats", {}).get("state") == "printing":
+                    self._last_shot = (time.time(), jpg)
+            except Exception as e:
+                log.debug("[%s] Bild kurz vor Schluss: %s", self.id, e)
+            finally:
+                self._shot_busy = False
+        threading.Thread(target=run, daemon=True).start()
 
     # --- Filamentbedarf aus der G-Code-Datei ------------------------------------
     def load_filament_usage(self, job):
