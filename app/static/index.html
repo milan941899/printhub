@@ -96,7 +96,7 @@ async function rtcStart(id, video) {
   pc.addTransceiver("video", {direction: "recvonly"});
   pc.ontrack = e => { if (e.track.kind === "video") video.srcObject = e.streams[0] || new MediaStream([e.track]); };
   pc.onicecandidate = e => { if (e.candidate) post({type: "remote_candidate", id: offer.id, candidates: [e.candidate]}).catch(() => {}); };
-  await pc.setRemoteDescription(offer);
+  await pc.setRemoteDescription({type: offer.type || "offer", sdp: offer.sdp});   // U1 schickt kein „type“ mit
   const ans = await pc.createAnswer();
   await pc.setLocalDescription(ans);
   await post({type: "answer", id: offer.id, sdp: pc.localDescription.sdp});
