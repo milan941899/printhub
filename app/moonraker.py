@@ -93,6 +93,26 @@ class MoonrakerPrinter(BasePrinter):
                 self.last_error = f"Nicht erreichbar: {e.__class__.__name__}"
                 time.sleep(10)
 
+    def _slicer_estimate(self, fn):
+        """Geschätzte Druckzeit des Slicers (s) aus den Datei-Metadaten – einmal je Datei, im Hintergrund geholt."""
+        if not fn:
+            return None
+        c = getattr(self, "_est", None)
+        if c and c[0] == fn:
+            return c[1]
+        self._est = (fn, None)
+
+        def fetch():
+            try:
+                r = self.s.get(self.base + "/server/files/metadata", params={"filename": fn}, headers=self.headers, timeout=10)
+                est = (r.json().get("result") or {}).get("estimated_time")
+                if est:
+                    self._est = (fn, float(est))
+            except Exception as e:
+                log.debug("[%s] Slicer-Schätzung: %s", self.id, e)
+        threading.Thread(target=fetch, daemon=True).start()
+        return None
+
     def _find_extras(self):
         try:
             r = self.s.get(self.base + "/printer/objects/list", headers=self.headers, timeout=5)
@@ -272,8 +292,21 @@ class MoonrakerPrinter(BasePrinter):
         active = state in ACTIVE
         progress = st.get("virtual_sdcard", {}).get("progress")
         remaining = None
-        if active and progress and progress > 0.01 and ps.get("print_duration"):
-            remaining = round(ps["print_duration"] * (1 - progress) / progress / 60)
+        # Restzeit: Hochrechnen aus dem Datei-Fortschritt ist am Anfang viel zu hoch (Aufheizen, Kalibrieren, Spülen
+        # kosten Zeit, aber kaum Bytes – z. B. 23 h statt 3 h). Daher anfangs die Schätzung des Slicers, dann
+        # allmählich (10 → 60 %) auf die Hochrechnung überblenden, die gegen Ende genauer ist.
+        if active and progress is not None:
+            est = self._slicer_estimate(ps.get("filename") or "")
+            pd = ps.get("print_duration") or 0
+            file_rem = pd * (1 - progress) / progress if progress > 0.01 and pd else None
+            sl_rem = est * (1 - progress) if est else None
+            if sl_rem is not None and file_rem is not None:
+                w = min(1.0, max(0.0, (progress - 0.10) / 0.50))
+                remaining = round((sl_rem * (1 - w) + file_rem * w) / 60)
+            elif sl_rem is not None:
+                remaining = round(sl_rem / 60)
+            elif file_rem is not None:
+                remaining = round(file_rem / 60)
         temps = []
         for i, ex in enumerate(self._extruders()):
             e = st.get(ex)
