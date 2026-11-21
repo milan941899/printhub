@@ -342,9 +342,21 @@ class MoonrakerPrinter(BasePrinter):
         if lp.startswith("output_pin "):
             g = f"SET_PIN PIN={lp.split(' ', 1)[1]} VALUE={1 if on else 0}"
         else:
-            g = f"SET_LED LED={lp.split(' ', 1)[1]} WHITE={1 if on else 0}"
+            # alle Kanäle setzen (RGB + Weiß); Leuchten ohne Weiß-Kanal lehnen WHITE ab → dann nur RGB
+            v = 1 if on else 0
+            led = lp.split(" ", 1)[1]
+            g = f"SET_LED LED={led} RED={v} GREEN={v} BLUE={v} WHITE={v}"
         r = self.s.post(self.base + "/printer/gcode/script", params={"script": g}, headers=self.headers, timeout=10)
-        r.raise_for_status()
+        if not r.ok and not lp.startswith("output_pin "):
+            log.info("[%s] Licht mit WHITE abgelehnt (%s) – versuche nur RGB", self.id, r.text[:200])
+            g = f"SET_LED LED={led} RED={v} GREEN={v} BLUE={v}"
+            r = self.s.post(self.base + "/printer/gcode/script", params={"script": g}, headers=self.headers, timeout=10)
+        if not r.ok:
+            try:
+                msg = r.json().get("error", {}).get("message") or r.text
+            except Exception:
+                msg = r.text
+            raise ValueError(f"Klipper lehnt das Licht ab: {str(msg)[:160]}")
 
     def control(self, action):
         path = {"pause": "/printer/print/pause", "resume": "/printer/print/resume", "stop": "/printer/print/cancel"}.get(action)
