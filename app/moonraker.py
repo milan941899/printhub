@@ -192,10 +192,11 @@ class MoonrakerPrinter(BasePrinter):
 
     def _grab_end_shot(self, progress):
         """Kamera sitzt beim U1 am Druckkopf: ab 90 % regelmäßig ein Bild merken, solange der Kopf noch überm Teil ist."""
-        if not self.camera or not progress or progress < 0.9 or getattr(self, "_shot_busy", False):
+        # ab 99,5 % nichts mehr nachfotografieren: dann läuft meist schon der End-G-Code (Kopf parkt, Bett fährt runter)
+        if not self.camera or not progress or progress < 0.9 or progress >= 0.995 or getattr(self, "_shot_busy", False):
             return
         last = getattr(self, "_last_shot", None)
-        if last and time.time() - last[0] < (15 if progress >= 0.97 else 45):
+        if last and time.time() - last[0] < (10 if progress >= 0.98 else 15 if progress >= 0.97 else 45):
             return
         self._shot_busy = True
 
