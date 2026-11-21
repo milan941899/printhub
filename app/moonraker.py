@@ -321,7 +321,11 @@ class MoonrakerPrinter(BasePrinter):
         # der mit dem höchsten Soll; „toolhead.extruder“ hinkt beim Kopfwechsel manchmal hinterher
         tgt = [(round((st.get(ex) or {}).get("target", 0)), i) for i, ex in enumerate(self._extruders()) if st.get(ex)]
         if active and tgt and max(tgt)[0] > 0:
-            th = "extruder" + (str(max(tgt)[1]) if max(tgt)[1] else "")
+            top = max(t for t, _ in tgt)
+            # mehrere Köpfe auf Drucktemperatur (z. B. Farbwechsel vorgeheizt): dann gilt toolhead.extruder
+            if round((st.get(th) or {}).get("target", 0)) != top if th else True:
+                i = next(i for t, i in tgt if t == top)
+                th = "extruder" + (str(i) if i else "")
         if active and th:
             n = th.replace("extruder", "") or "0"
             cur = f"T{n}"
