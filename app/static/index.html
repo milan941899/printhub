@@ -70,7 +70,8 @@ function camEl(id) {
     wrap.onclick = () => { if (!wrap.classList.contains("off")) openCam(id); };
     cams[id] = {wrap, img, msg, busy: false, url: null, last: 0, visible: true};
     if ("IntersectionObserver" in window)        // nur aktualisieren, solange das Bild im sichtbaren Bereich ist
-      new IntersectionObserver(es => es.forEach(e => { cams[id].visible = e.isIntersecting; if (e.isIntersecting) cams[id].last = 0; })).observe(wrap);
+      new IntersectionObserver(es => es.forEach(e => { const c = cams[id]; c.visible = e.isIntersecting;
+        if (e.isIntersecting) { c.last = 0; if (c.rtc && c.rtc.video.paused) c.rtc.video.play().catch(() => {}); } else c.hiddenAt = Date.now(); })).observe(wrap);
   }
   return cams[id];
 }
@@ -106,6 +107,10 @@ async function rtcStart(id, video) {
   await post({type: "answer", id: offer.id, sdp: pc.localDescription.sdp});
   return pc;
 }
+// letztes Videobild als Standbild merken, damit beim Neuaufbau nichts schwarz ist
+function rtcFrame(v) { try { if (!v.videoWidth) return ""; const cv = document.createElement("canvas"); cv.width = v.videoWidth; cv.height = v.videoHeight;
+  cv.getContext("2d").drawImage(v, 0, 0); return cv.toDataURL("image/jpeg", 0.7); } catch { return ""; } }
+const CAM_GRACE = 90000;   // kurz weggescrollt: Stream weiterlaufen lassen, erst danach abbauen
 function rtcStop(o) { try { o && o.pc && o.pc.close(); } catch {} if (o && o.video) { o.video.srcObject = null; } }
 let bigRtc = null;
 function openCam(id) {
@@ -166,7 +171,8 @@ async function camTick() {
     const bigStream = big && (document.getElementById("lbimg").dataset.stream || bigRtc);
     // kleines Bild als Live-Stream (pro Gerät einstellbar): einmal setzen, dann läuft es von selbst
     // kleines Bild per WebRTC (wenn „Live-Stream“ eingestellt)
-    const liveR = camWebrtcOk(id) && camLiveSmall() && c.visible && c.wrap.isConnected && !c.noRtc;
+    const near = c.visible || now - (c.hiddenAt || 0) < CAM_GRACE;
+    const liveR = camWebrtcOk(id) && camLiveSmall() && near && c.wrap.isConnected && !c.noRtc;
     if (liveR) {
       if (!c.rtc) {
         const v = document.createElement("video"); v.autoplay = v.muted = v.playsInline = true; v.className = "camvid";
@@ -178,8 +184,8 @@ async function camTick() {
         rtcStart(id, v).then(pc => { if (c.rtc === me) me.pc = pc; else pc.close(); }).catch(() => { clearTimeout(tmo); if (c.rtc === me) { v.remove(); c.rtc = null; c.noRtc = true; c.img.hidden = false; } });
       }
       if (c.rtc) continue;
-    } else if (c.rtc) { rtcStop(c.rtc); c.rtc.video.remove(); c.rtc = null; c.img.hidden = false; }
-    const liveS = camStreamOk(id) && camLiveSmall() && c.visible && c.wrap.isConnected;
+    } else if (c.rtc) { const f = rtcFrame(c.rtc.video); if (f) c.img.src = f; rtcStop(c.rtc); c.rtc.video.remove(); c.rtc = null; c.img.hidden = false; }
+    const liveS = camStreamOk(id) && camLiveSmall() && near && c.wrap.isConnected;
     if (liveS) {
       if (!c.live) { c.live = true; c.img.onerror = () => { c.live = false; c.noStream = true; }; if (!c.noStream) { c.img.src = streamUrl(id); c.msg.textContent = ""; } }
       if (!c.noStream && (bigStream || !big)) continue;
