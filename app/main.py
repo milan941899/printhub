@@ -141,6 +141,7 @@ for pc in cfg.get("printers", []):
         p.settings = settings
         p.history = history
         p.media_dir = MEDIA_DIR
+        p.auto_assign = pc.get("auto_assign", True)
         p.on_job_start.append(_restart_on_start)
         if pc.get("shelly"):
             p.shelly = Shelly(pc["shelly"], store, pc["id"], int(pc.get("shelly_channel", 0)))
@@ -2534,7 +2535,11 @@ async def api_state(request):
         slots = []
         for s in p.slots():
             sid = store.get_slot(p.id, s["key"])
-            slots.append({**s, "spool_id": sid, "spool": spools.get(sid) if sid else None})
+            h = rfid_hint.get((p.id, s["key"]))
+            if h and h["kind"] == "auto" and time.time() - h["t"] > 600:
+                h = None
+            slots.append({**s, "spool_id": sid, "spool": spools.get(sid) if sid else None,
+                          "hint": h if h and not (h["kind"] == "pick" and sid) else None})
         st["slots"] = slots
         st["track_usage"] = p.track_usage
         st["camera"] = p.camera is not None
@@ -2617,7 +2622,15 @@ async def api_assign(request):
     p = printers.get(pid)
     if not p or slot not in {s["key"] for s in p.slots()}:
         return JSONResponse({"error": "Drucker oder Slot unbekannt"}, status_code=400)
-    old, _moved = store.set_slot(pid, slot, spool_id)
+    warn = await run_in_threadpool(_assign_slot, p, slot, spool_id)
+    rfid_hint.pop((p.id, slot), None)
+    _rfid_manual.add((p.id, slot))      # von Hand gesetzt/geleert → erst bei einer anderen Rolle wieder automatisch
+    return JSONResponse({"ok": True, "warning": warn})
+
+
+def _assign_slot(p, slot, spool_id):
+    """Spule einem Slot zuweisen: Speicher, Standort in Spoolman, Drucker. Gibt eine Warnung zurück (oder "")."""
+    old, _moved = store.set_slot(p.id, slot, spool_id)
     warn = ""
     try:
         if old and old != spool_id:
@@ -2632,7 +2645,95 @@ async def api_assign(request):
             p.set_slot_filament(slot, spoolman.spool(spool_id) if spool_id else None)
         except Exception as e:
             warn = (warn + " " if warn else "") + f"Am Drucker nicht gesetzt: {e}"
-    return JSONResponse({"ok": True, "warning": warn})
+    return warn
+
+
+# ---------- RFID: Spulen automatisch zuordnen (Snapmaker U1) ----------
+# Der Chip meldet nur Hersteller/Material/Farbe – PrintHub sucht die passende Spoolman-Spule dazu.
+rfid_hint = {}      # (pid, slot) -> {"t": Zeit, "kind": "auto"|"pick", "text": …}
+_rfid_seen = {}     # (pid, slot) -> zuletzt gesehener Chip-Fingerabdruck
+_rfid_manual = set()  # Slots, die von Hand gesetzt wurden
+
+
+def _rgb(h):
+    h = (h or "").lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) if len(h) >= 6 else None
+
+
+def _color_dist(a, b):
+    x, y = _rgb(a), _rgb(b)
+    return sum((i - j) ** 2 for i, j in zip(x, y)) ** 0.5 if x and y else 999
+
+
+def _rfid_match(s, spools):
+    """Passende freie Spulen zum Chip: gleicher Hersteller, gleiches Grundmaterial, ähnliche Farbe."""
+    base = (s.get("material") or "").split(" ")[0].upper()
+    vend = (s.get("vendor") or "").strip().lower()
+    out = []
+    for sp in spools:
+        if store.slot_of_spool(sp["id"]):
+            continue
+        if (sp.get("material") or "").split(" ")[0].upper() != base:
+            continue
+        if vend and (sp.get("vendor") or "").strip().lower() != vend:
+            continue
+        if _color_dist(sp.get("color"), s.get("color")) > 60:
+            continue
+        if sp.get("remaining") is not None and sp["remaining"] <= 0:
+            continue
+        out.append(sp)
+    return out
+
+
+def _auto_assign(p):
+    if p.type != "moonraker" or not p.online or not getattr(p, "auto_assign", True) or p.status().get("printing"):
+        return
+    slots = p.slots()
+    if not any(s.get("rfid") or s.get("printer_spool") for s in slots):
+        return
+    spools = spoolman.spools()
+    ids = {sp["id"]: sp for sp in spools}
+    for s in slots:
+        key, k = s["key"], (p.id, s["key"])
+        cur = store.get_slot(p.id, key)
+        fp = (s.get("vendor"), s.get("material"), s.get("color")) if s.get("rfid") else None
+        prev = _rfid_seen.get(k, "–")
+        _rfid_seen[k] = fp
+        if prev != "–" and prev != fp:
+            _rfid_manual.discard(k)
+        if k in _rfid_manual:
+            continue
+        # am Drucker (z. B. in Fluidd) gesetzte Spule übernehmen, wenn PrintHub hier noch nichts hat
+        ps = int(s.get("printer_spool") or 0)
+        if not cur and ps and ps in ids and not store.slot_of_spool(ps):
+            _assign_slot(p, key, ps)
+            rfid_hint[k] = {"t": time.time(), "kind": "auto", "text": f"#{ps} vom Drucker übernommen"}
+            log.info("[%s] %s: Spule #%s vom Drucker übernommen", p.id, key, ps)
+            continue
+        if not fp:
+            continue
+        if cur:
+            sp = ids.get(cur)
+            # andere Rolle eingelegt (Chip passt nicht mehr zur zugewiesenen Spule) → Zuordnung lösen, neu suchen
+            if prev != fp and sp and (_color_dist(sp.get("color"), s.get("color")) > 60 or
+                                      (sp.get("material") or "").split(" ")[0].upper() != (s.get("material") or "").split(" ")[0].upper()):
+                log.info("[%s] %s: andere Rolle erkannt – #%s gelöst", p.id, key, cur)
+                _assign_slot(p, key, None)
+                cur = None
+            else:
+                continue
+        cand = _rfid_match(s, spools)
+        if len(cand) > 1:          # mehrere gleiche → die angebrochene
+            opened = [c for c in cand if (c.get("used") or 0) > 0]
+            cand = opened if len(opened) == 1 else cand
+        if len(cand) == 1:
+            _assign_slot(p, key, cand[0]["id"])
+            rfid_hint[k] = {"t": time.time(), "kind": "auto", "text": f"#{cand[0]['id']} per RFID zugeordnet"}
+            log.info("[%s] %s: per RFID #%s %s zugeordnet", p.id, key, cand[0]["id"], cand[0]["name"])
+        elif cand:
+            rfid_hint[k] = {"t": time.time(), "kind": "pick", "text": f"{len(cand)} passende Spulen – bitte wählen"}
+        else:
+            rfid_hint.pop(k, None)
 
 
 async def api_control(request):
@@ -2666,6 +2767,12 @@ def _sampler():
                 _watch_printer(p, job)
             except Exception as e:
                 log.debug("Messwerte %s: %s", p.id, e)
+        if tick % 6 == 2:
+            for p in printers.values():
+                try:
+                    _auto_assign(p)
+                except Exception as e:
+                    log.debug("RFID-Zuordnung %s: %s", p.id, e)
         if tick % 12 == 6:
             try:
                 _watch_services()
@@ -3556,6 +3663,7 @@ PCFG_FIELDS = {   # Schlüssel -> Typ
     "id": "str", "name": "str", "type": "str", "host": "str", "serial": "str", "access_code": "secret",
     "port": "int", "web_port": "int", "channels": "int", "api_key": "secret", "light_pin": "str",
     "shelly": "str", "shelly_channel": "int", "camera_url": "str", "camera": "bool", "track_usage": "bool",
+    "auto_assign": "bool",
 }
 PCFG_SECRET = {"access_code", "api_key"}
 

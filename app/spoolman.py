@@ -195,6 +195,7 @@ class Spoolman:
         return {
             "id": sp["id"],
             "name": name or f"Spule {sp['id']}",
+            "vendor": vendor,
             "material": fil.get("material") or "",
             "color": ("#" + color.lstrip("#")) if color else "",
             "remaining": sp.get("remaining_weight"),

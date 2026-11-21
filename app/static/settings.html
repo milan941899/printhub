@@ -1678,6 +1678,7 @@ function pcDraw() {
           ${bambu ? "" : pcf(i, "light_pin", "Licht-Ausgang", "Klipper: z. B. caselight oder „led cavity_led“")}
           ${bambu ? "" : pcf(i, "api_key", "Moonraker-API-Schlüssel", p.api_key_set ? "gespeichert – leer = behalten" : "nur falls nötig", 'autocomplete="new-password"', "password")}
           ${pcf(i, "track_usage", "Verbrauch an Spoolman buchen", "Aus, wenn der Drucker selbst bucht (z. B. SpoolLink)", "", "check")}
+          ${bambu ? "" : pcf(i, "auto_assign", "Spulen per RFID zuordnen", "Erkennt der Drucker eine Original-Rolle, sucht PrintHub die passende Spule im Lager", "", "check")}
           <div class="pc-test" id="pc-test-${i}"></div>
         </div>
       </div></section>`;

@@ -602,6 +602,7 @@ function aspool(p, s, i) {
     <div class="a-g">${sp && sp.remaining != null ? `<b>${Math.round(sp.remaining)} g</b>` : (sp ? `#${sp.id}` : "&nbsp;")}</div>
     <div class="a-name" title="${name}">${name}</div>
     ${extra}
+    ${s.hint ? `<div class="a-hint ${s.hint.kind}" title="${esc(s.hint.text)}">${s.hint.kind === "pick" ? "❓ wählen" : "🏷 RFID"}</div>` : ""}
     ${PH.cfg.first_marks !== false && p._first && p._first.has(s.key) ? `<div class="a-first" title="Gleiche Sorte liegt mehrfach im AMS – diese zuerst aufbrauchen (beim Sync diesen Slot wählen)">▲ zuerst</div>` : ""}
     <button type="button" class="overlay" aria-label="${esc(s.label)}: Spule wählen" data-pid="${p.id}" data-key="${esc(s.key)}"></button>
   </div>`;
