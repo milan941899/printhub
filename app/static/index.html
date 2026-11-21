@@ -94,7 +94,11 @@ async function rtcStart(id, video) {
   if (!offer || !offer.sdp) throw new Error(offer && offer.error || "keine Antwort");
   const pc = new RTCPeerConnection({sdpSemantics: "unified-plan", iceServers: offer.iceServers || []});
   pc.addTransceiver("video", {direction: "recvonly"});
-  pc.ontrack = e => { if (e.track.kind === "video") video.srcObject = e.streams[0] || new MediaStream([e.track]); };
+  pc.ontrack = e => {
+    if (e.track.kind !== "video") return;
+    video.srcObject = e.streams[0] || new MediaStream([e.track]); video._track = e.track.readyState;
+    video.play().catch(() => {});      // Android-Chrome/Vivaldi spielt sonst nicht von selbst
+  };
   pc.onicecandidate = e => { if (e.candidate) post({type: "remote_candidate", id: offer.id, candidates: [e.candidate]}).catch(() => {}); };
   await pc.setRemoteDescription({type: offer.type || "offer", sdp: offer.sdp});   // U1 schickt kein „type“ mit
   const ans = await pc.createAnswer();
@@ -111,17 +115,20 @@ function openCam(id) {
   const vid = document.getElementById("lbvid"), im0 = document.getElementById("lbimg");
   vid.hidden = true; im0.hidden = false;
   if (camWebrtcOk(id) && !PH.saving()) {
-    if (c && c.img.src) im0.src = c.img.src;      // bis das Video da ist: letztes Bild
+    // Video sofort sichtbar (Android pausiert unsichtbare Videos) – bis Bilder kommen, zeigt es das letzte Einzelbild
+    if (c && c.img.src) { im0.src = c.img.src; vid.poster = c.img.src; }
+    vid.hidden = false; im0.hidden = true;
     const me = bigRtc = {video: vid, pc: null};
-    const tmo = setTimeout(() => { if (bigRtc === me && vid.hidden) { const st = me.pc ? me.pc.iceConnectionState : "kein Aufbau"; rtcStop(me); bigRtc = null;
-      const tt = document.getElementById("lbtitle"); tt.textContent = tt.textContent.split(" · ")[0] + " · Video: kein Bild nach 8 s (" + st + ")"; } }, 8000);   // kein Video → Einzelbilder
-    vid.onplaying = () => { if (bigRtc === me) { clearTimeout(tmo); vid.hidden = false; im0.hidden = true; } };
+    const tmo = setTimeout(() => { if (bigRtc === me && !vid.videoWidth) { vid.hidden = true; im0.hidden = false; const st = me.pc ? me.pc.iceConnectionState : "kein Aufbau"; rtcStop(me); bigRtc = null;
+      const tt = document.getElementById("lbtitle"); tt.textContent = tt.textContent.split(" · ")[0] + " · Video: kein Bild nach 8 s (" + st + ", Spur " + (vid._track || "keine") + ", " + (vid.paused ? "pausiert" : "läuft") + ")"; } }, 8000);   // kein Video → Einzelbilder
+    const ok = () => { if (bigRtc === me && vid.videoWidth) { clearTimeout(tmo); vid.hidden = false; im0.hidden = true; } };
+    vid.onplaying = ok; vid.onloadeddata = ok; vid.onresize = ok;
     const why = t => { const tt = document.getElementById("lbtitle"); if (bigRtc === me || !bigRtc) tt.textContent = tt.textContent.split(" · ")[0] + " · Video: " + t; };
     rtcStart(id, vid).then(pc => {
       if (bigRtc !== me) return pc.close();
       me.pc = pc;
       pc.oniceconnectionstatechange = () => { if (["failed", "disconnected"].includes(pc.iceConnectionState)) why("keine Verbindung zum Drucker (" + pc.iceConnectionState + ")"); };
-    }).catch(e => { if (bigRtc === me) { clearTimeout(tmo); bigRtc = null; why(String(e.message || e).slice(0, 80)); } });
+    }).catch(e => { if (bigRtc === me) { clearTimeout(tmo); bigRtc = null; vid.hidden = true; im0.hidden = false; why(String(e.message || e).slice(0, 80)); } });
   } else if (camStreamOk(id) && !PH.saving()) {
     const im = document.getElementById("lbimg");
     im.onerror = () => { im.onerror = null; im.dataset.stream = ""; };   // Stream geht nicht → wieder Einzelbilder
@@ -162,11 +169,13 @@ async function camTick() {
     const liveR = camWebrtcOk(id) && camLiveSmall() && c.visible && c.wrap.isConnected && !c.noRtc;
     if (liveR) {
       if (!c.rtc) {
-        const v = document.createElement("video"); v.autoplay = v.muted = v.playsInline = true; v.className = "camvid"; v.hidden = true;
-        c.wrap.insertBefore(v, c.img); c.rtc = {video: v, pc: null};
-        const me = c.rtc, tmo = setTimeout(() => { if (c.rtc === me && v.hidden) { rtcStop(me); v.remove(); c.rtc = null; c.noRtc = true; } }, 8000);
-        v.onplaying = () => { clearTimeout(tmo); v.hidden = false; c.img.hidden = true; c.msg.textContent = ""; };
-        rtcStart(id, v).then(pc => { if (c.rtc === me) me.pc = pc; else pc.close(); }).catch(() => { clearTimeout(tmo); if (c.rtc === me) { v.remove(); c.rtc = null; c.noRtc = true; } });
+        const v = document.createElement("video"); v.autoplay = v.muted = v.playsInline = true; v.className = "camvid";
+        v.setAttribute("muted", ""); v.setAttribute("playsinline", ""); if (c.img.src) v.poster = c.img.src;
+        c.wrap.insertBefore(v, c.img); c.img.hidden = true; c.rtc = {video: v, pc: null};
+        const me = c.rtc, tmo = setTimeout(() => { if (c.rtc === me && !v.videoWidth) { rtcStop(me); v.remove(); c.rtc = null; c.noRtc = true; c.img.hidden = false; } }, 8000);
+        const ok = () => { if (v.videoWidth) { clearTimeout(tmo); c.msg.textContent = ""; } };
+        v.onplaying = ok; v.onloadeddata = ok;
+        rtcStart(id, v).then(pc => { if (c.rtc === me) me.pc = pc; else pc.close(); }).catch(() => { clearTimeout(tmo); if (c.rtc === me) { v.remove(); c.rtc = null; c.noRtc = true; c.img.hidden = false; } });
       }
       if (c.rtc) continue;
     } else if (c.rtc) { rtcStop(c.rtc); c.rtc.video.remove(); c.rtc = null; c.img.hidden = false; }
