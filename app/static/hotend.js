@@ -143,7 +143,7 @@ function hotendSvg(p, info, real = false) {
   return `<svg viewBox="0 0 400 300" role="img" aria-label="Düse">
     <!-- Material -->
     <text class="lbl" x="18" y="34">MATERIAL</text>
-    <text class="val" x="18" y="58">${HX.esc(material || "–")}</text>
+    <text class="val" x="18" y="58">${HX.esc(String(material || "–").split(" ")[0])}${String(material || "").includes(" ") ? `<tspan class="unit"> ${HX.esc(String(material).split(" ").slice(1).join(" ").slice(0, 12))}</tspan>` : ""}</text>
     <polyline class="lead" points="18,64 110,64 150,27"/>
     <!-- Lüfter -->
     ${bambu ? `<text class="lbl" x="18" y="96">HOTEND-</text><text class="lbl" x="18" y="110">LÜFTER</text>`
@@ -162,16 +162,17 @@ function hotendSvg(p, info, real = false) {
     <text class="lbl" x="382" y="128" text-anchor="end">DÜSE</text>
     <text class="val" x="382" y="152" text-anchor="end" style="fill:${nozzle && nozzle.actual >= 45 ? heat : "var(--fg)"}">${HX.deg(nozzle && nozzle.actual)}<tspan class="unit"> / ${HX.deg(nozzle && nozzle.target)}</tspan></text>
     <polyline class="lead" points="382,158 290,158 236,158"/>
-    <!-- Layer -->
-    <text class="lbl" x="382" y="206" text-anchor="end">LAYER</text>
-    <text class="val acc" x="382" y="230" text-anchor="end">${layer} <tspan class="unit">${total}</tspan></text>
+    <!-- Layer (ohne Layer-Angabe: Höhe Z) -->
+    ${p.layer == null && p.z != null
+      ? `<text class="lbl" x="382" y="206" text-anchor="end">HÖHE</text><text class="val acc" x="382" y="230" text-anchor="end">${String(p.z).replace(".", ",")} <tspan class="unit">mm</tspan></text>`
+      : `<text class="lbl" x="382" y="206" text-anchor="end">LAYER</text><text class="val acc" x="382" y="230" text-anchor="end">${layer} <tspan class="unit">${total}</tspan></text>`}
     <polyline class="lead" points="382,236 300,236 258,244"/>
 
     ${real ? hotendReal(p, info, {heat, heating, bedHeating, fan, fanOn, rows, hot, hotOn}) : `
     <!-- Filament -->
     <line x1="200" y1="44" x2="200" y2="206" stroke="${c}" stroke-width="3"/>
     <rect x="150" y="10" width="100" height="34" rx="8" fill="${c}" stroke="#ffffff30"/>
-    <text x="200" y="32" text-anchor="middle" font-size="14" font-weight="800" fill="${HX.textOn(c)}">${HX.esc(material || "–")}</text>
+    <text x="200" y="32" text-anchor="middle" font-size="14" font-weight="800" fill="${HX.textOn(c)}">${HX.esc(String(material || "–").split(" ")[0])}</text>
     <!-- Kühlkörper + Lüfter -->
     ${fins}
     <rect class="fanbox" x="112" y="62" width="40" height="68" rx="6" fill="none" stroke-width="2"/>

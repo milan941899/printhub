@@ -284,6 +284,11 @@ class MoonrakerPrinter(BasePrinter):
             temps.append({"label": "Bett", "actual": round(bed.get("temperature", 0)), "target": round(bed.get("target", 0))})
         cur = None
         th = st.get("toolhead", {}).get("extruder")
+        # Snapmaker U1: wartende Köpfe stehen auf Bereitschafts-Temperatur (z. B. 70 °C) – der druckende Kopf ist
+        # der mit dem höchsten Soll; „toolhead.extruder“ hinkt beim Kopfwechsel manchmal hinterher
+        tgt = [(round((st.get(ex) or {}).get("target", 0)), i) for i, ex in enumerate(self._extruders()) if st.get(ex)]
+        if active and tgt and max(tgt)[0] > 0:
+            th = "extruder" + (str(max(tgt)[1]) if max(tgt)[1] else "")
         if active and th:
             n = th.replace("extruder", "") or "0"
             cur = f"T{n}"
@@ -319,6 +324,8 @@ class MoonrakerPrinter(BasePrinter):
             "current_slot": cur,
             "error": self.last_error,
             "layer": info.get("current_layer") if active else None,
+            # ohne Layer-Angabe vom Slicer: wenigstens die Höhe (Z) zeigen
+            "z": round(gm["gcode_position"][2], 2) if active and gm.get("gcode_position") else None,
             "total_layers": info.get("total_layer") if active else None,
             "speed": f"{live_v} mm/s" if active and live_v is not None else None,
             "speed_pct": round(gm.get("speed_factor", 1) * 100) if gm else None,
