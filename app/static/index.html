@@ -157,6 +157,22 @@ function showImg(src, title) {
   document.getElementById("lightbox").classList.add("open");
 }
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeCam(); });
+// Tab gewechselt / Browser im Hintergrund: Live-Streams nach 30 s abbauen (letztes Bild bleibt stehen), beim Zurückkommen sofort weiter
+let camBgTimer = null;
+document.addEventListener("visibilitychange", () => {
+  clearTimeout(camBgTimer);
+  if (document.hidden) {
+    camBgTimer = setTimeout(() => {
+      for (const c of Object.values(cams)) {
+        if (c.rtc) { const f = rtcFrame(c.rtc.video); if (f) c.img.src = f; rtcStop(c.rtc); c.rtc.video.remove(); c.rtc = null; c.img.hidden = false; }
+        if (c.live) { c.live = false; c.img.removeAttribute("src"); c.url = null; }
+      }
+    }, 30000);
+  } else {
+    for (const c of Object.values(cams)) if (c.rtc && c.rtc.video.paused) c.rtc.video.play().catch(() => {});
+    camTick();
+  }
+});
 async function camTick() {
   if (document.hidden) return;
   const now = Date.now();
@@ -569,6 +585,9 @@ function aspool(p, s, i) {
   const isExt = s.key === "ext";
   const hub = p.type === "moonraker" ? i + 1 : (isExt ? "E" : i + 1);
   const mat = (sp && sp.material) || s.material || "–";
+  // „PLA SnapSpeed“ → groß „PLA“, klein „SnapSpeed“ (Untertyp vom Drucker, auch wenn eine Spule zugewiesen ist)
+  const matBase = mat.split(" ")[0];
+  const matSub = mat.split(" ").slice(1).join(" ") || (s.material && s.material.split(" ")[0] === matBase ? s.material.split(" ").slice(1).join(" ") : "");
   let extra = "";
   if (p.type === "moonraker") {
     const tmp = p.temps.find(t => t.label === s.key);
@@ -579,9 +598,9 @@ function aspool(p, s, i) {
   const name = sp ? esc(stripMat(sp.name, sp.material)) : (color || s.material ? "frei" : "leer");
   return `<div class="aspool ${p.current_slot === s.key ? "active" : ""}" title="${esc(s.label)} – tippen zum Zuweisen">
     <div class="reel3d ${sp || color ? "" : "empty"}">${PH.spool(color || "#64748b", sp || color ? pct / 100 : 0, 60)}<span class="slotno">${hub}</span></div>
-    <div class="a-mat">${esc(mat)}</div>
+    <div class="a-mat">${esc(matBase)}</div><div class="a-sub" title="${esc(mat)}">${matSub ? esc(matSub) : "&nbsp;"}</div>
     <div class="a-g">${sp && sp.remaining != null ? `<b>${Math.round(sp.remaining)} g</b>` : (sp ? `#${sp.id}` : "&nbsp;")}</div>
-    <div class="a-name">${name}</div>
+    <div class="a-name" title="${name}">${name}</div>
     ${extra}
     ${PH.cfg.first_marks !== false && p._first && p._first.has(s.key) ? `<div class="a-first" title="Gleiche Sorte liegt mehrfach im AMS – diese zuerst aufbrauchen (beim Sync diesen Slot wählen)">▲ zuerst</div>` : ""}
     <button type="button" class="overlay" aria-label="${esc(s.label)}: Spule wählen" data-pid="${p.id}" data-key="${esc(s.key)}"></button>
