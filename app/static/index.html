@@ -113,9 +113,15 @@ function openCam(id) {
   if (camWebrtcOk(id) && !PH.saving()) {
     if (c && c.img.src) im0.src = c.img.src;      // bis das Video da ist: letztes Bild
     const me = bigRtc = {video: vid, pc: null};
-    const tmo = setTimeout(() => { if (bigRtc === me && vid.hidden) { rtcStop(me); bigRtc = null; } }, 8000);   // kein Video → Einzelbilder
+    const tmo = setTimeout(() => { if (bigRtc === me && vid.hidden) { const st = me.pc ? me.pc.iceConnectionState : "kein Aufbau"; rtcStop(me); bigRtc = null;
+      const tt = document.getElementById("lbtitle"); tt.textContent = tt.textContent.split(" · ")[0] + " · Video: kein Bild nach 8 s (" + st + ")"; } }, 8000);   // kein Video → Einzelbilder
     vid.onplaying = () => { if (bigRtc === me) { clearTimeout(tmo); vid.hidden = false; im0.hidden = true; } };
-    rtcStart(id, vid).then(pc => { if (bigRtc === me) me.pc = pc; else pc.close(); }).catch(() => { if (bigRtc === me) { clearTimeout(tmo); bigRtc = null; } });
+    const why = t => { const tt = document.getElementById("lbtitle"); if (bigRtc === me || !bigRtc) tt.textContent = tt.textContent.split(" · ")[0] + " · Video: " + t; };
+    rtcStart(id, vid).then(pc => {
+      if (bigRtc !== me) return pc.close();
+      me.pc = pc;
+      pc.oniceconnectionstatechange = () => { if (["failed", "disconnected"].includes(pc.iceConnectionState)) why("keine Verbindung zum Drucker (" + pc.iceConnectionState + ")"); };
+    }).catch(e => { if (bigRtc === me) { clearTimeout(tmo); bigRtc = null; why(String(e.message || e).slice(0, 80)); } });
   } else if (camStreamOk(id) && !PH.saving()) {
     const im = document.getElementById("lbimg");
     im.onerror = () => { im.onerror = null; im.dataset.stream = ""; };   // Stream geht nicht → wieder Einzelbilder

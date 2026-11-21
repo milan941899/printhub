@@ -4413,6 +4413,22 @@ async def api_camera_webrtc(request):
     return Response(r.content, status_code=r.status_code, media_type=r.headers.get("Content-Type", "application/json"))
 
 
+async def api_camera_webrtc_test(request):
+    """Fehlersuche: WebRTC-Anfrage an die Kamera schicken und die Antwort zeigen (nur lesen, baut keine Verbindung auf)."""
+    p = printers.get(request.path_params["pid"])
+    cam = p.camera if p else None
+    if cam is None or not hasattr(cam, "webrtc_url"):
+        return JSONResponse({"error": "keine Moonraker-Kamera"})
+    out = {"webrtc_url": await run_in_threadpool(cam.webrtc_url)}
+    if out["webrtc_url"]:
+        try:
+            r = await run_in_threadpool(lambda: cam.s.post(out["webrtc_url"], json={"type": "request", "res": ""}, timeout=10))
+            out.update(status=r.status_code, content_type=r.headers.get("Content-Type"), body=r.text[:600])
+        except Exception as e:
+            out["error"] = str(e)
+    return JSONResponse(out)
+
+
 async def api_camera_stream(request):
     """Videostream der Kamera durchreichen (Snapmaker U1/Klipper: wie in Fluidd), damit es auch über VPN geht."""
     p = printers.get(request.path_params["pid"])
@@ -4557,6 +4573,7 @@ app = Starlette(
         Route("/api/printers/{pid}/camera.jpg", api_camera),
         Route("/api/printers/{pid}/camera.mjpg", api_camera_stream),
         Route("/api/printers/{pid}/webrtc", api_camera_webrtc, methods=["POST"]),
+        Route("/api/printers/{pid}/webrtc-test", api_camera_webrtc_test),
         Route("/api/printers/{pid}/{action}", api_control, methods=["POST"]),
         Mount("/static", StaticFiles(directory=STATIC), name="static"),
     ],
