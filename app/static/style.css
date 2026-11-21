@@ -1341,3 +1341,4 @@ body.tg-on #tg-steps { display:none; }   /* verbunden: Einrichtungs-Schritte aus
 .psw-p { position:absolute; left:0; bottom:0; height:3px; background:var(--acc); border-radius:0 2px 2px 0; }
 body.psw-on .pblk.pcard.psw-hide { display:none !important; }
 .blk-checks { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:6px; } .blk-checks label { display:flex; gap:6px; align-items:center; font-size:14px; }
+.hx-cham { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; } .hx-cham span { font-size:12.5px; color:var(--muted); background:var(--tile); border:1px solid var(--line); border-radius:99px; padding:3px 10px; } .hx-cham b { color:var(--fg); }

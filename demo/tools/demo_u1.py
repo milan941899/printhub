@@ -71,11 +71,16 @@ def u1_printer(old, spools):
         if sp:
             sp["location"] = f"U1 – Kopf {i + 1}"
             sp["slot"] = f"{NAME} – Kopf {i + 1} (T{i})"
-        slots.append({"key": f"T{i}", "label": f"Kopf {i + 1} (T{i})", "material": "", "color": "", "spool_id": sid, "spool": sp or None})
+        slots.append({"key": f"T{i}", "label": f"Kopf {i + 1} (T{i})", "material": (sp.get("material") or "") if sp else "",
+                      "color": (sp.get("color") or "") if sp else "", "vendor": (sp.get("vendor") or "") if sp else "",
+                      "rfid": False, "printer_spool": sid or 0, "spool_id": sid, "spool": sp or None})
     p = dict(old)
     p.update({
         "id": "u1", "name": NAME, "type": "moonraker", "online": True, "state": "Bereit", "printing": False, "paused": False,
-        "temps": [{"label": f"T{i}", "actual": 27 + i % 2, "target": 0} for i in range(4)] + [{"label": "Bett", "actual": 26, "target": 0}],
+        "temps": [{"label": f"T{i}", "actual": 27 + i % 2, "target": 0} for i in range(4)] + [{"label": "Bett", "actual": 26, "target": 0},
+                                                                                    {"label": "Bauraum", "actual": 24, "target": 0}],
+        "fans": [{"label": "Bauteil", "pct": 0}, {"label": "Hotend", "pct": 0}],
+        "chamber_fans": {"Abluft": 0, "Umluft": 0, "Bauraum-Lüfter": 0},
         "slots": slots, "camera": True, "light": False, "shelly": True, "maint_due": 0,
         "power": {**(old.get("power") or {}), "available": True, "on": True, "watts": 9.4, "auto": True, "mode": "shelly", "plug": "Shelly U1"},
         "energy": {**(old.get("energy") or {}), "watts": 9.4, "plug_on": True, "plug_online": True, "today_kwh": 0.21, "today_cost": 0.07},

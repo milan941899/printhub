@@ -2553,9 +2553,9 @@ async def api_assign(request):
     except Exception as e:
         warn = f"Zugewiesen, aber Standort in Spoolman nicht gesetzt: {e}"
     # Material + Farbe auch am Drucker einstellen (Bambu), damit Bambuddy/Bambu Studio es sehen
-    if spool_id and hasattr(p, "set_slot_filament") and settings["sync_slots"]:
+    if (spool_id or p.type == "moonraker") and hasattr(p, "set_slot_filament") and settings["sync_slots"]:
         try:
-            p.set_slot_filament(slot, spoolman.spool(spool_id))
+            p.set_slot_filament(slot, spoolman.spool(spool_id) if spool_id else None)
         except Exception as e:
             warn = (warn + " " if warn else "") + f"Am Drucker nicht gesetzt: {e}"
     return JSONResponse({"ok": True, "warning": warn})

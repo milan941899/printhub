@@ -116,7 +116,9 @@ function hotendSvg(p, info, real = false) {
   const fanOn = fan && fan.pct > 0;
   // Hotend-Lüfter (kühlt den Kühlkörper): Bambu meldet ihn, sonst läuft er, solange die Düse heiß ist
   const hf = (p.fans || [])[1] && p.fans[1].pct != null ? p.fans[1].pct : (nozzle && nozzle.actual > 50 ? 100 : 0);
-  const hot = {pct: hf}, hotOn = hf > 0, bambu = p.type !== "moonraker";
+  const hot = {pct: hf}, hotOn = hf > 0;
+  // „bambu“ = Darstellung mit getrenntem Hotend- und Bauteillüfter (Bambu oder Klipper, das beide meldet, z. B. Snapmaker U1)
+  const kl2 = p.type === "moonraker" && (p.fans || []).length > 1, bambu = p.type !== "moonraker" || kl2;
   const layer = p.layer != null ? `${p.layer}` : "–";
   const total = p.total_layers != null ? `/ ${p.total_layers}` : "";
   const prog = p.progress || 0;
@@ -128,10 +130,11 @@ function hotendSvg(p, info, real = false) {
   }
   let fins = "";
   for (let i = 0; i < 8; i++) fins += `<rect x="168" y="${62 + i * 9}" width="64" height="5" rx="1.5" class="metal"/>`;
-  const leftMid = p.type === "moonraker"
+  const leftMid = kl2 ? {l: "Speed", v: HX.num(p.speed), u: p.speed_pct && p.speed_pct !== 100 ? `${p.speed_pct} %` : ""}
+    : p.type === "moonraker"
     ? {l: "Fluss", v: p.flow != null ? p.flow : "–", u: p.flow != null ? "mm³/s" : ""}
     : {l: "Speed-Modus", v: HX.num(p.speed), u: p.speed_pct ? `${p.speed_pct} %` : ""};
-  const rightMid = p.type === "moonraker"
+  const rightMid = p.type === "moonraker" && !kl2
     ? {l: "Speed", v: HX.num(p.speed), u: p.speed_pct && p.speed_pct !== 100 ? `${p.speed_pct} %` : ""}
     : {l: "Bauteillüfter", v: fan && fan.pct != null ? `${fan.pct} %` : "–", u: ""};
   // links: beim Bambu der Hotend-Lüfter (gezeichnet am Kühlkörper), sonst der Bauteillüfter

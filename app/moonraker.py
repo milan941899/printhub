@@ -74,7 +74,10 @@ class MoonrakerPrinter(BasePrinter):
                 "display_status"] + self._extruders()
         if self.light_pin:
             objs.append(self._light_obj())
-        url = self.base + "/printer/objects/query?" + "&".join(objs)
+        # Snapmaker U1 & Co.: Filament je Kopf (RFID), Lüfter je Kopf, Bauraum – nur abfragen, was es gibt
+        self._extra = self._find_extras()
+        objs += self._extra
+        url = self.base + "/printer/objects/query?" + "&".join(quote(o, safe="_") for o in objs)
         while True:
             try:
                 r = self.s.get(url, headers=self.headers, timeout=5)
@@ -89,6 +92,29 @@ class MoonrakerPrinter(BasePrinter):
                 self.online = False
                 self.last_error = f"Nicht erreichbar: {e.__class__.__name__}"
                 time.sleep(10)
+
+    def _find_extras(self):
+        try:
+            r = self.s.get(self.base + "/printer/objects/list", headers=self.headers, timeout=5)
+            have = set(r.json()["result"]["objects"])
+        except Exception:
+            return []
+        want = ["print_task_config", "temperature_sensor cavity", "fan_generic exhaust_fan", "fan_generic circulation_fan",
+                "fan_generic cavity_fan", "purifier"]
+        for i in range(self.channels):
+            want += [f"heater_fan e{i}_nozzle_fan", f"fan_generic e{i}_fan"]
+        return [o for o in want if o in have]
+
+    def _part_fan(self, st, n):
+        """Bauteillüfter von Kopf n: Kopf 0 = „fan“, sonst fan_generic eN_fan (Snapmaker U1)."""
+        o = st.get("fan") if n == 0 else st.get(f"fan_generic e{n}_fan")
+        if o is None and n != 0:
+            o = st.get("fan")
+        return round((o or {}).get("speed", 0) * 100) if o else None
+
+    def _hot_fan(self, st, n):
+        o = st.get(f"heater_fan e{n}_nozzle_fan")
+        return round(o.get("speed", 0) * 100) if o else None
 
     def _track_heads(self, st, state):
         """Druckzeit und Werkzeugwechsel pro Kopf mitzählen (für Statistik/Wartung)."""
@@ -186,7 +212,33 @@ class MoonrakerPrinter(BasePrinter):
 
     # --- Slots / Status --------------------------------------------------------
     def slots(self):
-        return [{"key": f"T{i}", "label": f"Kopf {i + 1} (T{i})", "material": "", "color": ""} for i in range(self.channels)]
+        """Ein Slot je Kopf; Material/Farbe/Hersteller meldet der U1 selbst (RFID oder am Display eingestellt)."""
+        with self.lock:
+            tc = self.status_data.get("print_task_config") or {}
+        def at(k, i, d=None):
+            v = tc.get(k)
+            return v[i] if isinstance(v, list) and i < len(v) else d
+        out = []
+        for i in range(self.channels):
+            exist = at("filament_exist", i, True)
+            rgba = at("filament_color_rgba", i) or ""
+            mat = " ".join(x for x in (at("filament_type", i) or "", at("filament_sub_type", i) or "") if x and x != "NONE")
+            out.append({"key": f"T{i}", "label": f"Kopf {i + 1} (T{i})",
+                        "material": mat if exist else "", "color": ("#" + rgba[:6]) if exist and len(rgba) >= 6 else "",
+                        "vendor": (at("filament_vendor", i) or "") if exist else "",
+                        "rfid": bool(at("filament_official", i)) if exist else False,
+                        "printer_spool": at("filament_spool_id", i) or 0})
+        return out
+
+    def set_slot_filament(self, key, spool):
+        """Spoolman-Spule am Kopf hinterlegen (Makro SET_SPOOL_ID; 0 = keine). Material/Farbe kommen vom RFID-Chip."""
+        n = int(key[1:])
+        sid = int((spool or {}).get("id") or 0)
+        r = self.s.post(self.base + "/printer/gcode/script", params={"script": f"SET_SPOOL_ID CHANNEL={n} SPOOL_ID={sid}"},
+                        headers=self.headers, timeout=10)
+        r.raise_for_status()
+        log.info("[%s] Kopf %s: Spoolman-Spule %s am Drucker hinterlegt", self.id, key, sid or "–")
+        return True
 
     def status(self):
         with self.lock:
@@ -213,7 +265,19 @@ class MoonrakerPrinter(BasePrinter):
             cur = f"T{n}"
         info = ps.get("info") or {}
         gm = st.get("gcode_move") or {}
-        fan = st.get("fan") or {}
+        n_act = int((th or "extruder").replace("extruder", "") or 0)
+        part, hot = self._part_fan(st, n_act), self._hot_fan(st, n_act)
+        fans = []
+        if part is not None:
+            fans.append({"label": "Bauteil", "pct": part})
+        if hot is not None:
+            fans.append({"label": "Hotend", "pct": hot})
+        cav = st.get("temperature_sensor cavity")
+        if cav and cav.get("temperature") is not None:
+            temps.append({"label": "Bauraum", "actual": round(cav["temperature"]), "target": 0})
+        chamber = {k: round((st.get(o) or {}).get("speed", 0) * 100) for k, o in
+                   (("Abluft", "fan_generic exhaust_fan"), ("Umluft", "fan_generic circulation_fan"), ("Bauraum-Lüfter", "fan_generic cavity_fan"))
+                   if st.get(o) is not None}
         mr = st.get("motion_report") or {}
         live_v = round(mr["live_velocity"]) if mr.get("live_velocity") is not None else None
         ev = mr.get("live_extruder_velocity")
@@ -235,7 +299,8 @@ class MoonrakerPrinter(BasePrinter):
             "speed": f"{live_v} mm/s" if active and live_v is not None else None,
             "speed_pct": round(gm.get("speed_factor", 1) * 100) if gm else None,
             "flow": flow if active else None,
-            "fans": [{"label": "Bauteil", "pct": round(fan.get("speed", 0) * 100)}] if fan else [],
+            "fans": fans,
+            "chamber_fans": chamber,
             "light": self.light_state(),
             "stage": self._stage(active, state, progress, temps, st) if active else None,
             "stage_steps": [],

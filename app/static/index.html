@@ -788,7 +788,12 @@ function printerCard(p) {
   const tw = cardW[p.id + ":temps"], th = fp ? fp.h - 95 : (L.h.temps ? L.h.temps - 90 : 0);
   const bodies = {
     progress: () => `${ringHtml(p, lastJob)}${ctrl}`,
-    hotend: () => `<div class="hotend">${hotendBody(p, info)}</div>`,
+    hotend: () => {
+      // Bauraum (z. B. Snapmaker U1): Temperatur und Bauraum-Lüfter als kleine Zeile unter der Düse
+      const cav = (p.temps || []).find(t => t.label === "Bauraum"), cf = p.chamber_fans || {};
+      const extra = [cav ? `🌡 Bauraum <b>${cav.actual}°</b>` : "", ...Object.entries(cf).map(([k, v]) => `🌀 ${esc(k)} <b>${v} %</b>`)].filter(Boolean);
+      return `<div class="hotend">${hotendBody(p, info)}</div>${extra.length ? `<div class="hx-cham">${extra.map(x => `<span>${x}</span>`).join("")}</div>` : ""}`;
+    },
     e1: () => tiles[0] || "", e2: () => tiles[1] || "", e3: () => tiles[2] || "", e4: () => tiles[3] || "",
     e5: () => tiles[4] || "", e6: () => tiles[5] || "",
     camera: () => p.camera ? `<div class="camrow"><div id="cam-${p.id}"></div><div class="camhint"><div class="label">Kamera</div><div class="muted small">Zum Vergrößern<br>aufs Bild klicken</div></div></div>` : "",
