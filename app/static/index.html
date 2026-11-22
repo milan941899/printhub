@@ -787,7 +787,7 @@ function applyFree0() {
     if (!cont) continue;
     const L = bl(p.id), on = desk && L.pos && Object.keys(L.pos).length > 0;
     cont.classList.toggle("ff", !!on);
-    if (on) PHUI.freeLayout(cont, freePos(L.pos, cont, ".blk", 0.5), el => el.dataset.b === "progress" || el.classList.contains("colb"));
+    if (on) PHUI.freeLayout(cont, freePos(L.pos, cont, ".blk", 0.5), el => el.dataset.b === "progress" || el.dataset.b === "maint" || el.classList.contains("colb"));
     else { cont.style.height = ""; [...cont.children].forEach(el => { if (el.matches(".blk")) el.style.cssText = el.style.cssText.replace(/(left|top|width|height):[^;]+;?/g, ""); }); }
   }
   const board = document.getElementById("board");
@@ -1058,7 +1058,7 @@ function printerCard(p) {
     `<button class="small-btn lightbtn ${p.light ? "on" : ""}" title="Licht ${p.light ? "aus" : "an"}schalten" onclick="light('${p.id}', ${!p.light})">💡 ${p.light ? "An" : p.light === false ? "Aus" : "Licht"}</button>`;
   const blocks = L.order.filter(k => !L.hidden.includes(k) && !(k === "camera" && !p.camera) && !(/^e\d$/.test(k) && !tiles[+k[1] - 1])).map(k => {
     const col = ["ams", "temps", "maint"].includes(k) && isCol(p.id, k);      // zugeklappt → eigene Höhe ignorieren
-    const h = L.h[k] && k !== "temps" && !col ? `--bh:${L.h[k]}px;` : "";
+    const h = L.h[k] && k !== "temps" && k !== "maint" && !col ? `--bh:${L.h[k]}px;` : "";
     let bs = L.span[k] || BLK[k].span;
     const nT = tiles.length, last = k === "e" + nT;
     if (last && !L.span[k] && nT % 4) bs = 12 - ((nT - 1) % 4) * 3;          // letzte Kachel füllt die Reihe auf
