@@ -135,20 +135,19 @@ function openCam(id) {
     rtcStart(id, vid).then(pc => {
       if (bigRtc !== me) return pc.close();
       me.pc = pc;
-      let dropT = null;
-      pc.oniceconnectionstatechange = () => {
-        const bad = ["failed", "disconnected"].includes(pc.iceConnectionState);
-        clearTimeout(dropT);
-        if (!bad) return;
-        // über VPN reißt die Verbindung gelegentlich kurz ab → nach 3 s neu aufbauen (bis zu 5×), Bild bleibt stehen
-        dropT = setTimeout(() => {
-          if (bigRtc !== me || !["failed", "disconnected"].includes(pc.iceConnectionState)) return;
-          if ((X.rtcRetry = (X.rtcRetry || 0) + 1) > 5) return why("keine Verbindung zum Drucker (" + pc.iceConnectionState + ")");
-          why("Verbindung kurz weg – baue neu auf …");
-          const keep = {...LBZ}; rtcStop(me); bigRtc = null; openCam(id); Object.assign(LBZ, keep); lbApply();
-        }, 3000);
-      };
-      pc.onconnectionstatechange = () => { if (pc.connectionState === "connected") X.rtcRetry = 0; };
+      // Über VPN meldet WebRTC gern kurz „disconnected“, obwohl das Video weiterläuft – darauf nicht reagieren.
+      // Neu aufbauen nur, wenn wirklich keine Bilder mehr kommen (Videozeit steht 8 s still), höchstens 5×.
+      let lastT = -1, still = 0;
+      me.watch = setInterval(() => {
+        if (bigRtc !== me) return clearInterval(me.watch);
+        if (!vid.videoWidth) return;
+        if (vid.currentTime !== lastT) { lastT = vid.currentTime; still = 0; X.rtcRetry = 0; return; }
+        if ((still += 2) < 8) return;
+        clearInterval(me.watch);
+        if ((X.rtcRetry = (X.rtcRetry || 0) + 1) > 5) return why("kein Bild mehr vom Drucker");
+        why("Bild steht – baue neu auf …");
+        const keep = {...LBZ}; rtcStop(me); bigRtc = null; openCam(id); Object.assign(LBZ, keep); lbApply();
+      }, 2000);
     }).catch(e => { if (bigRtc === me) { clearTimeout(tmo); bigRtc = null; vid.hidden = true; im0.hidden = false; why(String(e.message || e).slice(0, 80)); } });
   } else if (camStreamOk(id) && !PH.saving()) {
     const im = document.getElementById("lbimg");
@@ -202,7 +201,7 @@ function lbReset() { LBZ.s = 1; LBZ.x = LBZ.y = 0; lbApply(); }
 function closeCam() {
   lbReset();
   bigCam = null; document.getElementById("lightbox").classList.remove("open");
-  if (bigRtc) { rtcStop(bigRtc); bigRtc = null; }
+  if (bigRtc) { clearInterval(bigRtc.watch); rtcStop(bigRtc); bigRtc = null; }
   document.getElementById("lbvid").hidden = true; document.getElementById("lbimg").hidden = false;
   const im = document.getElementById("lbimg");
   if (im.dataset.stream) { im.dataset.stream = ""; im.removeAttribute("src"); }   // Stream beenden
