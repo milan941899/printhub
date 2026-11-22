@@ -1022,7 +1022,7 @@ async function light(pid, on) {
 async function powerSet(pid, on) {
   const p = lastPrinters.find(x => x.id === pid);
   if (!confirm(`${p ? p.name : "Drucker"} ${on ? "einschalten" : "ausschalten"}?`)) return;
-  PH.toast(on ? "Schalte ein …" : p && p.type === "moonraker" ? "Fahre herunter, dann Strom aus … (ca. 1 min)" : "Schalte aus …");
+  PH.toast(on ? "Schalte ein …" : "Schalte aus …");
   const r = await (await fetch(`/api/printers/${pid}/power`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({on})})).json();
   PH.toast(r.error || (on ? "Eingeschaltet ✓" : "Ausgeschaltet ✓") + (r.via && r.via !== "Bambuddy" ? ` (${r.via})` : ""), !!r.error);
   setTimeout(refresh, 2500);

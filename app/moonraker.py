@@ -63,47 +63,28 @@ class MoonrakerPrinter(BasePrinter):
         else:
             self.camera = None
 
-    def shutdown_host(self, timeout=60, step=None):
-        """Vor dem Stromabschalten: Linux im Drucker sauber herunterfahren und warten, bis es wirklich unten ist.
-        Moonraker ist schon nach wenigen Sekunden weg, das System fährt danach noch eine Weile herunter –
-        deshalb zusätzlich warten, bis auch der Webserver (Port 80) nicht mehr antwortet, und dann noch 15 s.
-        Gibt eine kurze Beschreibung zurück. Ist der Drucker schon nicht erreichbar, passiert nichts."""
-        import socket
-        from urllib.parse import urlparse
-        host = urlparse(self.base).hostname
-
-        def port_open(port):
-            try:
-                with socket.create_connection((host, port), timeout=2):
-                    return True
-            except OSError:
-                return False
-        step = step or (lambda txt: None)
+    def busy_reason(self):
+        """Grund, den Strom jetzt NICHT wegzunehmen – oder None.
+        „update“: Moonraker meldet ein laufendes Update. „offline“: Drucker antwortet nicht, obwohl er Strom hat –
+        das ist beim Hochfahren und bei Firmware-Updates so (bis 30 min warten). „startet“: Klipper fährt gerade hoch."""
+        now = time.time()
+        if not self.online:
+            self._off_since = getattr(self, "_off_since", None) or now
+            return "offline" if now - self._off_since < 1800 else None
+        self._off_since = None
         try:
-            self.s.get(self.base + "/server/info", headers=self.headers, timeout=3).raise_for_status()
+            r = self.s.get(self.base + "/machine/update/status", headers=self.headers, timeout=4)
+            if r.ok and (r.json().get("result") or {}).get("busy"):
+                return "update"
         except Exception:
-            step("Moonraker antwortet nicht – war schon aus")
-            return "war schon aus"
+            pass
         try:
-            r = self.s.post(self.base + "/machine/shutdown", headers=self.headers, timeout=5)
-            step(f"Befehl zum Herunterfahren gesendet (Antwort {r.status_code})")
-        except Exception as e:
-            step(f"Befehl zum Herunterfahren gesendet (Verbindung abgerissen: {type(e).__name__})")
-        t0 = time.time()
-        time.sleep(5)
-        mport = urlparse(self.base).port or 80
-        while time.time() - t0 < timeout and port_open(mport):
-            time.sleep(2)
-        step("Moonraker weg" if not port_open(mport) else f"Moonraker nach {timeout} s noch da")
-        while time.time() - t0 < timeout + 60 and port_open(80):     # Webserver geht als einer der letzten
-            time.sleep(2)
-        if time.time() - t0 >= timeout + 60:
-            step("Webserver noch erreichbar – Zeitlimit")
-            return f"nach {int(time.time() - t0)} s noch erreichbar – trotzdem ausgeschaltet"
-        step("Webserver weg")
-        time.sleep(15)      # Rest des Herunterfahrens (Dateisystem schließen)
-        step("15 s Nachlauf vorbei")
-        return f"heruntergefahren ({int(time.time() - t0)} s)"
+            r = self.s.get(self.base + "/server/info", headers=self.headers, timeout=4)
+            if r.ok and (r.json().get("result") or {}).get("klippy_state") == "startup":
+                return "startet"
+        except Exception:
+            pass
+        return None
 
     def _extruders(self):
         return ["extruder"] + [f"extruder{i}" for i in range(1, self.channels)]

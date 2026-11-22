@@ -22,6 +22,7 @@ log = logging.getLogger("strom")
 KEEP_GRUND = {
     "druck": "Druck läuft", "heiss": "Düse noch heiß", "auftrag": "nächster Auftrag startet gleich",
     "waechter": "Druckwächter startet gerade einen Auftrag", "frisch": "gerade erst eingeschaltet",
+    "update": "Update läuft", "offline": "Drucker antwortet nicht (fährt hoch oder Update?)", "startet": "Klipper startet gerade",
 }
 
 
@@ -108,15 +109,17 @@ class Power:
             w = self._watts_now(p)
             steps.append([round(time.time(), 1), round(time.time() - t0), txt, w])
             log.info("[%s] Ausschalten +%ds: %s%s", p.id, time.time() - t0, txt, f" · {w} W" if w is not None else "")
-        # Klipper-Drucker (U1): erst sauber herunterfahren, dann Strom weg – aber nur, wenn es überhaupt eine Steckdose gibt
-        if not on and hasattr(p, "shutdown_host") and (pid or p.shelly):
+        # Klipper-Drucker (U1): kein Herunterfahren – der U1 ist fürs harte Abschalten gebaut (System schreibgeschützt,
+        # Daten auf ext4) und startet nach „Herunterfahren“ sowieso neu. Nur protokollieren.
+        if not on and hasattr(p, "busy_reason") and (pid or p.shelly):
             step(f"Ausschalten {reason}")
-            try:
-                down = p.shutdown_host(step=step)
-            except Exception as e:
-                down = f"Fehler beim Herunterfahren: {e}"
-                step(down)
-            log.info("[%s] vor dem Ausschalten: %s", p.id, down)
+            why = None if force else p.busy_reason()
+            if why == "update":
+                step("abgebrochen – Update läuft")
+                self._save_log(p, steps, "abgebrochen: Update läuft")
+                raise ValueError("Ausschalten gesperrt: im Drucker läuft gerade ein Update")
+            if why:
+                step(f"Hinweis: {KEEP_GRUND.get(why, why)}")
         if pid:
             try:
                 self.bb.plug_control(pid, on)
@@ -137,7 +140,7 @@ class Power:
         log.info("[%s] Drucker %s (%s, %s)", p.id, "eingeschaltet" if on else "ausgeschaltet", reason, via)
         if steps:
             step(f"Strom aus ✓ ({via})")
-            self._save_log(p, steps, down)
+            self._save_log(p, steps, down or "direkt abgeschaltet")
         return via + (f", {down}" if down else "")
 
     def _watts_now(self, p):
@@ -231,6 +234,13 @@ class Power:
                 pass
         if time.time() - (s.get("last_switch") or 0) < 120:
             return "frisch"
+        if hasattr(p, "busy_reason"):            # Klipper: Update, Hochfahren, nicht erreichbar
+            try:
+                why = p.busy_reason()
+                if why:
+                    return why
+            except Exception:
+                pass
         return None
 
     def tick(self):
