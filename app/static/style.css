@@ -1335,7 +1335,7 @@ body.tg-on #tg-steps { display:none; }   /* verbunden: Einrichtungs-Schritte aus
 .btile { border-left:6px solid var(--fc, var(--line)); }
 
 /* Drucker-Umschalter (Handy) */
-.psw { display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; margin:0 0 10px; padding:2px; position:sticky; top:0; z-index:20;
+.psw { display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; margin:0 0 10px; padding:2px;
   background:linear-gradient(var(--bg) 70%, transparent); }
 .psw::-webkit-scrollbar { display:none; }
 .psw[hidden] { display:none; }
@@ -1388,10 +1388,3 @@ body.psw-on .board:not(.ff) > .pblk.pcard { order:-1; }
 .fanpop .fp-t { margin-top:8px; line-height:1.35; }
 
 .mline.mx{display:none}
-/* Drucker-Umschalter beim Scrollen: schmale Zeile */
-.psw { flex-shrink:0; }
-.psw.slim { padding:2px 0 6px; }
-.psw.slim .psw-b { min-width:0; flex:1 1 0; display:flex; align-items:center; gap:6px; padding:5px 10px 6px; border-radius:10px; }
-.psw.slim .psw-d { flex:none; width:8px; height:8px; }
-.psw.slim .psw-n { font-size:13px; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
-.psw.slim .psw-s { font-size:12px; flex:0 3 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
