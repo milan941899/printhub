@@ -233,7 +233,9 @@ function showImg(src, title) {
   document.getElementById("lightbox").classList.add("open");
 }
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeCam(); });
-// Tab gewechselt / Browser im Hintergrund: Live-Streams nach 30 s abbauen (letztes Bild bleibt stehen), beim Zurückkommen sofort weiter
+// Tab gewechselt / Browser im Hintergrund: Live-Streams nach 5 s abbauen (letztes Bild bleibt stehen), beim Zurückkommen
+// frisch aufbauen. Ein im Hintergrund weitergelaufener Stream ruckelt nach dem Zurückwechseln oft, bis wieder ein volles
+// Bild (Keyframe) kommt – eine neue Verbindung startet dagegen sauber mit einem vollen Bild.
 let camBgTimer = null;
 document.addEventListener("visibilitychange", () => {
   clearTimeout(camBgTimer);
@@ -244,7 +246,7 @@ document.addEventListener("visibilitychange", () => {
         if (c.rtc) { const f = rtcFrame(c.rtc.video); if (f) c.img.src = f; rtcStop(c.rtc); c.rtc.video.remove(); c.rtc = null; c.img.hidden = false; }
         if (c.live) { c.live = false; c.img.removeAttribute("src"); c.url = null; }
       }
-    }, 30000);
+    }, 5000);
   } else {
     for (const c of Object.values(cams)) if (c.rtc && c.rtc.video.paused) c.rtc.video.play().catch(() => {});
     if (bigCam && !bigRtc && camWebrtcOk(bigCam)) openCam(bigCam, true);      // Großansicht war offen → wieder live
