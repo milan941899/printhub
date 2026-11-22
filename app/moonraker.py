@@ -107,7 +107,7 @@ class MoonrakerPrinter(BasePrinter):
                 self.handle_status(r.json()["result"]["status"])
                 self.online = True
                 self.last_error = ""
-                time.sleep(2)
+                time.sleep(1 if self.last_state in ("printing", "paused") else 2)
             except Exception as e:
                 if self.online:
                     log.warning("[%s] nicht erreichbar: %s", self.id, e)

@@ -1299,8 +1299,8 @@ loadSpools().then(refresh);
 loadServices(); setInterval(vis(loadServices), 30000);
 setTimeout(loadTiles, 1500); setInterval(vis(loadTiles), 60000);
 setTimeout(loadQueue, 600); setInterval(vis(loadQueue), 15000);
-setInterval(vis(() => {                  // Druckerdaten: alle 3 s, im Datensparmodus alle 10 s
-  const every = PH.saving() ? 10000 : 3000;
+setInterval(vis(() => {                  // Druckerdaten: beim Drucken alle 1,5 s, sonst 3 s, im Datensparmodus alle 10 s
+  const every = PH.saving() ? 10000 : lastPrinters.some(p => p.printing) ? 1500 : 3000;
   if (Date.now() - lastRefresh < every - 200) return;
   lastRefresh = Date.now(); refresh();
 }), 1000);
