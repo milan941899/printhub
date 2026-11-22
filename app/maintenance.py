@@ -21,11 +21,11 @@ DEFAULT_TYPES = [
     {"id": "clean_rails", "name": "Linearschienen reinigen", "desc": "Mit trockenem Tuch Staub und Abrieb entfernen",
      "icon": "✨", "interval": 100, "unit": "h", "rails": "linear"},
     {"id": "clean_nozzle", "name": "Düse/Hotend reinigen", "desc": "Düse außen säubern, bei Bedarf Cold Pull",
-     "icon": "🔥", "interval": 100, "unit": "h", "rails": ""},
+     "icon": "🔥", "interval": 100, "unit": "h", "rails": "", "per_head": True},
     {"id": "check_belts", "name": "Riemenspannung prüfen", "desc": "X/Y-Riemen prüfen und nachspannen",
      "icon": "📏", "interval": 200, "unit": "h", "rails": ""},
     {"id": "check_ptfe", "name": "PTFE-Schlauch prüfen", "desc": "Auf Abrieb und Verfärbung kontrollieren",
-     "icon": "🧵", "interval": 500, "unit": "h", "rails": ""},
+     "icon": "🧵", "interval": 500, "unit": "h", "rails": "", "per_head": True},
     {"id": "clean_carbon", "name": "Carbonstangen reinigen", "desc": "Nur trocken abwischen, nicht schmieren (X1/P1)",
      "icon": "✨", "interval": 100, "unit": "h", "rails": "carbon"},
     {"id": "lube_steel", "name": "Stahlstangen schmieren", "desc": "Stangen dünn schmieren (P2S)",
@@ -42,6 +42,15 @@ BAMBUDDY_NAMES = {
 }
 BAMBUDDY_ICONS = {"Droplet": "💧", "Sparkles": "✨", "Flame": "🔥", "Ruler": "📏", "Square": "🧽", "Cable": "🧵",
                   "Wrench": "🔧", "Fan": "🌀", "Settings": "⚙️"}
+
+
+PER_HEAD = {"clean_nozzle", "check_ptfe"}
+
+
+def heads_of(printer):
+    """Werkzeugköpfe eines Druckers mit mehreren Köpfen (Snapmaker U1): ["T0", "T1", …] – sonst []."""
+    n = int(getattr(printer, "channels", 0) or 0) if getattr(printer, "type", "") == "moonraker" else 0
+    return [f"T{i}" for i in range(n)] if n > 1 else []
 
 
 def rails_of(printer):
@@ -77,6 +86,9 @@ class Maintenance:
                 d.setdefault("seen_defaults", [])
                 if t["id"] not in d["seen_defaults"]:
                     d["seen_defaults"].append(t["id"])
+            for t in d["types"]:                              # „pro Kopf“ für bestehende Standard-Aufgaben nachtragen
+                if t.get("system") and t["id"] in PER_HEAD and "per_head" not in t:
+                    t["per_head"] = True
             store._save()
 
     @property
@@ -89,8 +101,20 @@ class Maintenance:
     def _p(self, pid):
         return self.d["printers"].setdefault(pid, {"offset": 0.0, "items": {}})
 
-    def _item(self, printer, t):
-        it = self._p(printer.id)["items"].setdefault(t["id"], {})
+    def head_hours(self, printer, head):
+        h = ((self.store.data.get("heads") or {}).get(printer.id) or {}).get(head) or {}
+        return (h.get("sec") or 0) / 3600
+
+    def _split(self, printer, tid):
+        """„clean_nozzle@T2“ → (Aufgabe, Kopf)."""
+        base, _, head = str(tid).partition("@")
+        t = self._type(base)
+        if not t or (head and head not in heads_of(printer)):
+            raise LookupError("Unbekannte Wartungsaufgabe")
+        return t, head or None
+
+    def _item(self, printer, t, head=None):
+        it = self._p(printer.id)["items"].setdefault(t["id"] + ("@" + head if head else ""), {})
         if "enabled" not in it:
             if t.get("only"):
                 it["enabled"] = t["only"] == printer.id
@@ -108,8 +132,10 @@ class Maintenance:
             self.store._save()
 
     # --- Status --------------------------------------------------------------
-    def item_status(self, printer, t, hours):
-        it = self._item(printer, t)
+    def item_status(self, printer, t, hours, head=None):
+        it = self._item(printer, t, head)
+        if head:
+            hours = self.head_hours(printer, head)
         interval = float(it.get("interval") or t["interval"] or 0)
         now = time.time()
         if t.get("unit") == "d":
@@ -123,7 +149,8 @@ class Maintenance:
         else:
             since = max(0.0, hours - (it.get("last_hours") or 0))
         due = bool(interval) and since >= interval
-        return {"id": t["id"], "name": t["name"], "icon": t.get("icon") or "🔧", "desc": t.get("desc") or "",
+        return {"id": t["id"] + ("@" + head if head else ""), "head": head,
+                "name": t["name"] + (f" · Kopf {int(head[1:]) + 1}" if head else ""), "icon": t.get("icon") or "🔧", "desc": t.get("desc") or "",
                 "unit": t.get("unit") or "h", "enabled": bool(it.get("enabled")),
                 "interval": interval, "default_interval": float(t["interval"]), "custom": it.get("interval") is not None,
                 "since": round(since, 1), "remaining": round(interval - since, 1) if interval else None,
@@ -131,8 +158,18 @@ class Maintenance:
                 "due": due, "warn": (not due) and bool(interval) and since >= interval * 0.9,
                 "last_time": it.get("last_time")}
 
+    def _all(self, printer, hours):
+        heads = heads_of(printer)
+        out = []
+        for t in self.d["types"]:
+            if t.get("per_head") and heads and t.get("unit", "h") == "h":
+                out += [self.item_status(printer, t, hours, h) for h in heads]
+            else:
+                out.append(self.item_status(printer, t, hours))
+        return out
+
     def printer_status(self, printer, hours):
-        items = [self.item_status(printer, t, hours) for t in self.d["types"]]
+        items = self._all(printer, hours)
         active = [i for i in items if i["enabled"]]
         active.sort(key=lambda i: (not i["due"], not i["warn"], -(i["pct"] or 0)))
         return {"id": printer.id, "name": printer.name, "hours": round(hours, 1), "offset": self.offset(printer.id),
@@ -141,23 +178,22 @@ class Maintenance:
 
     # --- Ändern ----------------------------------------------------------------
     def done(self, printer, tid, hours, note=""):
-        t = self._type(tid)
-        if not t:
-            raise LookupError("Unbekannte Wartungsaufgabe")
+        t, head = self._split(printer, tid)
+        if head:
+            hours = self.head_hours(printer, head)
         with self.store.lock:
-            it = self._item(printer, t)
+            it = self._item(printer, t, head)
             it.update(last_hours=round(hours, 2), last_time=int(time.time()), notified=False)
             self.d["log"].insert(0, {"time": int(time.time()), "pid": printer.id, "printer": printer.name,
-                                     "tid": tid, "name": t["name"], "hours": round(hours, 1), "note": str(note or "")[:200]})
+                                     "tid": tid, "name": t["name"] + (f" · Kopf {int(head[1:]) + 1}" if head else ""),
+                                     "hours": round(hours, 1), "note": str(note or "")[:200]})
             del self.d["log"][300:]
             self.store._save()
 
     def set_item(self, printer, tid, data):
-        t = self._type(tid)
-        if not t:
-            raise LookupError("Unbekannte Wartungsaufgabe")
+        t, head = self._split(printer, tid)
         with self.store.lock:
-            it = self._item(printer, t)
+            it = self._item(printer, t, head)
             if "enabled" in data:
                 it["enabled"] = bool(data["enabled"])
             if "interval" in data:
@@ -192,6 +228,8 @@ class Maintenance:
                 t["interval"] = max(0.0, float(str(data.get("interval") or 0).replace(",", ".")))
             if "unit" in data or not tid:
                 t["unit"] = unit
+            if "per_head" in data:
+                t["per_head"] = bool(data["per_head"])
             self.store._save()
             return t
 
@@ -222,9 +260,9 @@ class Maintenance:
     def check(self, printer, hours):
         due = []
         with self.store.lock:
-            for t in self.d["types"]:
-                st = self.item_status(printer, t, hours)
-                it = self._item(printer, t)
+            for st in self._all(printer, hours):
+                t, head = self._split(printer, st["id"])
+                it = self._item(printer, t, head)
                 if st["enabled"] and st["due"] and not it.get("notified"):
                     due.append(st)
                     it["notified"] = True

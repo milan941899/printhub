@@ -501,6 +501,8 @@ class BasePrinter:
         if pid and st and self.camera and st.get("photo_enabled") and \
                 ("finish" if success else "fail") in (st.get("photo_events") or []):
             self.take_photo(pid, int(st.get("photo_delay") or 0))
+        if pid and hasattr(self, "fetch_timelapse"):
+            self.fetch_timelapse(pid, int(job.get("started") or 0))
         log.info("[%s] Druck beendet (%s), gebucht: %s", self.id, success, booked)
         # Benachrichtigung
         h, m = divmod(duration // 60, 60)

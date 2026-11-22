@@ -259,9 +259,9 @@ class KlipperGuard:
         if s["active"] != jid:
             return "Dieser Auftrag wartet gerade nicht auf eine Antwort"
         s["answer"] = act
-        if act == "chk":
+        if act == "chk" and s.get("asking") == "plate":
             self.clear_height(p)      # „Platte frei“ von dir bestätigt → Bett darf wieder auf Prüfhöhe
-        return {"chk": "Prüfe die Platte nochmal …", "force": "Starte trotz Platte …", "del": "Auftrag wird abgebrochen …"}.get(act, "?")
+        return {"chk": "Prüfe nochmal …", "force": "Starte trotz Platte …", "del": "Auftrag wird abgebrochen …"}.get(act, "?")
 
     # ---------- Hauptschleife ----------
     def start(self):
@@ -460,6 +460,9 @@ class KlipperGuard:
                 time.sleep(3)
             except Exception as e:
                 self._log(p, f"Licht: {e}")
+        # 2b. Filament je Kopf (Material, Farbe, reicht die Spule?) – bei ⛔ nachfragen
+        if not self._filament_ok(p, s, job, name, jid, switched):
+            return
         # 3. Platte
         if env.get("PLATTE_PRUEFEN", "1") == "1" and p.camera:
             tries = int(float(env.get("PLATTE_VERSUCHE") or 3))
@@ -483,7 +486,7 @@ class KlipperGuard:
                     self._abort(p, s, jid, name, switched, f"nach {tries} Rückfragen ohne freie Platte")
                     return
                 s["waiting"] = f"wartet: {was}?"
-                s["answer"] = None
+                s["answer"], s["asking"] = None, "plate"
                 self.notifier.send("plate", f"{p.name}: {was}? 🟥",
                                    f"{name}\n{msg}\nOhne Antwort prüfe ich in {wait_min:g} min nochmal ({n}/{tries}).",
                                    "warning", "high", force=False, photo=(lambda b=jpg: b) if jpg else None,
@@ -522,6 +525,51 @@ class KlipperGuard:
         s["waiting"] = ""
         self.qlog(f"{p.id}:{jid}", name, "vom Druckwächter gestartet")
         self._log(p, f"{name} gestartet ✓")
+
+    def _filament_ok(self, p, s, job, name, jid, switched):
+        """⛔ (falsches Material, Spule reicht nicht) → Rückfrage; ⚠ (Farbe weicht ab, nichts erkannt) → nur Log.
+        Annahme: Filament n im Slicer = Kopf n (Standard bei Snapmaker Orca)."""
+        env = self._env()
+        tries = int(float(env.get("PLATTE_VERSUCHE") or 3))
+        wait_min = float(env.get("PLATTE_WARTE_MIN") or 5)
+        n = 0
+        while True:
+            self.meta.pop(job["filename"], None)          # frisch lesen
+            try:
+                chk = self._check(p, self.file_meta(p, job["filename"]))
+            except Exception as e:
+                self._log(p, f"Filament-Check nicht möglich: {e}")
+                return True
+            if not chk or chk["state"] in ("ok", "unknown"):
+                if chk:
+                    self._log(p, f"Filament ✓ ({chk['text']})")
+                return True
+            if chk["state"] == "warn":
+                self._log(p, f"Filament ⚠ {chk['text']} – starte trotzdem")
+                return True
+            n += 1
+            msgs = "\n".join("• " + l["msg"] for l in chk["lines"] if l["msg"])
+            self._log(p, f"Filament ⛔ {chk['text']} – Rückfrage {n}/{tries}")
+            if n > tries:
+                self._abort(p, s, jid, name, switched, "Filament passt nicht")
+                return False
+            s["waiting"], s["answer"], s["asking"] = "wartet: Filament prüfen", None, "filament"
+            self.notifier.send("plate", f"{p.name}: Filament passt nicht ⛔", f"{name}\n{msgs}\nSpule tauschen und „Nochmal prüfen“ – "
+                               f"ohne Antwort prüfe ich in {wait_min:g} min nochmal ({n}/{tries}).", "warning", "high",
+                               buttons=[[("🔄 Nochmal prüfen", f"ph:kw:{p.id}:chk:{jid}"), ("▶ Trotzdem drucken", f"ph:kw:{p.id}:force:{jid}")],
+                                        [("🗑 Abbrechen", f"ph:kw:{p.id}:del:{jid}")]])
+            t0 = time.time()
+            while s["answer"] is None and time.time() - t0 < wait_min * 60:
+                time.sleep(2)
+            a, s["answer"] = s["answer"], None
+            if a == "force":
+                self._log(p, "„Trotzdem drucken“ trotz Filament-Warnung")
+                return True
+            if a == "del":
+                self._abort(p, s, jid, name, switched, "von Hand abgebrochen")
+                return False
+            if a == "chk":
+                n = max(0, n - 1)
 
     def _start_file(self, p, job):
         self._s(p)["released_until"] = time.time() + 180     # dieser Start ist erlaubt (Prüfung beim Druckbeginn)

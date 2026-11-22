@@ -508,6 +508,61 @@ class MoonrakerPrinter(BasePrinter):
                 out.append(f"T{i}")
         return out
 
+    # --- Zeitraffer (Snapmaker U1: Ordner „camera“ bzw. Moonraker-Timelapse „timelapse“) -------------------
+    TL_ROOTS = ("timelapse", "camera")
+    TL_MAX = 300 * 1024 * 1024
+
+    def _tl_files(self, since):
+        out = []
+        for root in self.TL_ROOTS:
+            try:
+                files = self._api("GET", "/server/files/list", params={"root": root}, timeout=10) or []
+            except Exception:
+                continue
+            for f in files:
+                path = f.get("path") or f.get("filename") or ""
+                if path.lower().endswith((".mp4", ".webm", ".mkv")) and (f.get("modified") or 0) >= since - 60:
+                    out.append((f.get("modified") or 0, root, path, f.get("size") or 0))
+        return sorted(out)
+
+    def fetch_timelapse(self, pid, started):
+        """Nach Druckende: neues Zeitraffer-Video suchen (das Rendern dauert etwas) und am Verlaufseintrag speichern."""
+        if not self.history or not self.media_dir:
+            return
+
+        def run():
+            import os
+            last_size, found = None, None
+            for _ in range(40):                       # bis zu 10 min warten
+                time.sleep(15)
+                fs = self._tl_files(started)
+                if not fs:
+                    continue
+                f = fs[-1]
+                if f[3] and f[3] == last_size:        # Größe stabil → fertig gerendert
+                    found = f
+                    break
+                last_size = f[3]
+            if not found:
+                return
+            _, root, path, size = found
+            if size > self.TL_MAX:
+                log.info("[%s] Zeitraffer %s zu groß (%d MB) – nicht übernommen", self.id, path, size // 2**20)
+                return
+            try:
+                r = self.s.get(self.base + f"/server/files/{root}/" + quote(path), headers=self.headers, timeout=120, stream=True)
+                r.raise_for_status()
+                os.makedirs(self.media_dir, exist_ok=True)
+                name = f"{self.id}-zeitraffer-{int(time.time() * 1000)}.{path.rsplit('.', 1)[-1].lower()}"
+                with open(os.path.join(self.media_dir, name), "wb") as fh:
+                    for chunk in r.iter_content(1 << 16):
+                        fh.write(chunk)
+                self.history.set_video(pid, name)
+                log.info("[%s] Zeitraffer übernommen: %s (%d MB)", self.id, path, size // 2**20)
+            except Exception as e:
+                log.warning("[%s] Zeitraffer nicht geladen: %s", self.id, e)
+        threading.Thread(target=run, daemon=True).start()
+
     start_gate = None        # vom Druckwächter gesetzt: (printer, filename) -> darf starten?
     on_gate_block = None     # (printer, filename) – abgefangener Start
 

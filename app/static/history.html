@@ -16,6 +16,7 @@
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("ph-theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
 <script src="/static/common.js"></script>
 <style>.use-chip.bookable{cursor:pointer;border-color:var(--warn,#f59e0b)}.use-chip.bookable:hover{filter:brightness(1.1)}</style>
+<style>.tl-link{display:inline-block;margin-top:4px;font-size:12.5px;font-weight:700;color:var(--acc);text-decoration:none}</style>
 </head>
 <body>
 <header>
@@ -227,6 +228,7 @@ function row(e) {
   const imgs = pm === "none" ? [] : [e.thumb, e.photo].filter(Boolean);
   const pic = imgs.length ? `<div class="pics" onclick='openPics(${JSON.stringify(imgs)}, ${JSON.stringify(e.job || "")})'>
       ${e.thumb ? `<img src="/media/${e.thumb}" alt="Modell">` : ""}${e.photo ? `<img src="/media/${e.photo}" alt="Foto" class="${e.thumb ? "ph" : ""}">` : ""}</div>` : `<div class="pics none">–</div>`;
+  const vid = e.video ? `<a class="tl-link" href="/media/${encodeURI(e.video)}" target="_blank" rel="noopener" title="Zeitraffer ansehen">🎬 Zeitraffer</a>` : "";
   const day = d.toLocaleDateString("de-DE", {weekday: "long", day: "numeric", month: "long", year: "numeric"});
   let head = "";
   if (PH.pref("hist_days", false) && day !== lastDay) {
@@ -236,7 +238,7 @@ function row(e) {
   return head + `<tr data-dk="${esc(day)}" data-g="${e.grams || 0}" data-c="${e.total_cost || 0}" data-ok="${ok ? 1 : 0}">
     <td style="width:64px" class="c-pic">${pic}</td>
     <td style="white-space:nowrap">${d.toLocaleDateString("de-DE")}<div class="muted small">${d.toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"})}</div></td>
-    <td><b>${esc(e.job)}</b> <span class="res ${ok ? "ok" : "bad"}" style="font-size:10.5px;padding:1px 7px;border-radius:99px">${esc(e.result)}</span><div class="uses">${uses}</div>${prep(e)}</td>
+    <td><b>${esc(e.job)}</b> <span class="res ${ok ? "ok" : "bad"}" style="font-size:10.5px;padding:1px 7px;border-radius:99px">${esc(e.result)}</span><div class="uses">${uses}</div>${vid}${prep(e)}</td>
     <td class="hide-s">${esc(e.printer)}</td>
     <td class="num hide-s">${dur(e.duration)}</td>
     <td class="num c-fil">${g(e.grams)}<div class="muted small">${e.filament_cost != null ? eur(e.filament_cost) : ""}</div></td>

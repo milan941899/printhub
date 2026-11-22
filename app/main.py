@@ -533,7 +533,7 @@ async def api_docker_test(request):
     return JSONResponse({"ok": True, "found": found})
 
 
-MEDIA_RE = re.compile(r"^[A-Za-z0-9_.-]+\.(png|jpg)$")
+MEDIA_RE = re.compile(r"^[A-Za-z0-9_.-]+\.(png|jpg|mp4|webm|mkv)$")
 
 
 async def media(request):

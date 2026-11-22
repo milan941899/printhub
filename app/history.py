@@ -33,7 +33,8 @@ class History:
             db.executescript(SCHEMA)
             cols = {r[1] for r in db.execute("PRAGMA table_info(prints)")}
             for c, typ in (("thumb", "TEXT"), ("photo", "TEXT"), ("outcome", "TEXT"), ("reason", "TEXT"),
-                           ("estimate", "INTEGER"), ("source", "TEXT"), ("ext_id", "TEXT"), ("stages", "TEXT")):
+                           ("estimate", "INTEGER"), ("source", "TEXT"), ("ext_id", "TEXT"), ("stages", "TEXT"),
+                           ("video", "TEXT")):
                 if c not in cols:
                     db.execute(f"ALTER TABLE prints ADD COLUMN {c} {typ}")
             # Ergebnis-Klasse: ok | fail (Druckerfehler) | cancel (abgebrochen)
@@ -112,9 +113,13 @@ class History:
         with self.lock, self._db() as db:
             db.execute("UPDATE prints SET photo=? WHERE id=?", (name, pid))
 
+    def set_video(self, pid, name):
+        with self.lock, self._db() as db:
+            db.execute("UPDATE prints SET video=? WHERE id=?", (name, pid))
+
     def media_of(self, pid):
         with self._db() as db:
-            r = db.execute("SELECT thumb, photo FROM prints WHERE id=?", (pid,)).fetchone()
+            r = db.execute("SELECT thumb, photo, video FROM prints WHERE id=?", (pid,)).fetchone()
         return [x for x in (r or []) if x]
 
     def usage_row(self, uid):

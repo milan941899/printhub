@@ -141,6 +141,17 @@ class Power:
 
     @staticmethod
     def _nozzle(st):
+        """Heißeste Düse. Klipper-Drucker mit mehreren Köpfen (U1) melden T0, T1, … – alle zählen."""
+        import re as _re
+        heads = []
+        for t in st.get("temps") or []:
+            if _re.fullmatch(r"T\d+", str(t.get("label", ""))):
+                try:
+                    heads.append(float(t.get("actual")))
+                except (TypeError, ValueError):
+                    pass
+        if heads:
+            return max(heads)
         for t in st.get("temps") or []:
             if str(t.get("label", "")).lower().startswith(("düse", "duese", "nozzle", "kopf", "extruder")):
                 try:
