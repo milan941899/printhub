@@ -116,7 +116,7 @@ function rtcFrame(v) { try { if (!v.videoWidth) return ""; const cv = document.c
 const CAM_GRACE = 90000;   // kurz weggescrollt: Stream weiterlaufen lassen, erst danach abbauen
 function rtcStop(o) { try { o && o.pc && o.pc.close(); } catch {} if (o && o.video) { o.video.srcObject = null; } }
 let bigRtc = null;
-function openCam(id) {
+function openCam(id, fresh) {
   bigCam = id; lbReset();
   const lb = document.getElementById("lightbox");
   const c = cams[id];
@@ -126,29 +126,42 @@ function openCam(id) {
     // Video sofort sichtbar (Android pausiert unsichtbare Videos) – bis Bilder kommen, zeigt es das letzte Einzelbild
     if (c && c.img.src) { im0.src = c.img.src; vid.poster = c.img.src; }
     vid.hidden = false; im0.hidden = true;
-    const me = bigRtc = {video: vid, pc: null};
-    const tmo = setTimeout(() => { if (bigRtc === me && !vid.videoWidth) { vid.hidden = true; im0.hidden = false; const st = me.pc ? me.pc.iceConnectionState : "kein Aufbau"; rtcStop(me); bigRtc = null;
-      const tt = document.getElementById("lbtitle"); tt.textContent = tt.textContent.split(" · ")[0] + " · Video: kein Bild nach 8 s (" + st + ", Spur " + (vid._track || "keine") + ", " + (vid.paused ? "pausiert" : "läuft") + ")"; } }, 8000);   // kein Video → Einzelbilder
-    const ok = () => { if (bigRtc === me && vid.videoWidth) { clearTimeout(tmo); vid.hidden = false; im0.hidden = true; } };
-    vid.onplaying = ok; vid.onloadeddata = ok; vid.onresize = ok;
+    const me = bigRtc = {video: vid, pc: null, shared: false};
     const why = t => { const tt = document.getElementById("lbtitle"); if (bigRtc === me || !bigRtc) tt.textContent = tt.textContent.split(" · ")[0] + " · Video: " + t; };
-    rtcStart(id, vid).then(pc => {
-      if (bigRtc !== me) return pc.close();
-      me.pc = pc;
-      // Über VPN meldet WebRTC gern kurz „disconnected“, obwohl das Video weiterläuft – darauf nicht reagieren.
-      // Neu aufbauen nur, wenn wirklich keine Bilder mehr kommen (Videozeit steht 8 s still), höchstens 5×.
+    const ok = () => { if (bigRtc === me && vid.videoWidth) { clearTimeout(me.tmo); vid.hidden = false; im0.hidden = true; } };
+    vid.onplaying = ok; vid.onloadeddata = ok; vid.onresize = ok;
+    // Wächter: kommen 8 s keine neuen Bilder, eigene Verbindung neu aufbauen (höchstens 5×). Kurze „disconnected“-Meldungen
+    // über VPN werden ignoriert, solange das Video weiterläuft.
+    const watch = () => {
       let lastT = -1, still = 0;
+      clearInterval(me.watch);
       me.watch = setInterval(() => {
         if (bigRtc !== me) return clearInterval(me.watch);
         if (!vid.videoWidth) return;
+        if (vid.paused) vid.play().catch(() => {});
         if (vid.currentTime !== lastT) { lastT = vid.currentTime; still = 0; X.rtcRetry = 0; return; }
         if ((still += 2) < 8) return;
         clearInterval(me.watch);
         if ((X.rtcRetry = (X.rtcRetry || 0) + 1) > 5) return why("kein Bild mehr vom Drucker");
         why("Bild steht – baue neu auf …");
-        const keep = {...LBZ}; rtcStop(me); bigRtc = null; openCam(id); Object.assign(LBZ, keep); lbApply();
+        if (c && c.rtc) { rtcStop(c.rtc); c.rtc.video.remove(); c.rtc = null; c.img.hidden = false; }
+        const keep = {...LBZ}; rtcStop(me); bigRtc = null; openCam(id, true); Object.assign(LBZ, keep); lbApply();
       }, 2000);
-    }).catch(e => { if (bigRtc === me) { clearTimeout(tmo); bigRtc = null; vid.hidden = true; im0.hidden = false; why(String(e.message || e).slice(0, 80)); } });
+    };
+    const small = !fresh && c && c.rtc && c.rtc.video.srcObject;
+    if (small && c.rtc.video.videoWidth) {
+      // kleine Ansicht läuft schon live → denselben Stream groß zeigen: keine zweite Verbindung (wichtig über VPN)
+      me.shared = true;
+      vid.srcObject = small; vid.play().catch(() => {});
+      watch();
+    } else {
+      me.tmo = setTimeout(() => { if (bigRtc === me && !vid.videoWidth) { vid.hidden = true; im0.hidden = false; const st = me.pc ? me.pc.iceConnectionState : "kein Aufbau"; clearInterval(me.watch); rtcStop(me); bigRtc = null;
+        why("kein Bild nach 8 s (" + st + ", Spur " + (vid._track || "keine") + ", " + (vid.paused ? "pausiert" : "läuft") + ")"); } }, 8000);   // kein Video → Einzelbilder
+      rtcStart(id, vid).then(pc => {
+        if (bigRtc !== me) return pc.close();
+        me.pc = pc; watch();
+      }).catch(e => { if (bigRtc === me) { clearTimeout(me.tmo); bigRtc = null; vid.hidden = true; im0.hidden = false; why(String(e.message || e).slice(0, 80)); } });
+    }
   } else if (camStreamOk(id) && !PH.saving()) {
     const im = document.getElementById("lbimg");
     im.onerror = () => { im.onerror = null; im.dataset.stream = ""; };   // Stream geht nicht → wieder Einzelbilder
@@ -174,18 +187,19 @@ function lbApply() {
 function lbReset() { LBZ.s = 1; LBZ.x = LBZ.y = 0; lbApply(); }
 (() => {
   const z = document.getElementById("lbzoom"), pts = new Map();
-  let start = null, lastTap = 0;
+  let start = null, lastTap = 0, tap = null;
   z.addEventListener("pointerdown", e => {
-    z.setPointerCapture(e.pointerId); pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    try { z.setPointerCapture(e.pointerId); } catch {} pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
     const v = [...pts.values()];
     start = {s: LBZ.s, x: LBZ.x, y: LBZ.y, p: v.map(q => ({...q})),
       d: v.length > 1 ? Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y) : 0};
-    if (v.length === 1) { const now = Date.now(); if (now - lastTap < 300) { lbReset(); lbGestureT = now; } lastTap = now; }
+    tap = v.length === 1 ? {x: e.clientX, y: e.clientY, t: Date.now()} : null;   // möglicher Tipp (für Doppeltipp)
   });
   z.addEventListener("pointermove", e => {
     if (!pts.has(e.pointerId) || !start) return;
     pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
     const v = [...pts.values()];
+    if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 12) tap = null;
     if (v.length > 1 && start.d) {
       LBZ.s = start.s * Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y) / start.d;
     } else if (v.length === 1 && LBZ.s > 1) {
@@ -193,7 +207,13 @@ function lbReset() { LBZ.s = 1; LBZ.x = LBZ.y = 0; lbApply(); }
     } else return;
     lbGestureT = Date.now(); lbApply();
   });
-  const up = e => { pts.delete(e.pointerId); const v = [...pts.values()];
+  const up = e => {
+    if (tap && pts.size === 1 && Date.now() - tap.t < 250 && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 12) {
+      const now = Date.now();
+      if (now - lastTap < 350) { lbReset(); lbGestureT = now; lastTap = 0; } else lastTap = now;
+    }
+    tap = null;
+    pts.delete(e.pointerId); const v = [...pts.values()];
     start = v.length ? {s: LBZ.s, x: LBZ.x, y: LBZ.y, p: v.map(q => ({...q})), d: 0} : null; };
   z.addEventListener("pointerup", up); z.addEventListener("pointercancel", up);
   z.addEventListener("wheel", e => { e.preventDefault(); LBZ.s *= e.deltaY < 0 ? 1.15 : 1 / 1.15; lbApply(); }, {passive: false});
@@ -201,7 +221,7 @@ function lbReset() { LBZ.s = 1; LBZ.x = LBZ.y = 0; lbApply(); }
 function closeCam() {
   lbReset();
   bigCam = null; document.getElementById("lightbox").classList.remove("open");
-  if (bigRtc) { clearInterval(bigRtc.watch); rtcStop(bigRtc); bigRtc = null; }
+  if (bigRtc) { clearInterval(bigRtc.watch); clearTimeout(bigRtc.tmo); rtcStop(bigRtc); bigRtc = null; }
   document.getElementById("lbvid").hidden = true; document.getElementById("lbimg").hidden = false;
   const im = document.getElementById("lbimg");
   if (im.dataset.stream) { im.dataset.stream = ""; im.removeAttribute("src"); }   // Stream beenden
@@ -219,6 +239,7 @@ document.addEventListener("visibilitychange", () => {
   clearTimeout(camBgTimer);
   if (document.hidden) {
     camBgTimer = setTimeout(() => {
+      if (bigRtc) { clearInterval(bigRtc.watch); clearTimeout(bigRtc.tmo); rtcStop(bigRtc); bigRtc = null; }   // Großansicht: Verbindung ruhen lassen
       for (const c of Object.values(cams)) {
         if (c.rtc) { const f = rtcFrame(c.rtc.video); if (f) c.img.src = f; rtcStop(c.rtc); c.rtc.video.remove(); c.rtc = null; c.img.hidden = false; }
         if (c.live) { c.live = false; c.img.removeAttribute("src"); c.url = null; }
@@ -226,6 +247,8 @@ document.addEventListener("visibilitychange", () => {
     }, 30000);
   } else {
     for (const c of Object.values(cams)) if (c.rtc && c.rtc.video.paused) c.rtc.video.play().catch(() => {});
+    if (bigCam && !bigRtc && camWebrtcOk(bigCam)) openCam(bigCam, true);      // Großansicht war offen → wieder live
+    else if (bigRtc && bigRtc.video.paused) bigRtc.video.play().catch(() => {});
     camTick();
   }
 });
@@ -244,7 +267,9 @@ async function camTick() {
     // kleines Bild als Live-Stream (pro Gerät einstellbar): einmal setzen, dann läuft es von selbst
     // kleines Bild per WebRTC (wenn „Live-Stream“ eingestellt)
     const near = c.visible || now - (c.hiddenAt || 0) < CAM_GRACE;
-    const liveR = camWebrtcOk(id) && camLiveSmall() && near && c.wrap.isConnected && !c.noRtc;
+    // Großansicht mit eigener Verbindung offen → klein keine zweite aufbauen (VPN-Bandbreite), Standbild bleibt
+    const bigOwn = big && bigRtc && !bigRtc.shared;
+    const liveR = camWebrtcOk(id) && camLiveSmall() && near && c.wrap.isConnected && !c.noRtc && !bigOwn;
     if (liveR) {
       if (!c.rtc) {
         const v = document.createElement("video"); v.autoplay = v.muted = v.playsInline = true; v.className = "camvid";
