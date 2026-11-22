@@ -222,25 +222,45 @@ class MoonrakerPrinter(BasePrinter):
                 rem = pd / progress - pd if progress and progress > 0.02 and pd > 60 else None
                 self.update_progress(progress, rem)
                 self.track_layer((ps.get("info") or {}).get("current_layer"))
+                self._track_extrusion(st)
                 self._grab_end_shot(progress)
         elif job is not None and state in ("complete", "cancelled", "error", "standby"):
             self.job_ended(state == "complete", progress)
 
-    def _grab_end_shot(self, progress):
-        """Kamera sitzt beim U1 am Druckkopf: ab 90 % regelmäßig ein Bild merken, solange der Kopf noch überm Teil ist."""
-        # ab 99,5 % nichts mehr nachfotografieren: dann läuft meist schon der End-G-Code (Kopf parkt, Bett fährt runter)
-        if not self.camera or not progress or progress < 0.9 or progress >= 0.995 or getattr(self, "_shot_busy", False):
+    def _track_extrusion(self, st):
+        """Merkt, wann zuletzt wirklich extrudiert wurde (E-Position wächst). Ein Bild gilt erst als „vom Druck“,
+        wenn danach noch weiter extrudiert wurde – so landet kein Bild vom End-G-Code (Kopf parkt, Bett fährt runter)."""
+        pos = (st.get("toolhead") or {}).get("position") or []
+        if len(pos) < 4 or pos[3] is None:
             return
-        last = getattr(self, "_last_shot", None)
-        if last and time.time() - last[0] < (10 if progress >= 0.98 else 15 if progress >= 0.97 else 45):
+        now, e = time.time(), float(pos[3])
+        last = getattr(self, "_last_e", None)
+        self._last_e = e
+        if last is not None and e - last > 0.05:
+            self._extr_t = now
+            pend = getattr(self, "_pend_shots", [])
+            ok = [s for s in pend if s[0] < now - 0.8]
+            if ok:
+                self._last_shot = ok[-1]
+                self._pend_shots = [s for s in pend if s[0] >= now - 0.8]
+
+    def _grab_end_shot(self, progress):
+        """Kamera sitzt beim U1 am Druckkopf: ab 90 % regelmäßig ein Bild merken, solange der Kopf noch druckt."""
+        if not self.camera or not progress or progress < 0.9 or getattr(self, "_shot_busy", False):
+            return
+        if time.time() - getattr(self, "_extr_t", 0) > 2.5:     # gerade keine Extrusion (Wechsel, Parken, Ende)
+            return
+        last = max(getattr(self, "_last_shot", None) or (0, None), *(getattr(self, "_pend_shots", None) or [(0, None)]),
+                   key=lambda s: s[0])
+        if time.time() - last[0] < (10 if progress >= 0.97 else 45):
             return
         self._shot_busy = True
 
         def run():
             try:
                 jpg = self.camera.snapshot()
-                if jpg and self.status_data.get("print_stats", {}).get("state") == "printing":
-                    self._last_shot = (time.time(), jpg)
+                if jpg:   # Zeitpunkt erst nach dem Bild: es zählt nur, wenn danach noch extrudiert wird
+                    self._pend_shots = (getattr(self, "_pend_shots", []) + [(time.time(), jpg)])[-3:]
             except Exception as e:
                 log.debug("[%s] Bild kurz vor Schluss: %s", self.id, e)
             finally:

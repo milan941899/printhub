@@ -215,6 +215,7 @@ class BasePrinter:
     # --- Job-Verwaltung ------------------------------------------------------
     def job_started(self, name, extra=None):
         self._last_shot = None
+        self._pend_shots = []
         job = {"name": name, "started": int(time.time()), "filaments": None, "max_progress": 0.0,
                "energy_start": self._energy_now()}
         if extra:
