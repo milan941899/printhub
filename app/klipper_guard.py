@@ -259,6 +259,8 @@ class KlipperGuard:
         if s["active"] != jid:
             return "Dieser Auftrag wartet gerade nicht auf eine Antwort"
         s["answer"] = act
+        if act == "chk":
+            self.clear_height(p)      # „Platte frei“ von dir bestätigt → Bett darf wieder auf Prüfhöhe
         return {"chk": "Prüfe die Platte nochmal …", "force": "Starte trotz Platte …", "del": "Auftrag wird abgebrochen …"}.get(act, "?")
 
     # ---------- Hauptschleife ----------
@@ -454,6 +456,7 @@ class KlipperGuard:
                     self._log(p, f"Plattenprüfung übersprungen: {msg}")
                     break
                 if res is True:
+                    self.clear_height(p)
                     self._log(p, f"Platte leer ✓ ({msg})")
                     break
                 n += 1
@@ -530,24 +533,44 @@ class KlipperGuard:
         self.notifier.send("plate", f"{p.name}: Auftrag abgebrochen", f"{name}\n{why}. Die Datei bleibt auf dem Drucker.", "x")
 
     # ---------- Plattenprüfung ----------
+    def clear_height(self, p):
+        """Platte ist nachweislich leer → Sicherheitsabstand (letzte Druckhöhe) aufheben."""
+        mz = self.store.data.setdefault("max_z", {})
+        if mz.get(p.id):
+            mz[p.id] = 0
+            try:
+                with self.store.lock:
+                    self.store._save()
+            except Exception:
+                pass
+
     def pose(self, p):
-        """Prüfposition anfahren (wenn eingestellt). Rückgabe: Text für Log/Oberfläche."""
+        """Prüfposition anfahren (wenn eingestellt). Rückgabe: (Text, abweichend) – abweichend = Bett konnte wegen
+        der Höhe des letzten Drucks (Sicherheitsabstand) nicht auf die eingestellte Höhe, Bild ist nicht vergleichbar."""
         cfg = getattr(p, "plate_pose_cfg", None) or {}
         if not cfg.get("on") or not p.online:
-            return ""
+            return "", False
         st = p.status()
         if st.get("printing") or st.get("paused"):      # niemals während eines Drucks bewegen
-            return ""
-        min_z = (self.store.data.get("max_z") or {}).get(p.id) or 0
-        zz = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), cfg.get("z", 30), min_z + 20 if min_z else 0)
+            return "", False
+        last = (self.store.data.get("max_z") or {}).get(p.id) or 0
+        want = max(5.0, float(cfg.get("z", 30) or 30))
+        zz = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), want, last + 20 if last else 0)
         time.sleep(2)
-        return f"Kopf X{cfg.get('x')} Y{cfg.get('y')}" + (f", Bett auf {zz:g} mm" if zz is not None else ", Z nicht referenziert – Bett bleibt")
+        if zz is None:
+            return f"Kopf X{cfg.get('x')} Y{cfg.get('y')}, Z nicht referenziert – Bett bleibt stehen", True
+        clamped = zz > want + 0.05
+        txt = f"Kopf X{cfg.get('x')} Y{cfg.get('y')}, Bett auf {zz:g} mm"
+        if clamped:
+            txt += f" statt {want:g} mm – Sicherheitsabstand: letzter Druck war {last:g} mm hoch (+ 20 mm)"
+        return txt, clamped
 
     def check_plate(self, p):
         """(True leer / False belegt / 'fehler' / None nicht kalibriert, JPEG, Text)."""
         jpg = None
+        abw = False
         try:
-            pos = self.pose(p)
+            pos, abw = self.pose(p)
             if pos:
                 self._log(p, f"Prüfposition: {pos}")
         except Exception as e:
@@ -560,6 +583,8 @@ class KlipperGuard:
                 if versuch == 2:
                     return "fehler", None, f"Kamera: {e}"
                 time.sleep(5)
+        if abw:   # Bild aus anderer Höhe → mit den Referenzbildern nicht vergleichbar: nachfragen statt raten
+            return "fehler", jpg, "Bett konnte nicht auf Prüfhöhe (Sicherheitsabstand zum letzten Druck) – bitte Foto ansehen"
         r = self.plate.check(p.id, jpg)
         if r.get("needs_calibration"):
             return None, jpg, r.get("message") or "nicht kalibriert"

@@ -1690,15 +1690,16 @@ function pcDraw() {
 }
 function pcAdd() { PC.push({type: "bambu", id: "", name: "", host: "", track_usage: true}); pcDraw(); }
 function pcDel(i) { if (confirm(`„${PC[i].name || PC[i].id}“ entfernen? Verlauf und Statistik bleiben erhalten.`)) { PC.splice(i, 1); pcDraw(); } }
-async function pcPose(i) {
+async function pcPose(i, clear) {
   const p = PC[i], out = $("pc-pose-" + i);
   if (!p._old_id) return PH.toast("Erst speichern, dann testen", true);
-  if (!confirm(`${p.name}: Prüfposition jetzt anfahren?\nDer Kopf referenziert X/Y und fährt nach X${p.plate_x ?? 135} Y${p.plate_y ?? 10}, das Bett auf Z${p.plate_z ?? 30} (falls Z referenziert ist). Nicht während eines Drucks.`)) return;
+  if (!clear && !confirm(`${p.name}: Prüfposition jetzt anfahren?\nDer Kopf referenziert X/Y und fährt nach X${p.plate_x ?? 135} Y${p.plate_y ?? 10}, das Bett auf Z${p.plate_z ?? 30} (falls Z referenziert ist). Nicht während eines Drucks.`)) return;
   out.innerHTML = `<span class="muted">Fahre an …</span>`;
   const r = await (await fetch(`/api/printers/${p._old_id}/plate-pose`, {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({x: p.plate_x ?? 135, y: p.plate_y ?? 10, z: p.plate_z ?? 30})})).json();
+    body: JSON.stringify({x: p.plate_x ?? 135, y: p.plate_y ?? 10, z: p.plate_z ?? 30, clear: !!clear})})).json();
   out.innerHTML = r.error ? `<span style="color:var(--err)">${esc(r.error)}</span>`
-    : `<div class="muted">${esc(r.text || "")}</div><img src="${r.img}" style="width:100%;border-radius:10px;margin-top:6px" onclick="window.open(this.src)">`;
+    : `<div class="muted">${esc(r.text || "")}</div>${r.clamped ? `<button type="button" class="small-btn" style="margin-top:6px"
+        onclick="if(confirm('Ist die Platte wirklich leer? Dann darf das Bett bis auf die eingestellte Höhe hochfahren.'))pcPose(${i},true)">✅ Platte ist leer – ohne Sicherheitsabstand</button>` : ""}<img src="${r.img}" style="width:100%;border-radius:10px;margin-top:6px" onclick="window.open(this.src)">`;
 }
 async function pcTest(i) {
   $("pc-test-" + i).innerHTML = `<div class="muted small">Teste …</div>`;

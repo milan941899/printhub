@@ -3994,15 +3994,18 @@ async def api_plate_pose(request):
         return JSONResponse({"error": "Es läuft ein Druck"}, status_code=409)
     old = getattr(p, "plate_pose_cfg", {})
     try:
-        p.plate_pose_cfg = {"on": True, "x": int(b.get("x", 135)), "y": int(b.get("y", 10)), "z": int(b.get("z", 30))}
-        txt = await run_in_threadpool(kguard.pose, p)
+        p.plate_pose_cfg = {"on": True, "x": int(float(b.get("x") or 135)), "y": int(float(b.get("y") or 10)),
+                            "z": max(5, int(float(b.get("z") or 30)))}
+        if b.get("clear"):
+            kguard.clear_height(p)
+        txt, clamped = await run_in_threadpool(kguard.pose, p)
         jpg = await run_in_threadpool(p.camera.snapshot)
     except Exception as e:
         return JSONResponse({"error": str(e)[:300]}, status_code=502)
     finally:
         p.plate_pose_cfg = old
     import base64 as _b64
-    return JSONResponse({"ok": True, "text": txt, "img": "data:image/jpeg;base64," + _b64.b64encode(jpg).decode()})
+    return JSONResponse({"ok": True, "text": txt, "clamped": clamped, "img": "data:image/jpeg;base64," + _b64.b64encode(jpg).decode()})
 
 
 # ---------- Nachtruhe ----------
