@@ -477,13 +477,14 @@ class KlipperGuard:
                     break
                 n += 1
                 belegt = res is False
-                self._log(p, f"{'Platte belegt' if belegt else 'Kamera ohne Bild'} ({msg}) – Rückfrage {n}/{tries}")
+                was = "Platte belegt" if belegt else "Platte nicht prüfbar" if jpg else "Kamera ohne Bild"
+                self._log(p, f"{was} ({msg}) – Rückfrage {n}/{tries}")
                 if n > tries:
                     self._abort(p, s, jid, name, switched, f"nach {tries} Rückfragen ohne freie Platte")
                     return
-                s["waiting"] = "wartet: Platte belegt?" if belegt else "wartet: Kamera ohne Bild"
+                s["waiting"] = f"wartet: {was}?"
                 s["answer"] = None
-                self.notifier.send("plate", f"{p.name}: {'Platte belegt?' if belegt else 'Kamera ohne Bild'} 🟥",
+                self.notifier.send("plate", f"{p.name}: {was}? 🟥",
                                    f"{name}\n{msg}\nOhne Antwort prüfe ich in {wait_min:g} min nochmal ({n}/{tries}).",
                                    "warning", "high", force=False, photo=(lambda b=jpg: b) if jpg else None,
                                    buttons=[[("✅ Platte frei – prüfen", f"ph:kw:{p.id}:chk:{jid}"),

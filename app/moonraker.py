@@ -575,7 +575,11 @@ class MoonrakerPrinter(BasePrinter):
         Kopf nach x/y. Gibt die tatsächlich angefahrene Höhe zurück (None = Z nicht referenziert, Bett bleibt stehen)."""
         with self.lock:
             homed = ((self.status_data.get("toolhead") or {}).get("homed_axes") or "").lower()
-        if "x" not in homed or "y" not in homed:
+        if "z" not in homed and z is not None:
+            # Ganz referenzieren: der U1 misst Z vorne links in der Ecke (X≈5 Y≈5), nicht in der Plattenmitte
+            self.gcode("G28", timeout=180)
+            homed = "xyz"
+        elif "x" not in homed or "y" not in homed:
             self.gcode("G28 X Y", timeout=120)
         cmds = ["G90"]
         zz = None
