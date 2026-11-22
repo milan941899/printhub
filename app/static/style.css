@@ -781,8 +781,8 @@ html, body, .board, .board * { overflow-anchor:none; }
   .sv-i.on::after { background:var(--ok); } .sv-i.warn::after { background:var(--warn); } .sv-i.bad::after { background:var(--err); }
   .sv-sum { font-size:12.5px; font-weight:700; white-space:nowrap; } .sv-sum.on { color:var(--ok); } .sv-sum.warn { color:var(--warn); } .sv-sum.bad { color:var(--err); }
   .sv-chev::before { content:"▸"; color:var(--muted); font-size:12px; } .svopen .sv-chev::before { content:"▾"; }
-  /* mit Drucker-Umschalter: Umschalter direkt über der Druckerkarte, Dienste darunter */
-  body.psw-on .board > .pblk[data-b="services"] { order:5; }
+  /* am Handy: Dienste ans Seitenende */
+  .board:not(.ff) > .pblk[data-b="services"], body.psw-on .board > .pblk[data-b="services"] { order:8; }
   body.psw-on .board > .pblk[data-b="queue"] { order:6; } body.psw-on .board > .pblk[data-b="history"] { order:7; }
 }
 .svchip { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:99px; background:var(--tile); border:1px solid var(--line);
