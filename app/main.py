@@ -2766,6 +2766,8 @@ def _sampler():
                 job = store.get_job(p.id)
                 if p.online:
                     temps.add(p.id, p.status().get("temps", []), job.get("started") if job else None)
+                    if p.type == "moonraker":
+                        _fan_guard(p)
                 if tick % 12 == 0:
                     if p.shelly and p.shelly.online:
                         energy.sample(p.id, p.shelly.total_wh)
@@ -4101,6 +4103,40 @@ async def api_light(request):
     return JSONResponse({"ok": True})
 
 
+async def api_chamber_fan(request):
+    p = printers.get(request.path_params["pid"])
+    if not p or not hasattr(p, "set_chamber_fan"):
+        return JSONResponse({"error": "Wird nicht unterstützt"}, status_code=400)
+    b = await request.json()
+    try:
+        await run_in_threadpool(p.set_chamber_fan, b.get("fan"), b.get("pct", 0))
+    except Exception as e:
+        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+    log.info("[%s] %s von Hand auf %s %%", p.id, b.get("fan"), b.get("pct"))
+    return JSONResponse({"ok": True})
+
+
+CHAMBER_SAFE_C = 38
+
+
+def _fan_guard(p):
+    """Abluft von Hand gedrosselt und der Bauraum wird beim Drucken zu warm → zurück auf 60 % (Hitzestau im Kühlkörper)."""
+    ov = getattr(p, "fan_override", None)
+    if not ov or ov.get("Abluft", 100) >= 60:
+        return
+    st = p.status()
+    if not st.get("printing"):
+        return
+    cav = next((t.get("actual") for t in st.get("temps", []) if t.get("label") == "Bauraum"), None)
+    if cav is None or cav < CHAMBER_SAFE_C:
+        return
+    p.set_chamber_fan("Abluft", 60)
+    p.fan_override.pop("Abluft", None)
+    log.warning("[%s] Bauraum %s °C – Abluft wieder auf 60 %%", p.id, cav)
+    notifier.send("error", f"{p.name}: Abluft wieder an 🌀", f"Bauraum {cav} °C – die gedrosselte Abluft läuft wieder mit 60 %, "
+                  f"sonst droht Hitzestau im Kühlkörper.", "warning")
+
+
 # ---------- Diagnose ----------
 STARTED_AT = time.time()
 
@@ -4900,6 +4936,7 @@ app = Starlette(
         Route("/api/queue/{qid:int}/{action}", api_queue_action, methods=["POST"]),
         Route("/api/bambuddy/thumb", api_bambuddy_thumb),
         Route("/api/printers/{pid}/light", api_light, methods=["POST"]),
+        Route("/api/printers/{pid}/fan", api_chamber_fan, methods=["POST"]),
         Route("/api/printers/{pid}/camera.jpg", api_camera),
         Route("/api/printers/{pid}/camera.mjpg", api_camera_stream),
         Route("/api/printers/{pid}/webrtc", api_camera_webrtc, methods=["POST"]),

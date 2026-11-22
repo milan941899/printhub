@@ -763,7 +763,13 @@ function renderBoard() {
 document.addEventListener("click", e => { if (!e.target.closest(".dd")) document.querySelectorAll(".dd.open").forEach(d => d.classList.remove("open")); });
 
 // ---------- Zusatzdaten (Temperatur, Strom, Statistik) ----------
-const X = {temps: {}, trange: {}, energy: {}, erange: {}, stats: {}};
+const X = {temps: {}, trange: {}, energy: {}, erange: {}, stats: {}, fan: null};
+function fanOpen(pid, k) { X.fan = X.fan && X.fan.pid === pid && X.fan.k === k ? null : {pid, k}; fillPrinters(); }
+async function fanSet(pid, k, pct) {
+  const r = await (await fetch(`/api/printers/${pid}/fan`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({fan: k, pct})})).json();
+  PH.toast(r.error || `${k}: ${pct ? pct + " %" : "aus"} ✓`, !!r.error);
+  X.fan = null; fillPrinters();
+}
 async function loadExtras(pid, only) {
   const p = lastPrinters.find(x => x.id === pid); if (!p) return;
   try {
@@ -897,8 +903,14 @@ function printerCard(p) {
     hotend: () => {
       // Bauraum (z. B. Snapmaker U1): Temperatur und Bauraum-Lüfter als kleine Zeile unter der Düse
       const cav = (p.temps || []).find(t => t.label === "Bauraum"), cf = p.chamber_fans || {};
-      const extra = [cav ? `🌡 Bauraum <b>${cav.actual}°</b>` : "", ...Object.entries(cf).map(([k, v]) => `🌀 ${esc(k)} <b>${v} %</b>`)].filter(Boolean);
-      return `<div class="hotend">${hotendBody(p, info)}</div>${extra.length ? `<div class="hx-cham">${extra.map(x => `<span>${x}</span>`).join("")}</div>` : ""}`;
+      const open = X.fan && X.fan.pid === p.id ? X.fan.k : null;
+      const extra = [cav ? `<span>🌡 Bauraum <b>${cav.actual}°</b></span>` : "",
+        ...Object.entries(cf).map(([k, v]) => `<button type="button" class="hx-fan${open === k ? " on" : ""}" title="${esc(k)} stellen"
+          onclick="fanOpen('${p.id}','${esc(k)}')">🌀 ${esc(k)} <b>${v} %</b></button>`)].filter(Boolean);
+      const menu = open ? `<div class="hx-fanset"><span>${esc(open)}:</span>${[0, 30, 60, 100].map(v =>
+        `<button type="button" class="small-btn${cf[open] === v ? " on" : ""}" onclick="fanSet('${p.id}','${esc(open)}',${v})">${v ? v + " %" : "Aus"}</button>`).join("")}
+        ${open === "Abluft" ? `<span class="muted small">Bei PLA: wird der Bauraum über 38 °C warm, schaltet PrintHub wieder auf 60 %. Beim nächsten Druck stellt der U1 selbst ein.</span>` : ""}</div>` : "";
+      return `<div class="hotend">${hotendBody(p, info)}</div>${extra.length ? `<div class="hx-cham">${extra.join("")}</div>${menu}` : ""}`;
     },
     e1: () => tiles[0] || "", e2: () => tiles[1] || "", e3: () => tiles[2] || "", e4: () => tiles[3] || "",
     e5: () => tiles[4] || "", e6: () => tiles[5] || "",

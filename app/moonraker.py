@@ -483,6 +483,17 @@ class MoonrakerPrinter(BasePrinter):
                 msg = r.text
             raise ValueError(f"Klipper lehnt das Licht ab: {str(msg)[:160]}")
 
+    CHAMBER_FANS = {"Abluft": "exhaust_fan", "Umluft": "circulation_fan", "Bauraum-Lüfter": "cavity_fan"}
+
+    def set_chamber_fan(self, label, pct):
+        """Bauraum-Lüfter von Hand stellen (SET_FAN_SPEED). Die Firmware stellt beim nächsten Druckstart wieder selbst ein."""
+        fan = self.CHAMBER_FANS.get(label)
+        if not fan:
+            raise ValueError("Unbekannter Lüfter")
+        pct = max(0, min(100, int(pct)))
+        self.gcode(f"SET_FAN_SPEED FAN={fan} SPEED={pct / 100:.2f}", timeout=10)
+        self.fan_override = {**getattr(self, "fan_override", {}), label: pct}
+
     start_gate = None        # vom Druckwächter gesetzt: (printer, filename) -> darf starten?
     on_gate_block = None     # (printer, filename) – abgefangener Start
 
