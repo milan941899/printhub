@@ -1386,3 +1386,5 @@ body.psw-on .board:not(.ff) > .pblk.pcard { order:-1; }
 .fanpop .fp-h { display:flex; justify-content:space-between; gap:12px; margin-bottom:8px; font-size:13.5px; }
 .fanpop .fp-b { display:flex; flex-wrap:wrap; gap:6px; } .fanpop .small-btn.on { border-color:var(--acc); color:var(--acc); }
 .fanpop .fp-t { margin-top:8px; line-height:1.35; }
+
+.mline.mx{display:none}

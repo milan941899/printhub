@@ -973,22 +973,40 @@ function maintBody(p) {
   for (const g of Object.values(groups)) g.heads.sort((a, b) => hn(a) - hn(b));   // Köpfe immer 1–4
   rows.sort((a, b) => (b.due - a.due) || (b.warn - a.warn) || ((b.pct || 0) - (a.pct || 0)));
   const all = PH.pref("maint_all", false), urgent = rows.filter(r => r.due || r.warn).length;
-  const show = all ? rows : rows.slice(0, Math.max(4, urgent)), more = rows.length - show.length;
+  // Standard: die 4 dringendsten (Fälliges immer). Hat der Baustein eine eigene Höhe, passt fitMaint() die Zeilenzahl an.
+  const lim = all ? rows.length : Math.max(4, urgent), more = rows.length - lim;
   const bar = i => `<div class="mini"><div style="width:${i.pct}%"></div></div>`;
   return `
     <div class="maint ${m.due ? "due" : ""}" style="margin-top:0">
       <div class="maint-h"><b>🔧 ${(s.hours_total || 0).toLocaleString("de-DE")} Druckstunden</b>
         <span class="small muted" style="margin-right:auto">${m.due ? `<b style="color:var(--warn)">${m.due} fällig</b>` : m.warn ? `${m.warn} bald fällig` : "alles im grünen Bereich"}</span>
         <a class="small" href="/einstellungen#wartung">Alle Aufgaben →</a></div>
-      ${show.map(i => `<div class="mline ${i.due ? "due" : i.warn ? "warn" : ""}">
+      ${rows.map((i, n) => `<div class="mline ${i.due ? "due" : i.warn ? "warn" : ""}${n >= lim ? " mx" : ""}">
         <span title="${esc(i.desc || "")}">${esc(i.icon)} ${esc(i.name)}</span>
         ${i.heads ? `<div class="mheads">${i.heads.map(h => `<div class="mh ${h.due ? "due" : h.warn ? "warn" : ""}" title="${esc(h.name)}: ${(h.remaining || 0).toLocaleString("de-DE", {maximumFractionDigits: 1})} h übrig">
             <i>${h.head.replace("T", "") * 1 + 1}</i>${bar(h)}</div>`).join("")}</div>` : bar(i)}
         <span class="small muted">${i.heads ? `K${i.id.split("@T")[1] * 1 + 1}: ` : ""}${left(i)}</span>
         <button class="small-btn" title="${esc(i.top || i.name)} erledigt" onclick="maintDone('${p.id}','${i.id}','${esc(i.top || i.name)}')">✓</button>
       </div>`).join("")}
-      ${more > 0 || all ? `<button type="button" class="mmore" onclick="PH.pref('maint_all', null, ${!all}); fillPrinters()">${all ? "weniger anzeigen ▴" : `+${more} weitere ▾`}</button>` : ""}
+      <button type="button" class="mmore"${more > 0 || all ? "" : " hidden"} onclick="PH.pref('maint_all', null, ${!all}); fillPrinters()">${all ? "weniger anzeigen ▴" : `+${more} weitere ▾`}</button>
     </div>`;
+}
+// Wartung: hat der Baustein eine eigene Höhe (Anordnen/Ziehen), so viele Zeilen zeigen wie hineinpassen
+function fitMaint() {
+  if (PH.pref("maint_all", false)) return;
+  document.querySelectorAll('.pcard .blk[data-b="maint"]:not(.colb)').forEach(b => {
+    const L = bl(b.closest(".pcard").dataset.pid);
+    const free = DESK() && L.pos && Object.keys(L.pos).length > 0;
+    const H = free ? L.pos.maint && L.pos.maint.h : L.h.maint;
+    const lines = [...b.querySelectorAll(".mline")], btn = b.querySelector(".mmore");
+    if (!H || !lines.length || !btn) return;
+    const keep = Math.max(1, lines.filter(l => l.matches(".due,.warn")).length);
+    lines.forEach(l => l.classList.remove("mx")); btn.hidden = false;
+    let n = lines.length;
+    while (n > keep && b.offsetHeight > H) lines[--n].classList.add("mx");
+    btn.hidden = n === lines.length;
+    btn.textContent = `+${lines.length - n} weitere ▾`;
+  });
 }
 async function maintDone(pid, tid, name) {
   if (!confirm(`„${name}“ als erledigt eintragen? Der Zähler startet neu.`)) return;
@@ -1148,6 +1166,7 @@ function fillPrinters() {
   }
   HX.animate();  // Lüfter drehen (an der Seitenuhr verankert → läuft nach dem Neuzeichnen nahtlos weiter)
   placeCams();
+  fitMaint();
   applyFree();   // erst anordnen, dann messen (sonst wird die Raster-Breite gemessen)
   // Breite des Temperatur-Bausteins merken -> Diagramm in echter Größe
   document.querySelectorAll('.pcard .blk[data-b="temps"]').forEach(b => {
