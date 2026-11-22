@@ -1374,3 +1374,5 @@ body.psw-on .pblk.pcard.psw-hide { display:none !important; }
 /* Großansicht: eigenes Zoomen statt Browser-Zoom */
 .lbzoom { position:relative; overflow:hidden; border-radius:10px; touch-action:none; background:#000; }
 .lbzoom > img, .lbzoom > video { transform-origin:center center; }
+/* Modus „Einzeln“: gewählter Drucker direkt unter der Umschaltleiste, Rest in eigener Reihenfolge darunter */
+body.psw-on .board:not(.ff) > .pblk.pcard { order:-1; }
