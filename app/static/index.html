@@ -33,11 +33,13 @@
 </header>
 <nav id="psw" class="psw" hidden></nav>
 <main id="board" class="board"></main>
-<div id="lightbox" onclick="if(event.target===this)closeCam()">
+<div id="lightbox" onclick="if(event.target===this && Date.now() - lbGestureT > 600)closeCam()">
   <div class="lbbox">
     <div class="lbhead"><b id="lbtitle">Kamera</b><button class="small-btn" onclick="closeCam()">✕ Schließen</button></div>
-    <img id="lbimg" alt="Kamera groß">
-    <video id="lbvid" autoplay muted playsinline hidden></video>
+    <div id="lbzoom" class="lbzoom">
+      <img id="lbimg" alt="Kamera groß">
+      <video id="lbvid" autoplay muted playsinline hidden></video>
+    </div>
   </div>
 </div>
 <div class="modal" id="m-pick">
@@ -115,7 +117,7 @@ const CAM_GRACE = 90000;   // kurz weggescrollt: Stream weiterlaufen lassen, ers
 function rtcStop(o) { try { o && o.pc && o.pc.close(); } catch {} if (o && o.video) { o.video.srcObject = null; } }
 let bigRtc = null;
 function openCam(id) {
-  bigCam = id;
+  bigCam = id; lbReset();
   const lb = document.getElementById("lightbox");
   const c = cams[id];
   const vid = document.getElementById("lbvid"), im0 = document.getElementById("lbimg");
@@ -133,7 +135,20 @@ function openCam(id) {
     rtcStart(id, vid).then(pc => {
       if (bigRtc !== me) return pc.close();
       me.pc = pc;
-      pc.oniceconnectionstatechange = () => { if (["failed", "disconnected"].includes(pc.iceConnectionState)) why("keine Verbindung zum Drucker (" + pc.iceConnectionState + ")"); };
+      let dropT = null;
+      pc.oniceconnectionstatechange = () => {
+        const bad = ["failed", "disconnected"].includes(pc.iceConnectionState);
+        clearTimeout(dropT);
+        if (!bad) return;
+        // über VPN reißt die Verbindung gelegentlich kurz ab → nach 3 s neu aufbauen (bis zu 5×), Bild bleibt stehen
+        dropT = setTimeout(() => {
+          if (bigRtc !== me || !["failed", "disconnected"].includes(pc.iceConnectionState)) return;
+          if ((X.rtcRetry = (X.rtcRetry || 0) + 1) > 5) return why("keine Verbindung zum Drucker (" + pc.iceConnectionState + ")");
+          why("Verbindung kurz weg – baue neu auf …");
+          const keep = {...LBZ}; rtcStop(me); bigRtc = null; openCam(id); Object.assign(LBZ, keep); lbApply();
+        }, 3000);
+      };
+      pc.onconnectionstatechange = () => { if (pc.connectionState === "connected") X.rtcRetry = 0; };
     }).catch(e => { if (bigRtc === me) { clearTimeout(tmo); bigRtc = null; vid.hidden = true; im0.hidden = false; why(String(e.message || e).slice(0, 80)); } });
   } else if (camStreamOk(id) && !PH.saving()) {
     const im = document.getElementById("lbimg");
@@ -144,7 +159,48 @@ function openCam(id) {
   lb.classList.add("open");
   camTick();
 }
+// ---------- Großansicht: eigenes Zoomen/Verschieben (zwei Finger / Mausrad, Doppeltipp = zurück) ----------
+// Der Browser-Zoom vergrößert die ganze Seite, löst Neuzeichnen aus und kann den Live-Stream abreißen lassen –
+// deshalb zoomt nur das Bild selbst, der Stream läuft unberührt weiter.
+let lbGestureT = 0;
+const LBZ = {s: 1, x: 0, y: 0};
+function lbApply() {
+  const z = document.getElementById("lbzoom");
+  LBZ.s = Math.min(6, Math.max(1, LBZ.s));
+  if (LBZ.s === 1) { LBZ.x = LBZ.y = 0; }
+  const w = z.clientWidth, h = z.clientHeight, mx = w * (LBZ.s - 1) / 2, my = h * (LBZ.s - 1) / 2;
+  LBZ.x = Math.min(mx, Math.max(-mx, LBZ.x)); LBZ.y = Math.min(my, Math.max(-my, LBZ.y));
+  for (const el of z.children) el.style.transform = LBZ.s === 1 ? "" : `translate(${LBZ.x}px, ${LBZ.y}px) scale(${LBZ.s})`;
+}
+function lbReset() { LBZ.s = 1; LBZ.x = LBZ.y = 0; lbApply(); }
+(() => {
+  const z = document.getElementById("lbzoom"), pts = new Map();
+  let start = null, lastTap = 0;
+  z.addEventListener("pointerdown", e => {
+    z.setPointerCapture(e.pointerId); pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    const v = [...pts.values()];
+    start = {s: LBZ.s, x: LBZ.x, y: LBZ.y, p: v.map(q => ({...q})),
+      d: v.length > 1 ? Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y) : 0};
+    if (v.length === 1) { const now = Date.now(); if (now - lastTap < 300) { lbReset(); lbGestureT = now; } lastTap = now; }
+  });
+  z.addEventListener("pointermove", e => {
+    if (!pts.has(e.pointerId) || !start) return;
+    pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    const v = [...pts.values()];
+    if (v.length > 1 && start.d) {
+      LBZ.s = start.s * Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y) / start.d;
+    } else if (v.length === 1 && LBZ.s > 1) {
+      LBZ.x = start.x + v[0].x - start.p[0].x; LBZ.y = start.y + v[0].y - start.p[0].y;
+    } else return;
+    lbGestureT = Date.now(); lbApply();
+  });
+  const up = e => { pts.delete(e.pointerId); const v = [...pts.values()];
+    start = v.length ? {s: LBZ.s, x: LBZ.x, y: LBZ.y, p: v.map(q => ({...q})), d: 0} : null; };
+  z.addEventListener("pointerup", up); z.addEventListener("pointercancel", up);
+  z.addEventListener("wheel", e => { e.preventDefault(); LBZ.s *= e.deltaY < 0 ? 1.15 : 1 / 1.15; lbApply(); }, {passive: false});
+})();
 function closeCam() {
+  lbReset();
   bigCam = null; document.getElementById("lightbox").classList.remove("open");
   if (bigRtc) { rtcStop(bigRtc); bigRtc = null; }
   document.getElementById("lbvid").hidden = true; document.getElementById("lbimg").hidden = false;
@@ -152,7 +208,7 @@ function closeCam() {
   if (im.dataset.stream) { im.dataset.stream = ""; im.removeAttribute("src"); }   // Stream beenden
 }
 function showImg(src, title) {
-  bigCam = null;
+  bigCam = null; lbReset();
   document.getElementById("lbimg").src = src;
   document.getElementById("lbtitle").textContent = title || "Bild";
   document.getElementById("lightbox").classList.add("open");

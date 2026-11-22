@@ -1370,3 +1370,7 @@ body.psw-on .pblk.pcard.psw-hide { display:none !important; }
 .hx-fanset { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; font-size:13px; }
 .hx-fanset .small-btn.on { border-color:var(--acc); color:var(--acc); }
 .hx-cham .hx-fan .hx-auto { font-style:normal; font-size:10px; font-weight:800; color:var(--acc); background:color-mix(in srgb, var(--acc) 14%, transparent); padding:0 5px; border-radius:6px; margin-left:2px; }
+
+/* Großansicht: eigenes Zoomen statt Browser-Zoom */
+.lbzoom { position:relative; overflow:hidden; border-radius:10px; touch-action:none; background:#000; }
+.lbzoom > img, .lbzoom > video { transform-origin:center center; will-change:transform; }
