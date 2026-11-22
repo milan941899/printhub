@@ -785,7 +785,9 @@ function applyFree() {
   }
   const board = document.getElementById("board");
   // Modus „Einzeln“: freie Anordnung der Übersicht aussetzen – gewählter Drucker oben, Rest darunter im Raster
-  const pp = layout.page.pos, on = desk && pp && Object.keys(pp).length > 0 && !(typeof swOn === "function" && swOn());
+  // … und solange ein Offline-Drucker eingeklappt ist (sonst bliebe sein großer Platz leer)
+  const pp = layout.page.pos, on = desk && pp && Object.keys(pp).length > 0 && !(typeof swOn === "function" && swOn())
+    && !(typeof pminSet === "function" && pminSet().size);
   board.classList.toggle("ff", !!on);
   if (on) PHUI.freeLayout(board, freePos(pp, board, ".pblk", 1), autoH);
   else { board.style.height = ""; [...board.children].forEach(el => { el.style.left = el.style.top = el.style.width = el.style.height = ""; }); }
@@ -1062,13 +1064,16 @@ function swSel() {
 function swPick(id) { PH.pref("sw_sel", null, id); swDraw(); fillPrinters(); }
 // Knopf oben (nur am PC): nebeneinander ⇄ einzeln
 function swToggle() { PH.pref("sw_desk", null, !PH.pref("sw_desk", false)); swDraw(); fillPrinters(); setTimeout(() => { if (typeof applyFree === "function") applyFree(); }, 0); }
-// Offline-Drucker in der Nebeneinander-Ansicht einklappen (bis zum Neuladen aufklappbar)
+// Offline-Drucker in der Nebeneinander-Ansicht einklappen (bis zum Neuladen aufklappbar). Bei frei angeordneter
+// Übersicht ruht die freie Anordnung solange (Raster: Leiste oben, die anderen in voller Breite).
 const pminOpened = new Set();
 function pminOpen(pid) { pminOpened.add(pid); swDraw(); fillPrinters(); }
+function pminSet() {   // welche Drucker gerade eingeklappt werden (Nebeneinander, offline, nicht aufgeklappt)
+  const fold = !swOn() && PH.pref("off_min", true) && lastPrinters.length > 1 && !document.body.classList.contains("editing");
+  return new Set(fold ? lastPrinters.filter(p => !p.online && !pminOpened.has(p.id) && lastPrinters.some(o => o.online)).map(p => p.id) : []);
+}
 function pminDraw(on) {
-  const free = document.getElementById("board").classList.contains("ff");
-  const fold = !on && !free && PH.pref("off_min", true) && lastPrinters.length > 1;
-  const mins = new Set(fold ? lastPrinters.filter(p => !p.online && !pminOpened.has(p.id) && lastPrinters.some(o => o.online)).map(p => p.id) : []);
+  const mins = pminSet();
   document.querySelectorAll(".pblk.pcard").forEach(c => {
     const pid = c.dataset.pid, p = lastPrinters.find(x => x.id === pid), min = mins.has(pid);
     c.classList.toggle("pc-min", min);
@@ -1358,7 +1363,8 @@ function toggleEdit() {
     return PH.toast("Zum Anordnen erst oben auf „▥ Nebeneinander“ umschalten", true);
   const on = document.body.classList.toggle("editing");
   document.getElementById("edit").textContent = on ? "✓ Fertig" : "✎ Anordnen";
-  if (on) ensureFree();
+  if (on) { fillPrinters(); ensureFree(); }     // beim Anordnen alle Drucker in voller Größe (freie Positionen aktiv)
+  else fillPrinters();
 }
 const board = document.getElementById("board");
 // Seiten-Bausteine (Dienste, Drucker, Warteschlange, Verlauf)
