@@ -1682,6 +1682,7 @@ function pcDraw() {
           ${bambu ? "" : pcf(i, "light_pin", "Licht-Ausgang", "Klipper: z. B. caselight oder „led cavity_led“")}
           ${bambu ? "" : pcf(i, "api_key", "Moonraker-API-Schlüssel", p.api_key_set ? "gespeichert – leer = behalten" : "nur falls nötig", 'autocomplete="new-password"', "password")}
           ${pcf(i, "track_usage", "Verbrauch an Spoolman buchen", "Aus, wenn der Drucker selbst bucht (z. B. SpoolLink)", "", "check")}
+          ${bambu ? "" : pcf(i, "head_label", "Name auf den Köpfen", "Kurzer Schriftzug für die Kopf-Ansicht in der Übersicht (max. 12 Zeichen)", 'maxlength="12"')}
           ${bambu ? "" : pcf(i, "auto_assign", "Spulen per RFID zuordnen", "Erkennt der Drucker eine Original-Rolle, sucht PrintHub die passende Spule im Lager", "", "check")}
           ${bambu ? "" : `${pcf(i, "chamber_auto", "Abluft-Automatik", "PrintHub regelt die Abluft beim Drucken nach Bauraum-Temperatur und Material statt der festen Voreinstellung des Druckers", "", "check")}
             ${p.chamber_auto ? `<div class="pc-pose">${pcf(i, "chamber_pla", "Ziel PLA/TPU (°C)", "Standard 35", 'inputmode="numeric" placeholder="35"')}${pcf(i, "chamber_petg", "Ziel PETG (°C)", "Standard 45", 'inputmode="numeric" placeholder="45"')}${pcf(i, "chamber_abs", "Ziel ABS/ASA/PC (°C)", "Standard 60 – Wärme halten", 'inputmode="numeric" placeholder="60"')}
