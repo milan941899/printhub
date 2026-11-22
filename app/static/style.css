@@ -469,13 +469,18 @@ table.list.small td, table.list.small th { padding:5px 6px; font-size:12px; }
 .qsrc.mr { color:#f97316; border-color:#f9731655; }
 .qsrc.bb { color:#22c55e; border-color:#22c55e55; }
 .mchip { background:#f59e0b22; border:1px solid var(--warn); color:var(--warn); border-radius:99px; padding:2px 9px; font-size:12px; font-weight:700; text-decoration:none; }
-.mline { display:grid; grid-template-columns:minmax(0,1.4fr) 1fr auto auto; gap:10px; align-items:center; padding:6px 0; border-top:1px solid var(--line); font-size:13px; }
+.mline { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 92px 30px; gap:10px; align-items:center; padding:4px 0; border-top:1px solid var(--line); font-size:13px; }
+.mline > span.small { text-align:right; white-space:nowrap; }
+.mheads { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
+.mheads .mh { display:flex; align-items:center; gap:3px; } .mheads .mh i { font-style:normal; font-size:10px; color:var(--muted); font-weight:700; }
+.mheads .mh .mini { flex:1; } .mheads .mh.warn .mini div { background:var(--warn); } .mheads .mh.due .mini div { background:var(--err); }
+.maint .mmore { background:none; border:0; color:var(--acc); font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; padding:6px 0 0; }
 .mline:first-of-type { margin-top:8px; }
 .mline > span:first-child { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .mline .mini { height:6px; } .mline .mini div { background:var(--acc); }
 .mline.warn .mini div { background:var(--warn); } .mline.due .mini div { background:var(--err); } .mline.due b { color:var(--err); }
-.mline .small-btn { padding:3px 8px; }
-@container (max-width:520px) { .mline { grid-template-columns:1fr 70px auto; } .mline .mini { display:none; } }
+.mline .small-btn { padding:2px 7px; }
+@container (max-width:520px) { .mline { grid-template-columns:1fr 84px 30px; } .mline > .mini, .mline > .mheads { display:none; } }
 /* Statistik */
 :root { --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500; --c5:#d55181; --c6:#008300; --c7:#9085e9; --c8:#e66767; }
 html[data-theme="light"] { --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a; --c4:#eda100; --c5:#e87ba4; --c6:#008300; --c7:#6250d6; --c8:#e34948; }
