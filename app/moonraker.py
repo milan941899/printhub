@@ -396,6 +396,16 @@ class MoonrakerPrinter(BasePrinter):
                     th = "extruder" + (str(i) if i else "")
             else:
                 self._th_drop = time.time()
+            # Entprellen: ein anderer Kopf wird erst übernommen, wenn er 4 s lang gemeldet wird
+            # (beim Wechsel schaltet der U1 kurz durch – das soll nicht als Farbwechsel aufblitzen)
+            now = time.time()
+            if self._shown_th and th != self._shown_th:
+                if self._cand_th != th:
+                    self._cand_th, self._cand_t = th, now
+                if now - self._cand_t < 4:
+                    th = self._shown_th
+            else:
+                self._cand_th = None
             self._shown_th = th
         if active and th:
             n = th.replace("extruder", "") or "0"
@@ -522,6 +532,7 @@ class MoonrakerPrinter(BasePrinter):
 
     _shown_th = None         # zuletzt angezeigter aktiver Kopf (gegen Flackern beim Farbwechsel)
     _th_drop = 0.0           # Zeitpunkt, an dem toolhead.extruder zuletzt auf Drucktemperatur war
+    _cand_th, _cand_t = None, 0.0   # neuer Kopf in Prüfung (Entprellen)
 
     start_gate = None        # vom Druckwächter gesetzt: (printer, filename) -> darf starten?
     on_gate_block = None     # (printer, filename) – abgefangener Start
