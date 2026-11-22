@@ -148,7 +148,6 @@ for pc in cfg.get("printers", []):
         p.history = history
         p.media_dir = MEDIA_DIR
         p.auto_assign = pc.get("auto_assign", True)
-        p.head_label = str(pc.get("head_label") or "")[:12]
         p.chamber_auto = bool(pc.get("chamber_auto", False))
         p.chamber_cfg = {k: int(pc.get("chamber_" + k) or v) for k, v in CHAMBER_DEF.items()}
         p.plate_pose_cfg = {"on": bool(pc.get("plate_pose")), "x": pc.get("plate_x", 135), "y": pc.get("plate_y", 10),
@@ -2569,7 +2568,6 @@ async def api_state(request):
         st["shelly"] = bool(p.shelly)
         st["power"] = power.info(p)
         st["maint_due"] = maint_due.get(p.id, 0)
-        st["head_label"] = getattr(p, "head_label", "")
         if p.type == "moonraker":
             if "Abluft" in (st.get("chamber_fans") or {}):
                 st["fan_auto"] = {"on": _fan_auto_active(p), "cfg": bool(getattr(p, "chamber_auto", False)),
@@ -3759,7 +3757,7 @@ PCFG_FIELDS = {   # Schlüssel -> Typ
     "port": "int", "web_port": "int", "channels": "int", "api_key": "secret", "light_pin": "str",
     "shelly": "str", "shelly_channel": "int", "camera_url": "str", "camera": "bool", "track_usage": "bool",
     "auto_assign": "bool", "chamber_auto": "bool", "chamber_pla": "int", "chamber_petg": "int", "chamber_abs": "int",
-    "plate_pose": "bool", "plate_x": "int", "plate_y": "int", "plate_z": "int", "head_label": "str",
+    "plate_pose": "bool", "plate_x": "int", "plate_y": "int", "plate_z": "int",
 }
 PCFG_SECRET = {"access_code", "api_key"}
 

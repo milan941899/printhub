@@ -104,56 +104,6 @@
         ${k ? `<image href="${set}f${k}.webp${v}" width="${w}" height="212" filter="url(#${id})"/><image href="${set}s${k}.webp${v}" width="${w}" height="212"/>` : ""}
         <image href="${set}v.webp${v}" width="${w}" height="212"${P.o < 1 ? ` opacity="${P.o}"` : ""}/></svg>`;
     },
-    // Werkzeugkopf (U1-Stil): Lüfterfenster in Filamentfarbe, Ring = Restmenge, Düse/Glühpunkt = Heizzustand
-    // o: {n: Kopfnummer, label: Schriftzug, fill: 0…1|null, heat: 0 kalt | 1 heizt | 2 auf Temperatur, on: druckt}
-    toolhead(color, h = 110, o = {}) {
-      const c = /^#?[0-9a-f]{6}$/i.test(color || "") ? (color[0] === "#" ? color : "#" + color) : "";
-      const id = "th" + (PH._th = (PH._th || 0) + 1), esc = PH.esc;
-      const f = o.fill == null ? null : Math.max(0, Math.min(1, +o.fill || 0)), C = 2 * Math.PI * 31;
-      const ring = f == null ? "" : `<circle cx="62" cy="88" r="31" fill="none" stroke="${f < 0.3 ? "#ef4444" : "#22c55e"}" stroke-width="5" stroke-linecap="round"
-        stroke-dasharray="${(f * C).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 62 88)"/>`;
-      let blades = "";
-      for (let i = 0; i < 7; i++) {
-        const a = i * 0.9, b = a + 0.55;
-        blades += `<path d="M62 88L${(62 + 19 * Math.cos(a)).toFixed(1)} ${(88 + 19 * Math.sin(a)).toFixed(1)}A19 19 0 0 1 ${(62 + 19 * Math.cos(b)).toFixed(1)} ${(88 + 19 * Math.sin(b)).toFixed(1)}z"/>`;
-      }
-      const heat = o.heat || 0, hc = heat === 2 ? "#ffb04a" : "#ff5a1f";
-      return `<svg class="thd${o.on ? " on" : ""}" viewBox="0 0 136 200" width="${Math.round(h * 136 / 200)}" height="${h}" aria-hidden="true">
-        <defs>
-          <linearGradient id="${id}fr" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#eeece6"/><stop offset="1" stop-color="#cfcbc2"/></linearGradient>
-          <linearGradient id="${id}sd" x1="0" x2="1"><stop offset="0" stop-color="#bdb9af"/><stop offset="1" stop-color="#8f8b82"/></linearGradient>
-          <linearGradient id="${id}tp" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f4f2ec"/><stop offset="1" stop-color="#ffffff"/></linearGradient>
-          <radialGradient id="${id}bz" cx=".4" cy=".35"><stop offset=".7" stop-color="#e9e7e1"/><stop offset="1" stop-color="#a9a59c"/></radialGradient>
-          <radialGradient id="${id}wn" cx=".38" cy=".3" r=".75"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".35" stop-color="${c || "#64748b"}"/><stop offset="1" stop-color="#000" stop-opacity=".55"/></radialGradient>
-          <radialGradient id="${id}wb" cx=".38" cy=".3" r=".75"><stop offset="0" stop-color="${c || "#64748b"}"/><stop offset="1" stop-color="${c || "#64748b"}"/></radialGradient>
-          <radialGradient id="${id}hb" cx=".35" cy=".3"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c9c5bc"/></radialGradient>
-          <linearGradient id="${id}br" x1="0" x2="1"><stop offset="0" stop-color="#6b4a10"/><stop offset=".35" stop-color="#f8dc84"/><stop offset=".6" stop-color="#c8962f"/><stop offset="1" stop-color="#5a3f0c"/></linearGradient>
-          <linearGradient id="${id}bk" x1="0" x2="1"><stop offset="0" stop-color="#2b2f36"/><stop offset=".4" stop-color="#5b6170"/><stop offset="1" stop-color="#1c1f24"/></linearGradient>
-          <radialGradient id="${id}gl"><stop offset="0" stop-color="${hc}" stop-opacity=".95"/><stop offset=".45" stop-color="${hc}" stop-opacity=".45"/><stop offset="1" stop-color="${hc}" stop-opacity="0"/></radialGradient>
-        </defs>
-        <path d="M20 34L36 22H120L104 34z" fill="url(#${id}tp)" stroke="#a9a59c" stroke-width=".8"/>
-        <path d="M104 34L120 22V134L104 148z" fill="url(#${id}sd)" stroke="#8f8b82" stroke-width=".8"/>
-        <path d="M20 34H104V148L92 160H32L20 148z" fill="url(#${id}fr)" stroke="#a9a59c" stroke-width="1" stroke-linejoin="round"/>
-        <path d="M20 148L32 160H92L104 148" fill="none" stroke="#dcd9d1" stroke-width="3"/>
-        <path d="M104 148L120 134L108 148L92 160z" fill="#8f8b82"/>
-        <path d="M23 37H101" stroke="#fff" stroke-width="2" opacity=".9"/>
-        ${o.label ? `<text x="62" y="49" text-anchor="middle" font-size="11" font-weight="700" letter-spacing=".6" fill="#55595f" font-family="system-ui,sans-serif">${esc(o.label)}</text>` : ""}
-        <circle cx="62" cy="88" r="31" fill="none" stroke="#00000022" stroke-width="5"/>
-        ${ring}
-        <circle cx="62" cy="88" r="26" fill="url(#${id}bz)"/>
-        <circle cx="62" cy="88" r="22" fill="url(#${id}wb)"/>
-        <g fill="#000" opacity=".22">${blades}</g>
-        <circle cx="62" cy="88" r="22" fill="url(#${id}wn)" opacity=".85"/>
-        <circle cx="62" cy="88" r="22" fill="none" stroke="#00000055" stroke-width="1.5"/>
-        <circle cx="62" cy="88" r="9.5" fill="url(#${id}hb)" stroke="#a9a59c" stroke-width=".8"/>
-        ${o.n != null ? `<text x="62" y="92.5" text-anchor="middle" font-size="12" font-weight="800" fill="#1f2328" font-family="system-ui,sans-serif">${esc(o.n)}</text>` : ""}
-        <path d="M46 76A20 20 0 0 1 72 69" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".55"/>
-        <rect x="50" y="160" width="24" height="9" fill="url(#${id}bk)"/>
-        <path d="M53 169H71L67 181H57z" fill="${heat ? `url(#${id}br)` : "#8b8f96"}"/>
-        <path d="M59 181H65L63 187H61z" fill="${heat ? "#5a3f0c" : "#5f636a"}"/>
-        ${heat ? `<circle cx="62" cy="190" r="${o.on ? 10 : 7}" fill="url(#${id}gl)"/>` : ""}
-      </svg>`;
-    },
     esc: s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])),
     eur: v => v == null ? "–" : Number(v).toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €",
     kwh: v => v == null ? "–" : Number(v).toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " kWh",

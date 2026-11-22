@@ -671,8 +671,6 @@ function aspool(p, s, i) {
   // „PLA SnapSpeed“ → groß „PLA“, klein „SnapSpeed“ (Untertyp vom Drucker, auch wenn eine Spule zugewiesen ist)
   const matBase = mat.split(" ")[0];
   const matSub = mat.split(" ").slice(1).join(" ") || (s.material && s.material.split(" ")[0] === matBase ? s.material.split(" ").slice(1).join(" ") : "");
-  const heads = p.type === "moonraker" && !isExt && PH.pref("ams_view", "spools") === "heads";
-  const tmpH = p.type === "moonraker" ? p.temps.find(t => t.label === s.key) : null;
   let extra = "";
   if (p.type === "moonraker") {
     const tmp = p.temps.find(t => t.label === s.key);
@@ -682,9 +680,7 @@ function aspool(p, s, i) {
   }
   const name = sp ? esc(stripMat(sp.name, sp.material)) : (color || s.material ? "frei" : "leer");
   return `<div class="aspool ${p.current_slot === s.key ? "active" : ""}" title="${esc(s.label)} – tippen zum Zuweisen">
-    ${heads ? `<div class="reel3d head">${PH.toolhead(color, 116, {n: hub, label: p.head_label, fill: sp && sp.remaining != null && sp.initial ? pct / 100 : null,
-        heat: tmpH && tmpH.target > 0 ? (Math.abs(tmpH.actual - tmpH.target) < 5 ? 2 : 1) : 0, on: p.current_slot === s.key && p.printing})}</div>`
-      : `<div class="reel3d ${sp || color ? "" : "empty"}">${PH.spool(color || "#64748b", sp || color ? pct / 100 : 0, 60)}<span class="slotno">${hub}</span></div>`}
+    <div class="reel3d ${sp || color ? "" : "empty"}">${PH.spool(color || "#64748b", sp || color ? pct / 100 : 0, 60)}<span class="slotno">${hub}</span></div>
     <div class="a-mat">${esc(matBase)}</div><div class="a-sub" title="${esc(mat)}">${matSub ? esc(matSub) : "&nbsp;"}</div>
     <div class="a-g">${sp && sp.remaining != null ? `<b>${Math.round(sp.remaining)} g</b>` : (sp ? `#${sp.id}` : "&nbsp;")}</div>
     <div class="a-name" title="${name}">${name}</div>
@@ -695,11 +691,6 @@ function aspool(p, s, i) {
   </div>`;
 }
 
-function amsViewSw() {   // U1: Spulen oder Köpfe zeigen (pro Gerät gemerkt)
-  const v = PH.pref("ams_view", "spools");
-  return `<span class="avsw">${[["spools", "Spulen"], ["heads", "Köpfe"]].map(([k, t]) =>
-    `<button type="button" class="${v === k ? "on" : ""}" onclick="PH.pref('ams_view', null, '${k}'); fillPrinters()">${t}</button>`).join("")}</span>`;
-}
 function amsBody(p) {
   p._first = firstMarks(p);
   const main = p.slots.filter(s => s.key !== "ext");
@@ -1079,7 +1070,7 @@ function printerCard(p) {
     e1: () => tiles[0] || "", e2: () => tiles[1] || "", e3: () => tiles[2] || "", e4: () => tiles[3] || "",
     e5: () => tiles[4] || "", e6: () => tiles[5] || "",
     camera: () => p.camera ? `<div class="camrow"><div id="cam-${p.id}"></div><div class="camhint"><div class="label">Kamera</div><div class="muted small">Zum Vergrößern<br>aufs Bild klicken</div></div></div>` : "",
-    ams: () => sec(p, "ams", amsBody(p), p.type === "moonraker" ? amsViewSw() : `<span class="legend">Spule antippen zum Wechseln</span>`, p.type === "moonraker" ? "Werkzeugköpfe" : "AMS lite"),
+    ams: () => sec(p, "ams", amsBody(p), `<span class="legend">Spule antippen zum Wechseln</span>`, p.type === "moonraker" ? "Werkzeugköpfe" : "AMS lite"),
     temps: () => sec(p, "temps", lineChart(X.temps[p.id], tw, th), segBtns("trange", p.id, [["5", "5 Min"], ["15", "15 Min"], ["60", "1 h"], ["job", "Druck"]], tr)),
     maint: () => sec(p, "maint", maintBody(p), `<a class="small" href="/statistik">Statistik →</a>`),
   };
