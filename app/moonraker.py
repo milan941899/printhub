@@ -215,6 +215,8 @@ class MoonrakerPrinter(BasePrinter):
                 if isinstance(hm, list) and hm:
                     extra["head_map"] = hm[:32]
                 self.store.data.setdefault("max_z", {})[self.id] = 0     # neue Höhe messen
+                self.fan_override = {}                                     # neuer Druck: Automatik gilt wieder
+                self.fan_auto_off = False
                 self.job_started(ps.get("filename") or "Druck", extra)
             elif job is not None:
                 pd = ps.get("print_duration") or 0
@@ -485,7 +487,7 @@ class MoonrakerPrinter(BasePrinter):
 
     CHAMBER_FANS = {"Abluft": "exhaust_fan", "Umluft": "circulation_fan", "Bauraum-Lüfter": "cavity_fan"}
 
-    def set_chamber_fan(self, label, pct):
+    def set_chamber_fan(self, label, pct, auto=False):
         """Bauraum-Lüfter von Hand stellen (SET_FAN_SPEED). Die Firmware stellt beim nächsten Druckstart wieder selbst ein."""
         fan = self.CHAMBER_FANS.get(label)
         if not fan:
@@ -493,6 +495,18 @@ class MoonrakerPrinter(BasePrinter):
         pct = max(0, min(100, int(pct)))
         self.gcode(f"SET_FAN_SPEED FAN={fan} SPEED={pct / 100:.2f}", timeout=10)
         self.fan_override = {**getattr(self, "fan_override", {}), label: pct}
+        if label == "Abluft" and not auto:
+            self.fan_auto_off = True          # von Hand gestellt → Automatik bis zum nächsten Druck aus
+
+    def heated_slots(self):
+        """Köpfe, die gerade auf Drucktemperatur sind oder dahin heizen (Standby ~70 °C zählt nicht)."""
+        with self.lock:
+            st = dict(self.status_data)
+        out = []
+        for i, ex in enumerate(self._extruders()):
+            if round((st.get(ex) or {}).get("target", 0)) >= 150:
+                out.append(f"T{i}")
+        return out
 
     start_gate = None        # vom Druckwächter gesetzt: (printer, filename) -> darf starten?
     on_gate_block = None     # (printer, filename) – abgefangener Start

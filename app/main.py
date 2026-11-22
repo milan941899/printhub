@@ -133,6 +133,11 @@ def _restart_on_start(printer, job):
         dockerctl.restart_later(names, int(settings["oe_delay"]))
 
 
+# Bauraum-Automatik (Abluft): Zieltemperatur je Material – darunter aus, darüber stufenlos bis 100 %
+CHAMBER_GROUPS = (("pla", ("PLA", "TPU", "TPE", "PVA", "HIPS")), ("petg", ("PETG", "PCTG", "PET", "CPE")),
+                  ("abs", ("ABS", "ASA", "PC", "PA", "NYLON", "PPS")))
+CHAMBER_DEF = {"pla": 35, "petg": 45, "abs": 60}
+
 printers = {}
 load_errors = {}          # Kürzel -> Grund, warum ein eingetragener Drucker nicht geladen wurde
 for pc in cfg.get("printers", []):
@@ -143,6 +148,8 @@ for pc in cfg.get("printers", []):
         p.history = history
         p.media_dir = MEDIA_DIR
         p.auto_assign = pc.get("auto_assign", True)
+        p.chamber_auto = bool(pc.get("chamber_auto", False))
+        p.chamber_cfg = {k: int(pc.get("chamber_" + k) or v) for k, v in CHAMBER_DEF.items()}
         p.plate_pose_cfg = {"on": bool(pc.get("plate_pose")), "x": pc.get("plate_x", 135), "y": pc.get("plate_y", 10),
                             "z": pc.get("plate_z", 30)}
         p.on_job_start.append(_restart_on_start)
@@ -2562,6 +2569,8 @@ async def api_state(request):
         st["power"] = power.info(p)
         st["maint_due"] = maint_due.get(p.id, 0)
         if p.type == "moonraker":
+            if getattr(p, "chamber_auto", False):
+                st["fan_auto"] = {"on": not getattr(p, "fan_auto_off", False), "info": getattr(p, "fan_auto_info", "")}
             qi = kguard.info(p)
             if qi:
                 st["queue"] = qi
@@ -2767,6 +2776,7 @@ def _sampler():
                 if p.online:
                     temps.add(p.id, p.status().get("temps", []), job.get("started") if job else None)
                     if p.type == "moonraker":
+                        _fan_auto(p)
                         _fan_guard(p)
                 if tick % 12 == 0:
                     if p.shelly and p.shelly.online:
@@ -3745,7 +3755,8 @@ PCFG_FIELDS = {   # Schlüssel -> Typ
     "id": "str", "name": "str", "type": "str", "host": "str", "serial": "str", "access_code": "secret",
     "port": "int", "web_port": "int", "channels": "int", "api_key": "secret", "light_pin": "str",
     "shelly": "str", "shelly_channel": "int", "camera_url": "str", "camera": "bool", "track_usage": "bool",
-    "auto_assign": "bool", "plate_pose": "bool", "plate_x": "int", "plate_y": "int", "plate_z": "int",
+    "auto_assign": "bool", "chamber_auto": "bool", "chamber_pla": "int", "chamber_petg": "int", "chamber_abs": "int",
+    "plate_pose": "bool", "plate_x": "int", "plate_y": "int", "plate_z": "int",
 }
 PCFG_SECRET = {"access_code", "api_key"}
 
@@ -4108,6 +4119,9 @@ async def api_chamber_fan(request):
     if not p or not hasattr(p, "set_chamber_fan"):
         return JSONResponse({"error": "Wird nicht unterstützt"}, status_code=400)
     b = await request.json()
+    if b.get("auto"):
+        p.fan_auto_off = False
+        return JSONResponse({"ok": True, "message": "Abluft-Automatik wieder an"})
     try:
         await run_in_threadpool(p.set_chamber_fan, b.get("fan"), b.get("pct", 0))
     except Exception as e:
@@ -4119,10 +4133,43 @@ async def api_chamber_fan(request):
 CHAMBER_SAFE_C = 38
 
 
+def _chamber_target(p):
+    """Strengste (niedrigste) Zieltemperatur der Köpfe, die gerade drucken bzw. aufheizen."""
+    slots = {s["key"]: s for s in p.slots()}
+    keys = p.heated_slots() or ([p.status().get("current_slot")] if p.status().get("current_slot") else [])
+    best = None
+    for k in keys:
+        mat = ((slots.get(k) or {}).get("material") or "").upper().replace("+", "").split(" ")[0]
+        grp = next((g for g, names in CHAMBER_GROUPS if mat in names), "pla" if not mat else None)
+        t = int(getattr(p, "chamber_cfg", {}).get(grp or "petg", CHAMBER_DEF[grp or "petg"]))
+        best = t if best is None else min(best, t)
+    return best
+
+
+def _fan_auto(p):
+    """Abluft nach Bauraum-Temperatur regeln, solange gedruckt wird: ≤ Ziel−4 °C aus, ≥ Ziel+4 °C 100 %, dazwischen linear
+    (10-%-Stufen). Überschreibt die Voreinstellung des U1 (PLA: fest 60 %). Von Hand gestellt → bis zum nächsten Druck aus."""
+    if not getattr(p, "chamber_auto", False) or getattr(p, "fan_auto_off", False):
+        return
+    st = p.status()
+    if not st.get("printing") or "Abluft" not in (st.get("chamber_fans") or {}):
+        return
+    cav = next((t.get("actual") for t in st.get("temps", []) if t.get("label") == "Bauraum"), None)
+    target = _chamber_target(p)
+    if cav is None or target is None:
+        return
+    pct = max(0, min(100, round((cav - (target - 4)) / 8 * 100 / 10) * 10))
+    cur = st["chamber_fans"]["Abluft"]
+    if abs(pct - cur) >= 10 or (pct == 0 and cur > 0):
+        p.set_chamber_fan("Abluft", pct, auto=True)
+        p.fan_auto_info = f"Ziel {target} °C · Bauraum {cav} °C → {pct} %"
+        log.info("[%s] Abluft-Automatik: %s", p.id, p.fan_auto_info)
+
+
 def _fan_guard(p):
     """Abluft von Hand gedrosselt und der Bauraum wird beim Drucken zu warm → zurück auf 60 % (Hitzestau im Kühlkörper)."""
     ov = getattr(p, "fan_override", None)
-    if not ov or ov.get("Abluft", 100) >= 60:
+    if not ov or ov.get("Abluft", 100) >= 60 or (getattr(p, "chamber_auto", False) and not getattr(p, "fan_auto_off", False)):
         return
     st = p.status()
     if not st.get("printing"):

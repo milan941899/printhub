@@ -1655,11 +1655,11 @@ async function pcLoad() {
   const d = await (await fetch("/api/printer-config")).json();
   if (d.error) return PH.toast(d.error, true);
   const run = new Map((d.running || []).map(r => [r.id, r])), mis = new Map((d.missing || []).map(m => [m.id, m]));
-  PC = d.printers.map(p => ({plate_pose: false, ...p, _old_id: p.id, _st: run.has(p.id) ? (run.get(p.id).online ? "on" : "off") : (mis.get(p.id) || {}).error || "nicht geladen"}));
+  PC = d.printers.map(p => ({plate_pose: false, chamber_auto: false, ...p, _old_id: p.id, _st: run.has(p.id) ? (run.get(p.id).online ? "on" : "off") : (mis.get(p.id) || {}).error || "nicht geladen"}));
   pcDraw();
 }
 const pcf = (i, k, label, desc, attrs = "", type = "text") => `<div class="row"><div><div class="t">${label}</div>${desc ? `<div class="d">${desc}</div>` : ""}</div>
-  ${type === "check" ? `<label class="switch"><input type="checkbox" ${PC[i][k] !== false ? "checked" : ""} onchange="PC[${i}].${k}=this.checked${k === "plate_pose" ? ";pcDraw()" : ""}"><span></span></label>`
+  ${type === "check" ? `<label class="switch"><input type="checkbox" ${PC[i][k] !== false ? "checked" : ""} onchange="PC[${i}].${k}=this.checked${k === "plate_pose" || k === "chamber_auto" ? ";pcDraw()" : ""}"><span></span></label>`
     : `<input type="${type}" value="${esc(PC[i][k] ?? "")}" ${attrs} oninput="PC[${i}].${k}=this.value" style="width:230px">`}</div>`;
 function pcDraw() {
   $("pc-list").innerHTML = PC.map((p, i) => {
@@ -1683,6 +1683,9 @@ function pcDraw() {
           ${bambu ? "" : pcf(i, "api_key", "Moonraker-API-Schlüssel", p.api_key_set ? "gespeichert – leer = behalten" : "nur falls nötig", 'autocomplete="new-password"', "password")}
           ${pcf(i, "track_usage", "Verbrauch an Spoolman buchen", "Aus, wenn der Drucker selbst bucht (z. B. SpoolLink)", "", "check")}
           ${bambu ? "" : pcf(i, "auto_assign", "Spulen per RFID zuordnen", "Erkennt der Drucker eine Original-Rolle, sucht PrintHub die passende Spule im Lager", "", "check")}
+          ${bambu ? "" : `${pcf(i, "chamber_auto", "Abluft-Automatik", "PrintHub regelt die Abluft beim Drucken nach Bauraum-Temperatur und Material statt der festen Voreinstellung des Druckers", "", "check")}
+            ${p.chamber_auto ? `<div class="pc-pose">${pcf(i, "chamber_pla", "Ziel PLA/TPU (°C)", "Standard 35", 'inputmode="numeric" placeholder="35"')}${pcf(i, "chamber_petg", "Ziel PETG (°C)", "Standard 45", 'inputmode="numeric" placeholder="45"')}${pcf(i, "chamber_abs", "Ziel ABS/ASA/PC (°C)", "Standard 60 – Wärme halten", 'inputmode="numeric" placeholder="60"')}
+              <div class="d small" style="padding:4px 0 8px">Bis 4 °C unter dem Ziel aus, 4 °C darüber 100 %, dazwischen stufenlos. Mehrere Materialien: das empfindlichste zählt. Von Hand gestellt → bis zum nächsten Druck aus.</div></div>` : ""}`}
           ${bambu ? "" : `${pcf(i, "plate_pose", "Plattenfoto aus Prüfposition", "Kamera am Druckkopf: vor jeder Plattenprüfung Kopf nach vorne, Bett hoch (nie näher als letzte Druckhöhe + 20 mm)", "", "check")}
             ${p.plate_pose ? `<div class="pc-pose">${pcf(i, "plate_x", "Kopf X (mm)", "", 'inputmode="numeric"')}${pcf(i, "plate_y", "Kopf Y (mm)", "vorne = klein", 'inputmode="numeric"')}${pcf(i, "plate_z", "Bett Z (mm)", "Abstand Düse–Platte", 'inputmode="numeric"')}
               <button type="button" class="small-btn" onclick="pcPose(${i})">📷 Testbild</button><div id="pc-pose-${i}" class="small"></div></div>` : ""}`}

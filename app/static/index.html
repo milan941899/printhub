@@ -764,6 +764,10 @@ document.addEventListener("click", e => { if (!e.target.closest(".dd")) document
 
 // ---------- Zusatzdaten (Temperatur, Strom, Statistik) ----------
 const X = {temps: {}, trange: {}, energy: {}, erange: {}, stats: {}, fan: null};
+async function fanAuto(pid) {
+  const r = await (await fetch(`/api/printers/${pid}/fan`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({auto: true})})).json();
+  PH.toast(r.error || r.message, !!r.error); X.fan = null; fillPrinters();
+}
 function fanOpen(pid, k) { X.fan = X.fan && X.fan.pid === pid && X.fan.k === k ? null : {pid, k}; fillPrinters(); }
 async function fanSet(pid, k, pct) {
   const r = await (await fetch(`/api/printers/${pid}/fan`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({fan: k, pct})})).json();
@@ -903,13 +907,16 @@ function printerCard(p) {
     hotend: () => {
       // Bauraum (z. B. Snapmaker U1): Temperatur und Bauraum-Lüfter als kleine Zeile unter der Düse
       const cav = (p.temps || []).find(t => t.label === "Bauraum"), cf = p.chamber_fans || {};
-      const open = X.fan && X.fan.pid === p.id ? X.fan.k : null;
+      const open = X.fan && X.fan.pid === p.id ? X.fan.k : null, fa = p.fan_auto;
       const extra = [cav ? `<span>🌡 Bauraum <b>${cav.actual}°</b></span>` : "",
         ...Object.entries(cf).map(([k, v]) => `<button type="button" class="hx-fan${open === k ? " on" : ""}" title="${esc(k)} stellen"
-          onclick="fanOpen('${p.id}','${esc(k)}')">🌀 ${esc(k)} <b>${v} %</b></button>`)].filter(Boolean);
-      const menu = open ? `<div class="hx-fanset"><span>${esc(open)}:</span>${[0, 30, 60, 100].map(v =>
-        `<button type="button" class="small-btn${cf[open] === v ? " on" : ""}" onclick="fanSet('${p.id}','${esc(open)}',${v})">${v ? v + " %" : "Aus"}</button>`).join("")}
-        ${open === "Abluft" ? `<span class="muted small">Bei PLA: wird der Bauraum über 38 °C warm, schaltet PrintHub wieder auf 60 %. Beim nächsten Druck stellt der U1 selbst ein.</span>` : ""}</div>` : "";
+          onclick="fanOpen('${p.id}','${esc(k)}')">🌀 ${esc(k)} <b>${v} %</b>${k === "Abluft" && fa && fa.on ? ` <i class="hx-auto">Auto</i>` : ""}</button>`)].filter(Boolean);
+      const autoOn = open === "Abluft" && fa && fa.on;
+      const menu = open ? `<div class="hx-fanset"><span>${esc(open)}:</span>${open === "Abluft" && fa ? `<button type="button" class="small-btn${autoOn ? " on" : ""}" onclick="fanAuto('${p.id}')">Auto</button>` : ""}${[0, 30, 60, 100].map(v =>
+        `<button type="button" class="small-btn${!autoOn && cf[open] === v ? " on" : ""}" onclick="fanSet('${p.id}','${esc(open)}',${v})">${v ? v + " %" : "Aus"}</button>`).join("")}
+        ${open === "Abluft" ? `<span class="muted small">${autoOn ? esc(fa.info || "Automatik regelt beim Drucken nach Bauraum-Temperatur") :
+          fa ? "Von Hand gestellt – die Automatik ist bis zum nächsten Druck aus." :
+          "Wird der Bauraum beim Drucken 38 °C warm, schaltet PrintHub wieder auf 60 %. Beim nächsten Druck stellt der U1 selbst ein."}</span>` : ""}</div>` : "";
       return `<div class="hotend">${hotendBody(p, info)}</div>${extra.length ? `<div class="hx-cham">${extra.join("")}</div>${menu}` : ""}`;
     },
     e1: () => tiles[0] || "", e2: () => tiles[1] || "", e3: () => tiles[2] || "", e4: () => tiles[3] || "",
