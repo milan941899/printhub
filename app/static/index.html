@@ -784,7 +784,8 @@ function applyFree() {
     else { cont.style.height = ""; [...cont.children].forEach(el => { if (el.matches(".blk")) el.style.cssText = el.style.cssText.replace(/(left|top|width|height):[^;]+;?/g, ""); }); }
   }
   const board = document.getElementById("board");
-  const pp = layout.page.pos, on = desk && pp && Object.keys(pp).length > 0;
+  // Modus „Einzeln“: freie Anordnung der Übersicht aussetzen – gewählter Drucker oben, Rest darunter im Raster
+  const pp = layout.page.pos, on = desk && pp && Object.keys(pp).length > 0 && !(typeof swOn === "function" && swOn());
   board.classList.toggle("ff", !!on);
   if (on) PHUI.freeLayout(board, freePos(pp, board, ".pblk", 1), autoH);
   else { board.style.height = ""; [...board.children].forEach(el => { el.style.left = el.style.top = el.style.width = el.style.height = ""; }); }
@@ -1335,6 +1336,8 @@ PHUI.sortable(document.getElementById("board"), {items: ".qi", handle: ".qgrip:n
 
 // ---------- Drag & Drop / Größe auf der Übersicht (nur im Modus „Anordnen“) ----------
 function toggleEdit() {
+  if (!document.body.classList.contains("editing") && swOn() && !SW_MQ.matches)
+    return PH.toast("Zum Anordnen erst oben auf „▥ Nebeneinander“ umschalten", true);
   const on = document.body.classList.toggle("editing");
   document.getElementById("edit").textContent = on ? "✓ Fertig" : "✎ Anordnen";
   if (on) ensureFree();
