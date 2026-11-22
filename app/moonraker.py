@@ -386,8 +386,17 @@ class MoonrakerPrinter(BasePrinter):
             # für den nächsten Farbwechsel vorgeheizt wird (evtl. sogar heißer, z. B. 220 statt 215 °C).
             # Nur wenn er schon auf Standby (~70 °C) abgesenkt ist, hinkt toolhead.extruder hinterher → heißester Kopf.
             if not th or round((st.get(th) or {}).get("target", 0)) < 150:
-                i = next(i for t, i in tgt if t == top)
-                th = "extruder" + (str(i) if i else "")
+                # Beim Wechsel steht der alte Kopf kurz schon auf Standby, bevor Klipper den neuen aktiviert – dann sind oft
+                # mehrere Köpfe vorgeheizt (nächster UND übernächster). Nicht raten: bis zu 30 s beim bisherigen Kopf bleiben.
+                now = time.time()
+                if self._shown_th and now - self._th_drop < 30:
+                    th = self._shown_th
+                else:
+                    i = next(i for t, i in tgt if t == top)
+                    th = "extruder" + (str(i) if i else "")
+            else:
+                self._th_drop = time.time()
+            self._shown_th = th
         if active and th:
             n = th.replace("extruder", "") or "0"
             cur = f"T{n}"
@@ -510,6 +519,9 @@ class MoonrakerPrinter(BasePrinter):
             if round((st.get(ex) or {}).get("target", 0)) >= 150:
                 out.append(f"T{i}")
         return out
+
+    _shown_th = None         # zuletzt angezeigter aktiver Kopf (gegen Flackern beim Farbwechsel)
+    _th_drop = 0.0           # Zeitpunkt, an dem toolhead.extruder zuletzt auf Drucktemperatur war
 
     start_gate = None        # vom Druckwächter gesetzt: (printer, filename) -> darf starten?
     on_gate_block = None     # (printer, filename) – abgefangener Start
