@@ -64,8 +64,20 @@ class MoonrakerPrinter(BasePrinter):
             self.camera = None
 
     def shutdown_host(self, timeout=60):
-        """Vor dem Stromabschalten: Linux im Drucker sauber herunterfahren und warten, bis Moonraker weg ist.
+        """Vor dem Stromabschalten: Linux im Drucker sauber herunterfahren und warten, bis es wirklich unten ist.
+        Moonraker ist schon nach wenigen Sekunden weg, das System fährt danach noch eine Weile herunter –
+        deshalb zusätzlich warten, bis auch der Webserver (Port 80) nicht mehr antwortet, und dann noch 15 s.
         Gibt eine kurze Beschreibung zurück. Ist der Drucker schon nicht erreichbar, passiert nichts."""
+        import socket
+        from urllib.parse import urlparse
+        host = urlparse(self.base).hostname
+
+        def port_open(port):
+            try:
+                with socket.create_connection((host, port), timeout=2):
+                    return True
+            except OSError:
+                return False
         try:
             self.s.get(self.base + "/server/info", headers=self.headers, timeout=3).raise_for_status()
         except Exception:
@@ -75,15 +87,15 @@ class MoonrakerPrinter(BasePrinter):
         except Exception:
             pass            # Verbindung reißt beim Herunterfahren oft schon ab – zählt nicht als Fehler
         t0 = time.time()
-        time.sleep(3)
-        while time.time() - t0 < timeout:
-            try:
-                self.s.get(self.base + "/server/info", headers=self.headers, timeout=2)
-            except Exception:
-                time.sleep(8)          # Netz ist weg – kurz warten, bis das System ganz unten ist
-                return f"heruntergefahren ({int(time.time() - t0)} s)"
+        time.sleep(5)
+        while time.time() - t0 < timeout and port_open(urlparse(self.base).port or 80):
             time.sleep(2)
-        return f"nach {timeout} s noch erreichbar – trotzdem ausgeschaltet"
+        while time.time() - t0 < timeout + 60 and port_open(80):     # Webserver geht als einer der letzten
+            time.sleep(2)
+        if time.time() - t0 >= timeout + 60:
+            return f"nach {int(time.time() - t0)} s noch erreichbar – trotzdem ausgeschaltet"
+        time.sleep(15)      # Rest des Herunterfahrens (Dateisystem schließen)
+        return f"heruntergefahren ({int(time.time() - t0)} s)"
 
     def _extruders(self):
         return ["extruder"] + [f"extruder{i}" for i in range(1, self.channels)]
