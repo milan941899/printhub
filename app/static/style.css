@@ -1376,3 +1376,8 @@ body.psw-on .pblk.pcard.psw-hide { display:none !important; }
 .lbzoom > img, .lbzoom > video { transform-origin:center center; }
 /* Modus „Einzeln“: gewählter Drucker direkt unter der Umschaltleiste, Rest in eigener Reihenfolge darunter */
 body.psw-on .board:not(.ff) > .pblk.pcard { order:-1; }
+.fanpop { position:fixed; z-index:60; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px;
+  box-shadow:0 12px 32px #0006; max-width:min(340px, calc(100vw - 16px)); }
+.fanpop .fp-h { display:flex; justify-content:space-between; gap:12px; margin-bottom:8px; font-size:13.5px; }
+.fanpop .fp-b { display:flex; flex-wrap:wrap; gap:6px; } .fanpop .small-btn.on { border-color:var(--acc); color:var(--acc); }
+.fanpop .fp-t { margin-top:8px; line-height:1.35; }
