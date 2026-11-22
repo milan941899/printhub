@@ -3984,6 +3984,17 @@ async def api_gcode_thumb(request):
 _thumb_cache = {}
 
 
+def _save_pose(pid, cfg):
+    c = _read_cfg()
+    for pc in c.get("printers") or []:
+        if str(pc.get("id")) == pid:
+            pc.update({"plate_pose": True, "plate_x": cfg["x"], "plate_y": cfg["y"], "plate_z": cfg["z"]})
+    tmp = CONFIG + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        yaml.safe_dump(c, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    os.replace(tmp, CONFIG)
+
+
 async def api_plate_pose(request):
     """Prüfposition testen (Einstellungen → Drucker): mit den übergebenen Werten anfahren, Kamerabild zurück."""
     p = printers.get(request.path_params["pid"])
@@ -3992,18 +4003,17 @@ async def api_plate_pose(request):
     b = await request.json()
     if p.status().get("printing") or p.status().get("paused"):
         return JSONResponse({"error": "Es läuft ein Druck"}, status_code=409)
-    old = getattr(p, "plate_pose_cfg", {})
     try:
+        # die getesteten Werte gelten sofort (Plattenerkennung, Druckwächter) und werden gespeichert – ohne Neustart
         p.plate_pose_cfg = {"on": True, "x": int(float(b.get("x") or 135)), "y": int(float(b.get("y") or 10)),
                             "z": max(5, int(float(b.get("z") or 30)))}
+        await run_in_threadpool(_save_pose, p.id, p.plate_pose_cfg)
         if b.get("clear"):
             kguard.clear_height(p)
         txt, clamped = await run_in_threadpool(kguard.pose, p)
         jpg = await run_in_threadpool(p.camera.snapshot)
     except Exception as e:
         return JSONResponse({"error": str(e)[:300]}, status_code=502)
-    finally:
-        p.plate_pose_cfg = old
     import base64 as _b64
     return JSONResponse({"ok": True, "text": txt, "clamped": clamped, "img": "data:image/jpeg;base64," + _b64.b64encode(jpg).decode()})
 
