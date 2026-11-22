@@ -216,8 +216,6 @@ class MoonrakerPrinter(BasePrinter):
                     extra["head_map"] = hm[:32]
                 self.store.data.setdefault("max_z", {})[self.id] = 0     # neue Höhe messen
                 self.fan_override = {}                                     # neuer Druck: Automatik gilt wieder
-                self.fan_auto_off = False
-                self.fan_auto_now = False
                 self.job_started(ps.get("filename") or "Druck", extra)
             elif job is not None:
                 pd = ps.get("print_duration") or 0
@@ -495,8 +493,7 @@ class MoonrakerPrinter(BasePrinter):
         pct = max(0, min(100, int(pct)))
         self.gcode(f"SET_FAN_SPEED FAN={fan} SPEED={pct / 100:.2f}", timeout=10)
         self.fan_override = {**getattr(self, "fan_override", {}), label: pct}
-        if label == "Abluft" and not auto:
-            self.fan_auto_off = True          # von Hand gestellt → Automatik bis zum nächsten Druck aus
+
 
     def heated_slots(self):
         """Köpfe, die gerade auf Drucktemperatur sind oder dahin heizen (Standby ~70 °C zählt nicht)."""

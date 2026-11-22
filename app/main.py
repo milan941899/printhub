@@ -4121,12 +4121,13 @@ async def api_chamber_fan(request):
         return JSONResponse({"error": "Wird nicht unterstützt"}, status_code=400)
     b = await request.json()
     if b.get("auto"):
-        p.fan_auto_off = False
-        p.fan_auto_now = True          # gilt bis zum nächsten Druckstart, auch wenn sie in den Einstellungen aus ist
+        _set_fan_mode(p, "auto")       # gilt bis zum nächsten Druckstart (auch nach einem Neustart von PrintHub)
         await run_in_threadpool(_fan_auto, p)
         return JSONResponse({"ok": True, "message": "Abluft-Automatik an" + ("" if p.chamber_auto else " (für diesen Druck)")})
     try:
         await run_in_threadpool(p.set_chamber_fan, b.get("fan"), b.get("pct", 0))
+        if b.get("fan") == "Abluft":
+            _set_fan_mode(p, "manual")     # von Hand gestellt → Automatik bis zum nächsten Druck aus
     except Exception as e:
         return JSONResponse({"error": str(e)[:200]}, status_code=400)
     log.info("[%s] %s von Hand auf %s %%", p.id, b.get("fan"), b.get("pct"))
@@ -4149,9 +4150,25 @@ def _chamber_target(p):
     return best
 
 
+def _fan_mode(p):
+    """Für den laufenden Druck gewählt: "auto" (Knopf) / "manual" (von Hand gestellt) / None. Gespeichert mit der
+    Startzeit des Drucks – übersteht Neustarts von PrintHub (Update), gilt aber nie für den nächsten Druck."""
+    m = (store.data.get("fan_mode") or {}).get(p.id) or {}
+    job = store.get_job(p.id) or {}
+    return m.get("mode") if job.get("started") and m.get("job") == job.get("started") else None
+
+
+def _set_fan_mode(p, mode):
+    job = store.get_job(p.id) or {}
+    with store.lock:
+        store.data.setdefault("fan_mode", {})[p.id] = {"job": job.get("started"), "mode": mode}
+        store._save()
+
+
 def _fan_auto_active(p):
-    """Automatik an: dauerhaft in den Druckereinstellungen oder für diesen Druck per „Auto“-Knopf – außer von Hand gestellt."""
-    return (getattr(p, "chamber_auto", False) or getattr(p, "fan_auto_now", False)) and not getattr(p, "fan_auto_off", False)
+    """Automatik an: für diesen Druck per „Auto“-Knopf, sonst dauerhaft laut Druckereinstellungen – außer von Hand gestellt."""
+    mode = _fan_mode(p)
+    return mode == "auto" or (mode is None and bool(getattr(p, "chamber_auto", False)))
 
 
 def _fan_auto(p):
