@@ -1105,6 +1105,13 @@ function swSel() {
   }
   return id;
 }
+// Umschalter beim Scrollen verkleinern (Abstand zwischen An/Aus, damit es an der Grenze nicht flackert)
+addEventListener("scroll", () => {
+  const nav = document.getElementById("psw");
+  if (!nav || nav.hidden) return;
+  const y = scrollY, m = nav.classList.contains("slim");
+  if (!m && y > 90) nav.classList.add("slim"); else if (m && y < 20) nav.classList.remove("slim");
+}, {passive: true});
 function swPick(id) { PH.pref("sw_sel", null, id); swDraw(); fillPrinters(); }
 // Knopf oben (nur am PC): nebeneinander ⇄ einzeln
 function swToggle() { PH.pref("sw_desk", null, !PH.pref("sw_desk", false)); swDraw(); fillPrinters(); setTimeout(() => { if (typeof applyFree === "function") applyFree(); }, 0); }
