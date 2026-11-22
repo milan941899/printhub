@@ -102,9 +102,20 @@ class Power:
         pid = self._plug(p, s)
         err = None
         down = ""
+        steps, t0 = [], time.time()
+
+        def step(txt):
+            w = self._watts_now(p)
+            steps.append([round(time.time(), 1), round(time.time() - t0), txt, w])
+            log.info("[%s] Ausschalten +%ds: %s%s", p.id, time.time() - t0, txt, f" · {w} W" if w is not None else "")
         # Klipper-Drucker (U1): erst sauber herunterfahren, dann Strom weg – aber nur, wenn es überhaupt eine Steckdose gibt
         if not on and hasattr(p, "shutdown_host") and (pid or p.shelly):
-            down = p.shutdown_host()
+            step(f"Ausschalten {reason}")
+            try:
+                down = p.shutdown_host(step=step)
+            except Exception as e:
+                down = f"Fehler beim Herunterfahren: {e}"
+                step(down)
             log.info("[%s] vor dem Ausschalten: %s", p.id, down)
         if pid:
             try:
@@ -124,7 +135,44 @@ class Power:
             if on:
                 s.update(on_since=now, last_active=now, ended_at=None)
         log.info("[%s] Drucker %s (%s, %s)", p.id, "eingeschaltet" if on else "ausgeschaltet", reason, via)
+        if steps:
+            step(f"Strom aus ✓ ({via})")
+            self._save_log(p, steps, down)
         return via + (f", {down}" if down else "")
+
+    def _watts_now(self, p):
+        """Frischer Messwert der Shelly (fürs Abschalt-Protokoll)."""
+        if not p.shelly:
+            return None
+        try:
+            w = p.shelly._read()[0]
+            return round(w, 1) if w is not None else None
+        except Exception:
+            return None
+
+    def _log_path(self):
+        import os
+        return os.path.join(os.path.dirname(self.wstate_path), "abschalt-log.json")
+
+    def _save_log(self, p, steps, result):
+        import json
+        try:
+            data = self.shutdown_log()
+            data.insert(0, {"printer": p.id, "name": p.name, "t": steps[0][0], "result": result, "steps": steps})
+            import os
+            os.makedirs(os.path.dirname(self._log_path()), exist_ok=True)
+            with open(self._log_path(), "w") as f:
+                json.dump(data[:10], f)
+        except Exception as e:
+            log.warning("Abschalt-Protokoll: %s", e)
+
+    def shutdown_log(self):
+        import json
+        try:
+            with open(self._log_path()) as f:
+                return json.load(f)
+        except Exception:
+            return []
 
     def safe_off(self, p):
         try:

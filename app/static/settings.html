@@ -412,6 +412,9 @@
       <div class="unit-in"><input type="number" min="30" max="80" step="1" data-k="power_off_temp" style="width:80px"> °C</div></div>
     <div class="row" id="pw-bb-row" hidden><div><div class="t">Bambuddy „Auto Aus“</div><div class="d" id="pw-bb">–</div></div>
       <button class="small-btn" id="pw-bb-btn" onclick="pwBambuddy()">In Bambuddy ausschalten</button></div>
+    <details class="pwlog" ontoggle="if (this.open) pwLog()"><summary class="t">Letzte Abschaltungen</summary>
+      <div class="d muted small" style="margin:4px 0 6px">Ablauf mit Sekunden ab Start und Leistung laut Shelly – sinkt sie deutlich, ist das System im Drucker unten.</div>
+      <div id="pw-log">Lade …</div></details>
   </section>
   <section class="card" id="plate-card" data-nrt="platte">
     <div class="section-h"><div><span class="label">Plattenerkennung in PrintHub</span>
@@ -1372,6 +1375,16 @@ function lgDownload() {
 }
 
 // ---------- Strom-Verwaltung ----------
+async function pwLog() {
+  const el = $("pw-log");
+  try {
+    const d = await (await fetch("/api/power/log")).json();
+    if (!d.log.length) { el.innerHTML = '<div class="d muted">Noch nichts aufgezeichnet – wird beim nächsten Ausschalten eines Klipper-Druckers (U1) geschrieben.</div>'; return; }
+    el.innerHTML = d.log.map(e => `<div class="pwl"><div class="t">${esc(e.name)} · ${new Date(e.t * 1000).toLocaleString("de-DE", {day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"})}
+      <span class="muted">– ${esc(e.result || "")}</span></div>
+      <table>${e.steps.map(s => `<tr><td>${new Date(s[0] * 1000).toLocaleTimeString("de-DE")}</td><td>+${s[1]} s</td><td>${esc(s[2])}</td><td>${s[3] != null ? s[3] + " W" : ""}</td></tr>`).join("")}</table></div>`).join("");
+  } catch (e) { el.textContent = "Konnte das Protokoll nicht laden."; }
+}
 async function pwHint() {
   let st; try { st = await (await fetch("/api/state")).json(); } catch { return; }
   const ps = (st.printers || []).filter(p => p.power && p.power.available);

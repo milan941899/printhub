@@ -63,7 +63,7 @@ class MoonrakerPrinter(BasePrinter):
         else:
             self.camera = None
 
-    def shutdown_host(self, timeout=60):
+    def shutdown_host(self, timeout=60, step=None):
         """Vor dem Stromabschalten: Linux im Drucker sauber herunterfahren und warten, bis es wirklich unten ist.
         Moonraker ist schon nach wenigen Sekunden weg, das System fährt danach noch eine Weile herunter –
         deshalb zusätzlich warten, bis auch der Webserver (Port 80) nicht mehr antwortet, und dann noch 15 s.
@@ -78,23 +78,31 @@ class MoonrakerPrinter(BasePrinter):
                     return True
             except OSError:
                 return False
+        step = step or (lambda txt: None)
         try:
             self.s.get(self.base + "/server/info", headers=self.headers, timeout=3).raise_for_status()
         except Exception:
+            step("Moonraker antwortet nicht – war schon aus")
             return "war schon aus"
         try:
-            self.s.post(self.base + "/machine/shutdown", headers=self.headers, timeout=5)
-        except Exception:
-            pass            # Verbindung reißt beim Herunterfahren oft schon ab – zählt nicht als Fehler
+            r = self.s.post(self.base + "/machine/shutdown", headers=self.headers, timeout=5)
+            step(f"Befehl zum Herunterfahren gesendet (Antwort {r.status_code})")
+        except Exception as e:
+            step(f"Befehl zum Herunterfahren gesendet (Verbindung abgerissen: {type(e).__name__})")
         t0 = time.time()
         time.sleep(5)
-        while time.time() - t0 < timeout and port_open(urlparse(self.base).port or 80):
+        mport = urlparse(self.base).port or 80
+        while time.time() - t0 < timeout and port_open(mport):
             time.sleep(2)
+        step("Moonraker weg" if not port_open(mport) else f"Moonraker nach {timeout} s noch da")
         while time.time() - t0 < timeout + 60 and port_open(80):     # Webserver geht als einer der letzten
             time.sleep(2)
         if time.time() - t0 >= timeout + 60:
+            step("Webserver noch erreichbar – Zeitlimit")
             return f"nach {int(time.time() - t0)} s noch erreichbar – trotzdem ausgeschaltet"
+        step("Webserver weg")
         time.sleep(15)      # Rest des Herunterfahrens (Dateisystem schließen)
+        step("15 s Nachlauf vorbei")
         return f"heruntergefahren ({int(time.time() - t0)} s)"
 
     def _extruders(self):

@@ -4723,6 +4723,10 @@ async def api_power(request):
     return JSONResponse({"ok": True, "via": via})
 
 
+async def api_power_log(request):
+    return JSONResponse({"log": power.shutdown_log()})
+
+
 async def api_power_bambuddy(request):
     """Bambuddys eigenes Auto-Ein/Auto-Aus der Steckdose an/aus (damit nur einer entscheidet)."""
     b = await request.json()
@@ -4967,6 +4971,7 @@ app = Starlette(
         Route("/api/printers/{pid}/swap", api_printer_swap, methods=["POST"]),
         Route("/api/printers/{pid}/power", api_power, methods=["POST"]),
         Route("/api/power/bambuddy", api_power_bambuddy, methods=["POST"]),
+        Route("/api/power/log", api_power_log),
         Route("/api/diagnose", api_diagnose),
         Route("/api/logs", api_logs),
         Route("/api/telegram/pair", api_telegram_pair, methods=["POST"]),
