@@ -914,8 +914,9 @@ function printerCard(p) {
       const autoOn = open === "Abluft" && fa && fa.on;
       const menu = open ? `<div class="hx-fanset"><span>${esc(open)}:</span>${open === "Abluft" && fa ? `<button type="button" class="small-btn${autoOn ? " on" : ""}" onclick="fanAuto('${p.id}')">Auto</button>` : ""}${[0, 30, 60, 100].map(v =>
         `<button type="button" class="small-btn${!autoOn && cf[open] === v ? " on" : ""}" onclick="fanSet('${p.id}','${esc(open)}',${v})">${v ? v + " %" : "Aus"}</button>`).join("")}
-        ${open === "Abluft" ? `<span class="muted small">${autoOn ? esc(fa.info || "Automatik regelt beim Drucken nach Bauraum-Temperatur") :
-          fa ? "Von Hand gestellt – die Automatik ist bis zum nächsten Druck aus." :
+        ${open === "Abluft" ? `<span class="muted small">${autoOn ? esc(fa.info || "Automatik regelt beim Drucken nach Bauraum-Temperatur und Material") :
+          fa && fa.cfg ? "Von Hand gestellt – die Automatik ist bis zum nächsten Druck aus. „Auto“ schaltet sie wieder ein." :
+          fa ? "„Auto“: PrintHub regelt die Abluft nach Bauraum-Temperatur, bis zum nächsten Druckstart. Dauerhaft: Einstellungen → Drucker." :
           "Wird der Bauraum beim Drucken 38 °C warm, schaltet PrintHub wieder auf 60 %. Beim nächsten Druck stellt der U1 selbst ein."}</span>` : ""}</div>` : "";
       return `<div class="hotend">${hotendBody(p, info)}</div>${extra.length ? `<div class="hx-cham">${extra.join("")}</div>${menu}` : ""}`;
     },

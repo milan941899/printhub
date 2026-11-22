@@ -2569,8 +2569,9 @@ async def api_state(request):
         st["power"] = power.info(p)
         st["maint_due"] = maint_due.get(p.id, 0)
         if p.type == "moonraker":
-            if getattr(p, "chamber_auto", False):
-                st["fan_auto"] = {"on": not getattr(p, "fan_auto_off", False), "info": getattr(p, "fan_auto_info", "")}
+            if "Abluft" in (st.get("chamber_fans") or {}):
+                st["fan_auto"] = {"on": _fan_auto_active(p), "cfg": bool(getattr(p, "chamber_auto", False)),
+                                  "info": getattr(p, "fan_auto_info", "")}
             qi = kguard.info(p)
             if qi:
                 st["queue"] = qi
@@ -4121,7 +4122,9 @@ async def api_chamber_fan(request):
     b = await request.json()
     if b.get("auto"):
         p.fan_auto_off = False
-        return JSONResponse({"ok": True, "message": "Abluft-Automatik wieder an"})
+        p.fan_auto_now = True          # gilt bis zum nächsten Druckstart, auch wenn sie in den Einstellungen aus ist
+        await run_in_threadpool(_fan_auto, p)
+        return JSONResponse({"ok": True, "message": "Abluft-Automatik an" + ("" if p.chamber_auto else " (für diesen Druck)")})
     try:
         await run_in_threadpool(p.set_chamber_fan, b.get("fan"), b.get("pct", 0))
     except Exception as e:
@@ -4146,10 +4149,15 @@ def _chamber_target(p):
     return best
 
 
+def _fan_auto_active(p):
+    """Automatik an: dauerhaft in den Druckereinstellungen oder für diesen Druck per „Auto“-Knopf – außer von Hand gestellt."""
+    return (getattr(p, "chamber_auto", False) or getattr(p, "fan_auto_now", False)) and not getattr(p, "fan_auto_off", False)
+
+
 def _fan_auto(p):
     """Abluft nach Bauraum-Temperatur regeln, solange gedruckt wird: ≤ Ziel−4 °C aus, ≥ Ziel+4 °C 100 %, dazwischen linear
     (10-%-Stufen). Überschreibt die Voreinstellung des U1 (PLA: fest 60 %). Von Hand gestellt → bis zum nächsten Druck aus."""
-    if not getattr(p, "chamber_auto", False) or getattr(p, "fan_auto_off", False):
+    if not _fan_auto_active(p):
         return
     st = p.status()
     if not st.get("printing") or "Abluft" not in (st.get("chamber_fans") or {}):
@@ -4169,7 +4177,7 @@ def _fan_auto(p):
 def _fan_guard(p):
     """Abluft von Hand gedrosselt und der Bauraum wird beim Drucken zu warm → zurück auf 60 % (Hitzestau im Kühlkörper)."""
     ov = getattr(p, "fan_override", None)
-    if not ov or ov.get("Abluft", 100) >= 60 or (getattr(p, "chamber_auto", False) and not getattr(p, "fan_auto_off", False)):
+    if not ov or ov.get("Abluft", 100) >= 60 or _fan_auto_active(p):
         return
     st = p.status()
     if not st.get("printing"):

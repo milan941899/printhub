@@ -217,6 +217,7 @@ class MoonrakerPrinter(BasePrinter):
                 self.store.data.setdefault("max_z", {})[self.id] = 0     # neue Höhe messen
                 self.fan_override = {}                                     # neuer Druck: Automatik gilt wieder
                 self.fan_auto_off = False
+                self.fan_auto_now = False
                 self.job_started(ps.get("filename") or "Druck", extra)
             elif job is not None:
                 pd = ps.get("print_duration") or 0
