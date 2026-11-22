@@ -377,36 +377,14 @@ class MoonrakerPrinter(BasePrinter):
             temps.append({"label": "Bett", "actual": round(bed.get("temperature", 0)), "target": round(bed.get("target", 0))})
         cur = None
         th = st.get("toolhead", {}).get("extruder")
-        # Snapmaker U1: wartende Köpfe stehen auf Bereitschafts-Temperatur (z. B. 70 °C) – der druckende Kopf ist
-        # der mit dem höchsten Soll; „toolhead.extruder“ hinkt beim Kopfwechsel manchmal hinterher
-        tgt = [(round((st.get(ex) or {}).get("target", 0)), i) for i, ex in enumerate(self._extruders()) if st.get(ex)]
-        if active and tgt and max(tgt)[0] > 0:
-            top = max(t for t, _ in tgt)
-            # toolhead.extruder ist der aktive Kopf, solange er auf Drucktemperatur ist – auch wenn ein anderer
-            # für den nächsten Farbwechsel vorgeheizt wird (evtl. sogar heißer, z. B. 220 statt 215 °C).
-            # Nur wenn er schon auf Standby (~70 °C) abgesenkt ist, hinkt toolhead.extruder hinterher → heißester Kopf.
-            if not th or round((st.get(th) or {}).get("target", 0)) < 150:
-                # Beim Wechsel steht der alte Kopf kurz schon auf Standby, bevor Klipper den neuen aktiviert – dann sind oft
-                # mehrere Köpfe vorgeheizt (nächster UND übernächster). Nicht raten: bis zu 30 s beim bisherigen Kopf bleiben.
-                now = time.time()
-                if self._shown_th and now - self._th_drop < 30:
-                    th = self._shown_th
-                else:
-                    i = next(i for t, i in tgt if t == top)
-                    th = "extruder" + (str(i) if i else "")
-            else:
-                self._th_drop = time.time()
-            # Entprellen: ein anderer Kopf wird erst übernommen, wenn er 4 s lang gemeldet wird
-            # (beim Wechsel schaltet der U1 kurz durch – das soll nicht als Farbwechsel aufblitzen)
-            now = time.time()
-            if self._shown_th and th != self._shown_th:
-                if self._cand_th != th:
-                    self._cand_th, self._cand_t = th, now
-                if now - self._cand_t < 4:
-                    th = self._shown_th
-            else:
-                self._cand_th = None
-            self._shown_th = th
+        # Aktiver Kopf = toolhead.extruder. Klipper setzt das genau bei „Activating extruder …“ (ACTIVATE_EXTRUDER) –
+        # vorgeheizte Köpfe und der alte Kopf auf Standby spielen keine Rolle. Nur wenn Klipper gar nichts meldet:
+        # heißester Kopf.
+        if active and not th:
+            tgt = [(round((st.get(ex) or {}).get("target", 0)), i) for i, ex in enumerate(self._extruders()) if st.get(ex)]
+            if tgt and max(tgt)[0] > 0:
+                i = max(tgt)[1]
+                th = "extruder" + (str(i) if i else "")
         if active and th:
             n = th.replace("extruder", "") or "0"
             cur = f"T{n}"
@@ -529,10 +507,6 @@ class MoonrakerPrinter(BasePrinter):
             if round((st.get(ex) or {}).get("target", 0)) >= 150:
                 out.append(f"T{i}")
         return out
-
-    _shown_th = None         # zuletzt angezeigter aktiver Kopf (gegen Flackern beim Farbwechsel)
-    _th_drop = 0.0           # Zeitpunkt, an dem toolhead.extruder zuletzt auf Drucktemperatur war
-    _cand_th, _cand_t = None, 0.0   # neuer Kopf in Prüfung (Entprellen)
 
     start_gate = None        # vom Druckwächter gesetzt: (printer, filename) -> darf starten?
     on_gate_block = None     # (printer, filename) – abgefangener Start
