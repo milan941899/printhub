@@ -204,7 +204,12 @@ class MoonrakerPrinter(BasePrinter):
             self.note_job_error((ps.get("message") or "Klipper-Fehler")[:120])
         job = self.store.get_job(self.id)
         if state in ACTIVE:
-            if job is None and prev not in ACTIVE:
+            if job is None and prev not in ACTIVE and prev is not None and self.start_gate \
+                    and not self.start_gate(self, ps.get("filename") or ""):
+                # Start ohne Freigabe (z. B. aus der Snapmaker-App, die an SDCARD_PRINT_FILE vorbeigeht) → sofort abbrechen
+                fn = ps.get("filename") or ""
+                threading.Thread(target=self._gate_cancel, args=(fn,), daemon=True).start()
+            elif job is None and prev not in ACTIVE:
                 hm = (st.get("print_task_config") or {}).get("extruder_map_table")
                 extra = {"filename": ps.get("filename", "")}
                 if isinstance(hm, list) and hm:
@@ -477,6 +482,26 @@ class MoonrakerPrinter(BasePrinter):
             except Exception:
                 msg = r.text
             raise ValueError(f"Klipper lehnt das Licht ab: {str(msg)[:160]}")
+
+    start_gate = None        # vom Druckwächter gesetzt: (printer, filename) -> darf starten?
+    on_gate_block = None     # (printer, filename) – abgefangener Start
+
+    def _gate_cancel(self, fn):
+        log.warning("[%s] Druckstart ohne Freigabe (%s) – breche ab", self.id, fn)
+        try:
+            self._api("POST", "/printer/gcode/script", params={"script": 'RESPOND TYPE=error MSG="PrintHub: Druckstart ohne '
+                                                                     'Freigabe abgebrochen – kommt in die Warteschlange"'}, timeout=5)
+        except Exception:
+            pass
+        try:
+            self._api("POST", "/printer/print/cancel", timeout=15)
+        except Exception as e:
+            log.error("[%s] Abbrechen fehlgeschlagen: %s", self.id, e)
+        if self.on_gate_block:
+            try:
+                self.on_gate_block(self, fn)
+            except Exception as e:
+                log.error("[%s] Abgefangenen Start nicht eingereiht: %s", self.id, e)
 
     # --- Warteschlange (Moonraker [job_queue]) und Startsperre ----------------------------------------
     def _api(self, method, path, timeout=10, **kw):

@@ -265,6 +265,9 @@ class KlipperGuard:
 
     # ---------- Hauptschleife ----------
     def start(self):
+        for p in self._klipper():
+            p.start_gate = self._gate
+            p.on_gate_block = lambda pr, fn: self._enqueue(pr, self._s(pr), fn.lstrip("/"))
         threading.Thread(target=self._loop, daemon=True, name="klipper-waechter").start()
 
     def _loop(self):
@@ -337,11 +340,17 @@ class KlipperGuard:
             fn = next((g for g in fm.groups() if g), None) if fm else None
             if not fn:
                 continue
-            fn = fn.lstrip("/")
-            s["blocked"] = f"{_short(fn)} ({datetime.fromtimestamp(t):%d.%m. %H:%M})"
+            self._enqueue(p, s, fn.lstrip("/"))
+        s["seen_t"] = newest
+
+    def _enqueue(self, p, s, fn):
+        """Abgewiesenen Start in die Warteschlange legen und melden (einmal pro Datei)."""
+        with self.lock:
+            s["blocked"] = f"{_short(fn)} ({datetime.now():%d.%m. %H:%M})"
+            self._refresh(p, s)
             if any(j["filename"] == fn for j in s["jobs"]):
                 self._log(p, f"Start von {_short(fn)} abgewiesen – steht schon in der Warteschlange")
-                continue
+                return
             p.queue_add([fn])
             self._refresh(p, s)
             self._log(p, f"Start von {_short(fn)} abgewiesen → in die Warteschlange gelegt")
@@ -352,7 +361,14 @@ class KlipperGuard:
             self.notifier.send("queue_add", f"{p.name}: Auftrag angenommen 📥", f"{_short(fn)}{dur}\nDer Druckwächter startet ihn "
                                f"(Druckfenster, Licht, Plattenprüfung).", "inbox_tray",
                                buttons=[[("▶ Jetzt starten", f"ph:kw:{p.id}:now:{jid}"), ("🗑 Entfernen", f"ph:kw:{p.id}:del:{jid}")]])
-        s["seen_t"] = newest
+
+    def _gate(self, p, fn):
+        """Darf ein gerade beginnender Druck laufen? Nur mit Freigabe vom Wächter (oder Sperre aus/nicht installiert)."""
+        s = self._s(p)
+        lk = s["lock"] or {}
+        if not lk.get("lock") or lk.get("off"):
+            return True
+        return time.time() < s.get("released_until", 0)
 
     def _due(self, p, s):
         """Ersten fälligen Auftrag finden – mit denselben Regeln wie die Vorschau (schedule.plan)."""
@@ -507,6 +523,7 @@ class KlipperGuard:
         self._log(p, f"{name} gestartet ✓")
 
     def _start_file(self, p, job):
+        self._s(p)["released_until"] = time.time() + 180     # dieser Start ist erlaubt (Prüfung beim Druckbeginn)
         lk = (self._s(p)["lock"] or {})
         if lk.get("lock"):
             p.release_start(job["filename"])
