@@ -382,8 +382,10 @@ class MoonrakerPrinter(BasePrinter):
         tgt = [(round((st.get(ex) or {}).get("target", 0)), i) for i, ex in enumerate(self._extruders()) if st.get(ex)]
         if active and tgt and max(tgt)[0] > 0:
             top = max(t for t, _ in tgt)
-            # mehrere Köpfe auf Drucktemperatur (z. B. Farbwechsel vorgeheizt): dann gilt toolhead.extruder
-            if round((st.get(th) or {}).get("target", 0)) != top if th else True:
+            # toolhead.extruder ist der aktive Kopf, solange er auf Drucktemperatur ist – auch wenn ein anderer
+            # für den nächsten Farbwechsel vorgeheizt wird (evtl. sogar heißer, z. B. 220 statt 215 °C).
+            # Nur wenn er schon auf Standby (~70 °C) abgesenkt ist, hinkt toolhead.extruder hinterher → heißester Kopf.
+            if not th or round((st.get(th) or {}).get("target", 0)) < 150:
                 i = next(i for t, i in tgt if t == top)
                 th = "extruder" + (str(i) if i else "")
         if active and th:
