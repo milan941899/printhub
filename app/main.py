@@ -4010,7 +4010,7 @@ async def api_plate_pose(request):
         await run_in_threadpool(_save_pose, p.id, p.plate_pose_cfg)
         if b.get("clear"):
             kguard.clear_height(p)
-        txt, clamped = await run_in_threadpool(kguard.pose, p)
+        txt, clamped, _h = await run_in_threadpool(kguard.pose, p)
         jpg = await run_in_threadpool(p.camera.snapshot)
     except Exception as e:
         return JSONResponse({"error": str(e)[:300]}, status_code=502)

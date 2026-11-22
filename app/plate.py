@@ -223,9 +223,22 @@ class Plate:
             break
         return changed / total * 100, big, mask, bbox, glare
 
-    def check(self, pid, jpg, threshold=None, plate_type=""):
+    @staticmethod
+    def _ref_h(r):
+        m = re.search(r"(\d+(?:[.,]\d+)?)\s*mm", r.get("label") or "", re.I)
+        return int(round(float(m.group(1).replace(",", ".")))) if m else None
+
+    def ref_heights(self, pid):
+        """Bett-Höhen (mm), für die es Referenzbilder gibt – aus der Beschriftung, z. B. „40mm“, „80 mm Licht an“."""
+        return sorted({h for h in (self._ref_h(r) for r in self.config(pid)["refs"]) if h is not None})
+
+    def check(self, pid, jpg, threshold=None, plate_type="", height=None):
         cfg = self.config(pid)
         refs = cfg["refs"]
+        if height is not None:   # nur Referenzbilder aus genau dieser Bett-Höhe
+            refs = [r for r in refs if self._ref_h(r) == int(height)]
+            if not refs:
+                return {"needs_calibration": False, "is_empty": None, "message": f"Kein Referenzbild für {height} mm"}
         if plate_type:   # Referenzbilder für genau diese Platte bevorzugen
             pt = plate_type.lower()
             match = [r for r in refs if r.get("label") and (r["label"].lower() in pt or pt in r["label"].lower())]

@@ -563,33 +563,46 @@ class KlipperGuard:
                 pass
 
     def pose(self, p):
-        """Prüfposition anfahren (wenn eingestellt). Rückgabe: (Text, abweichend) – abweichend = Bett konnte wegen
-        der Höhe des letzten Drucks (Sicherheitsabstand) nicht auf die eingestellte Höhe, Bild ist nicht vergleichbar."""
+        """Prüfposition anfahren (wenn eingestellt). Rückgabe: (Text, abweichend, Referenz-Höhe).
+        Sicherheitsabstand: das Bett kommt dem Kopf nie näher als letzte Druckhöhe + 20 mm. Reicht die eingestellte
+        Höhe dafür nicht, fährt es auf die nächsthöhere Stufe, für die es ein Referenzbild gibt (Beschriftung „80mm“).
+        abweichend = keine passende Referenz für die angefahrene Höhe → nachfragen statt vergleichen."""
         cfg = getattr(p, "plate_pose_cfg", None) or {}
         if not cfg.get("on") or not p.online:
-            return "", False
+            return "", False, None
         st = p.status()
         if st.get("printing") or st.get("paused"):      # niemals während eines Drucks bewegen
-            return "", False
+            return "", False, None
         last = (self.store.data.get("max_z") or {}).get(p.id) or 0
+        safe = last + 20 if last else 0
         want = max(5.0, float(cfg.get("z", 30) or 30))
-        zz = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), want, last + 20 if last else 0)
+        try:
+            heights = self.plate.ref_heights(p.id) if self.plate else []
+        except Exception:
+            heights = []
+        target = want
+        if want < safe:
+            up = [h for h in heights if h >= safe]
+            target = float(up[0]) if up else safe
+        zz = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), target, safe)
         time.sleep(2)
         if zz is None:
-            return f"Kopf X{cfg.get('x')} Y{cfg.get('y')}, Z nicht referenziert – Bett bleibt stehen", True
-        clamped = zz > want + 0.05
+            return f"Kopf X{cfg.get('x')} Y{cfg.get('y')}, Z nicht referenziert – Bett bleibt stehen", True, None
+        h = int(round(zz)) if heights and abs(zz - round(zz)) < 0.05 and int(round(zz)) in heights else None
         txt = f"Kopf X{cfg.get('x')} Y{cfg.get('y')}, Bett auf {zz:g} mm"
-        if clamped:
-            txt += f" statt {want:g} mm – Sicherheitsabstand: letzter Druck war {last:g} mm hoch (+ 20 mm)"
-        return txt, clamped
+        if zz > want + 0.05:
+            txt += f" statt {want:g} mm (Sicherheitsabstand: letzter Druck {last:g} mm hoch + 20 mm)"
+        abw = zz > want + 0.05 and h is None
+        txt += f" – Vergleich mit Referenzbild {h} mm" if h is not None else (" – kein Referenzbild für diese Höhe" if abw else "")
+        return txt, abw, h
 
     def check_plate(self, p):
         """(True leer / False belegt / 'fehler' / None nicht kalibriert, JPEG, Text)."""
         jpg = None
-        abw = False
+        abw, href = False, None
         try:
             self._log(p, "fahre in die Prüfposition (ggf. erst Home All) …")
-            pos, abw = self.pose(p)
+            pos, abw, href = self.pose(p)
             if pos:
                 self._log(p, f"Prüfposition: {pos}")
         except Exception as e:
@@ -604,8 +617,8 @@ class KlipperGuard:
                     return "fehler", None, f"Kamera: {e}"
                 time.sleep(5)
         if abw:   # Bild aus anderer Höhe → mit den Referenzbildern nicht vergleichbar: nachfragen statt raten
-            return "fehler", jpg, "Bett konnte nicht auf Prüfhöhe (Sicherheitsabstand zum letzten Druck) – bitte Foto ansehen"
-        r = self.plate.check(p.id, jpg)
+            return "fehler", jpg, "Bett konnte nicht auf eine Höhe mit Referenzbild (Sicherheitsabstand zum letzten Druck) – bitte Foto ansehen"
+        r = self.plate.check(p.id, jpg, height=href)
         if r.get("needs_calibration"):
             return None, jpg, r.get("message") or "nicht kalibriert"
         if r.get("is_empty") is None:
@@ -614,7 +627,7 @@ class KlipperGuard:
             time.sleep(8)               # zweiter Blick gegen Belichtungs-Fehlalarme
             try:
                 jpg2 = p.camera.snapshot()
-                r2 = self.plate.check(p.id, jpg2)
+                r2 = self.plate.check(p.id, jpg2, height=href)
                 if r2.get("is_empty") is not None:
                     r, jpg = r2, jpg2
             except Exception:
