@@ -588,10 +588,12 @@ class KlipperGuard:
         jpg = None
         abw = False
         try:
+            self._log(p, "fahre in die Prüfposition (ggf. erst Home All) …")
             pos, abw = self.pose(p)
             if pos:
                 self._log(p, f"Prüfposition: {pos}")
         except Exception as e:
+            abw = True          # Position unbekannt → Bild nicht mit den Referenzen vergleichbar
             self._log(p, f"Prüfposition nicht angefahren: {e}")
         for versuch in range(3):
             try:
