@@ -27,6 +27,7 @@
   <div id="stops" class="stops"></div>
   <div class="dd edit-only"><button class="small-btn" onclick="this.parentNode.classList.toggle('open')">Bausteine ▾</button><div class="dd-m" id="hiddenlist"></div></div>
   <button class="small-btn edit-only" onclick="resetBoard()" title="Übersicht auf Standard zurücksetzen">↺</button>
+  <button class="small-btn swbtn" id="swbtn" onclick="swToggle()" hidden></button>
   <button class="small-btn edit-tg" id="edit" onclick="toggleEdit()" title="Bausteine verschieben, Größe ändern, aus- und einblenden">✎ Anordnen</button>
   <nav class="nav"><a href="/">Übersicht</a><a href="/lager">Lager</a><a href="/verlauf">Verlauf</a><a href="/statistik">Statistik</a><a href="/einstellungen">Einstellungen</a></nav>
 </header>
@@ -747,7 +748,7 @@ function renderBoard() {
       <div class="section-h"><span class="label">Letzte Drucke</span><a href="/verlauf" class="small">Alle Drucke &amp; Auswertung →</a></div>
       <div id="history" class="muted">Noch keine Drucke erfasst.</div></section>`;
     const pid = k.slice(2);
-    return `<section class="pblk card pcard" data-b="${k}" data-pid="${pid}" ${st}>${ctl}<div id="pc-${pid}"></div></section>`;
+    return `<section class="pblk card pcard" data-b="${k}" data-pid="${pid}" ${st}>${ctl}<button type="button" class="pmin" onclick="pminOpen('${pid}')"></button><div id="pc-${pid}"></div></section>`;
   }).join("");
   document.getElementById("board").innerHTML = html;
   boardSig = keys.join(",") + "|" + lastPrinters.map(p => p.id).join(",");
@@ -938,10 +939,31 @@ function swSel() {
   return id;
 }
 function swPick(id) { PH.pref("sw_sel", null, id); swDraw(); fillPrinters(); }
+// Knopf oben (nur am PC): nebeneinander ⇄ einzeln
+function swToggle() { PH.pref("sw_desk", null, !PH.pref("sw_desk", false)); swDraw(); fillPrinters(); setTimeout(() => { if (typeof applyFree === "function") applyFree(); }, 0); }
+// Offline-Drucker in der Nebeneinander-Ansicht einklappen (bis zum Neuladen aufklappbar)
+const pminOpened = new Set();
+function pminOpen(pid) { pminOpened.add(pid); swDraw(); fillPrinters(); }
+function pminDraw(on) {
+  const free = document.getElementById("board").classList.contains("ff");
+  const fold = !on && !free && PH.pref("off_min", true) && lastPrinters.length > 1;
+  const mins = new Set(fold ? lastPrinters.filter(p => !p.online && !pminOpened.has(p.id) && lastPrinters.some(o => o.online)).map(p => p.id) : []);
+  document.querySelectorAll(".pblk.pcard").forEach(c => {
+    const pid = c.dataset.pid, p = lastPrinters.find(x => x.id === pid), min = mins.has(pid);
+    c.classList.toggle("pc-min", min);
+    c.classList.toggle("pc-wide", mins.size > 0 && !min);
+    const b = c.querySelector(".pmin");
+    if (b && min) b.innerHTML = `<span class="psw-d"></span><b>${esc(p ? p.name : pid)}</b><span class="muted">offline</span><span class="pmin-x">einblenden ▾</span>`;
+  });
+}
 function swDraw() {
   const nav = document.getElementById("psw"), on = swOn();
   document.body.classList.toggle("psw-on", on); nav.hidden = !on;
-  if (!on) return;
+  const sb = document.getElementById("swbtn");
+  if (sb) { sb.hidden = SW_MQ.matches || lastPrinters.length < 2; sb.textContent = PH.pref("sw_desk", false) ? "▥ Nebeneinander" : "⇄ Einzeln";
+    sb.title = PH.pref("sw_desk", false) ? "Alle Drucker nebeneinander zeigen" : "Nur einen Drucker zeigen, oben umschalten"; }
+  pminDraw(on);
+  if (!on) { document.querySelectorAll(".pblk.pcard").forEach(c => c.classList.remove("psw-hide")); return; }
   const sel = swSel();
   nav.innerHTML = lastPrinters.map(p => {
     const st = !p.online ? ["off", "offline"] : p.printing ? ["run", `${Math.round(p.progress || 0)} %${p.remaining_min != null ? " · " + fmtMin(p.remaining_min) : ""}`]
