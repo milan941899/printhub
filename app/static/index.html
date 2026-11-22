@@ -774,6 +774,13 @@ function freePos(map, cont, sel, defW) {   // fehlende Positionen unten anhänge
   });
 }
 function applyFree() {
+  // Beim Neu-Anordnen schrumpft die Seite kurz (Messen ohne feste Höhen) – der Browser würde dabei die Scroll-Position
+  // kappen und die Seite „springt hoch“. Darum Höhe festhalten und Scroll-Position danach wiederherstellen.
+  const y0 = scrollY, bd = document.getElementById("board");
+  bd.style.minHeight = bd.offsetHeight + "px";
+  try { applyFree0(); } finally { bd.style.minHeight = ""; if (Math.abs(scrollY - y0) > 1) scrollTo(scrollX, y0); }
+}
+function applyFree0() {
   const desk = DESK();
   for (const p of lastPrinters) {
     const cont = document.querySelector(`.pcard[data-pid="${p.id}"] .pgrid12`);
