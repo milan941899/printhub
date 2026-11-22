@@ -969,6 +969,8 @@ function maintBody(p) {
     if ((i.pct || 0) > (g.pct || 0)) Object.assign(g, {pct: i.pct, remaining: i.remaining, due: i.due, warn: i.warn, id: i.id, top: i.name});
     g.due = g.due || i.due; g.warn = g.warn || i.warn;
   }
+  const hn = i => +((i.id.match(/@T(\d+)/) || [])[1] || 0);
+  for (const g of Object.values(groups)) g.heads.sort((a, b) => hn(a) - hn(b));   // Köpfe immer 1–4
   rows.sort((a, b) => (b.due - a.due) || (b.warn - a.warn) || ((b.pct || 0) - (a.pct || 0)));
   const all = PH.pref("maint_all", false), urgent = rows.filter(r => r.due || r.warn).length;
   const show = all ? rows : rows.slice(0, Math.max(4, urgent)), more = rows.length - show.length;

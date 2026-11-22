@@ -15,7 +15,7 @@ DEFAULT_TYPES = [
      "icon": "🧽", "interval": 25, "unit": "h", "rails": ""},
     {"id": "wash_plate", "name": "Druckplatte waschen", "desc": "Mit warmem Wasser und Spülmittel waschen, gut trocknen – "
      "nicht mehr mit den Fingern auf die Druckfläche fassen",
-     "icon": "🫧", "interval": 20, "unit": "p", "rails": ""},
+     "icon": "🧼", "interval": 20, "unit": "p", "rails": ""},
     {"id": "lube_rails", "name": "Linearschienen schmieren", "desc": "Schienen dünn mit Fett bzw. Öl versorgen",
      "icon": "💧", "interval": 50, "unit": "h", "rails": "linear"},
     {"id": "clean_rails", "name": "Linearschienen reinigen", "desc": "Mit trockenem Tuch Staub und Abrieb entfernen",
@@ -89,6 +89,8 @@ class Maintenance:
             for t in d["types"]:                              # „pro Kopf“ für bestehende Standard-Aufgaben nachtragen
                 if t.get("system") and t["id"] in PER_HEAD and "per_head" not in t:
                     t["per_head"] = True
+                if t.get("icon") == "🫧":             # 🫧 fehlt in Windows-Schriften → 🧼
+                    t["icon"] = "🧼"
             store._save()
 
     @property
