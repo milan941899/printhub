@@ -63,6 +63,8 @@ class Power:
             s["plug_err"] = str(e)
         return s.get("plug_id")
 
+    pre_off = None      # wird in main gesetzt: Bett vor dem Abschalten in Fotohöhe parken (Klipper)
+
     def _shared(self, p, s):
         """Die Bambuddy-Steckdose dieses Druckers ist die Shelly eines anderen Druckers (z. B. umgesteckt)."""
         ip = s.get("plug_ip")
@@ -133,6 +135,13 @@ class Power:
                 raise ValueError("Ausschalten gesperrt: im Drucker läuft gerade ein Update")
             if why:
                 step(f"Hinweis: {KEEP_GRUND.get(why, why)}")
+            if self.pre_off and not force and not why:
+                try:
+                    r = self.pre_off(p)
+                    if r:
+                        step(r)
+                except Exception as e:
+                    step(f"Parken: {e}")
         if pid:
             try:
                 self.bb.plug_control(pid, on)

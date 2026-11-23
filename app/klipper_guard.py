@@ -610,17 +610,7 @@ class KlipperGuard:
             except Exception:
                 pass
 
-    def pose(self, p):
-        """Prüfposition anfahren (wenn eingestellt). Rückgabe: (Text, abweichend, Referenz-Höhe).
-        Sicherheitsabstand: das Bett kommt dem Kopf nie näher als letzte Druckhöhe + 20 mm. Reicht die eingestellte
-        Höhe dafür nicht, fährt es auf die nächsthöhere Stufe, für die es ein Referenzbild gibt (Beschriftung „80mm“).
-        abweichend = keine passende Referenz für die angefahrene Höhe → nachfragen statt vergleichen."""
-        cfg = getattr(p, "plate_pose_cfg", None) or {}
-        if not cfg.get("on") or not p.online:
-            return "", False, None
-        st = p.status()
-        if st.get("printing") or st.get("paused"):      # niemals während eines Drucks bewegen
-            return "", False, None
+    def _target(self, p, cfg):
         last = (self.store.data.get("max_z") or {}).get(p.id) or 0
         safe = last + 20 if last else 0
         want = max(5.0, float(cfg.get("z", 30) or 30))
@@ -632,6 +622,47 @@ class KlipperGuard:
         if want < safe:
             up = [h for h in heights if h >= safe]
             target = float(up[0]) if up else safe
+        return last, safe, want, heights, target
+
+    def park(self, p):
+        """Vor dem Stromabschalten: Bett in Fotohöhe parken (Kopf vorne), solange Z noch referenziert ist.
+        Nach dem Einschalten kennt PrintHub dann die Höhe und kann ohne Z-Homing prüfen (das U1-Homing misst
+        in der Plattenmitte). Gibt einen kurzen Text zurück oder "" (nichts gemacht)."""
+        cfg = getattr(p, "plate_pose_cfg", None) or {}
+        if not cfg.get("on") or not p.online or not hasattr(p, "plate_pose"):
+            return ""
+        st = p.status()
+        if st.get("printing") or st.get("paused"):
+            return ""
+        th = (p.status_data.get("toolhead") or {}) if hasattr(p, "status_data") else {}
+        if "z" not in (th.get("homed_axes") or "").lower():
+            return "nicht geparkt (Z nicht referenziert)"
+        last, safe, want, heights, target = self._target(p, cfg)
+        try:
+            zz, sure = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), target, safe)
+        except Exception as e:
+            return f"Parken fehlgeschlagen: {e}"
+        if zz is None or not sure:
+            return "nicht geparkt"
+        self.store.data.setdefault("park_ok", {})[p.id] = round(float(zz), 1)
+        self.store.data.setdefault("park_z", {})[p.id] = round(float(zz), 1)
+        with self.store.lock:
+            self.store._save()
+        self._log(p, f"Bett für die nächste Plattenprüfung auf {zz:g} mm geparkt (Kopf vorne)")
+        return f"Bett in Fotohöhe {zz:g} mm geparkt"
+
+    def pose(self, p):
+        """Prüfposition anfahren (wenn eingestellt). Rückgabe: (Text, abweichend, Referenz-Höhe).
+        Sicherheitsabstand: das Bett kommt dem Kopf nie näher als letzte Druckhöhe + 20 mm. Reicht die eingestellte
+        Höhe dafür nicht, fährt es auf die nächsthöhere Stufe, für die es ein Referenzbild gibt (Beschriftung „80mm“).
+        abweichend = keine passende Referenz für die angefahrene Höhe → nachfragen statt vergleichen."""
+        cfg = getattr(p, "plate_pose_cfg", None) or {}
+        if not cfg.get("on") or not p.online:
+            return "", False, None
+        st = p.status()
+        if st.get("printing") or st.get("paused"):      # niemals während eines Drucks bewegen
+            return "", False, None
+        last, safe, want, heights, target = self._target(p, cfg)
         notes = []
         zz, sure = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), target, safe, log=notes.append)
         time.sleep(2)

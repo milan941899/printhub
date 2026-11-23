@@ -225,6 +225,7 @@ telegram = Telegram(settings, TG_INBOX, _tg_status)
 power = Power(settings, printers, bambuddy, notifier, os.path.join(DATA_DIR, "nachtruhe", "zustand.json"))
 kguard = KlipperGuard(printers, plate, power, notifier, store, nachtruhe, read_env, lambda: _plans(), lambda d: _plans_save(d),
                       lambda: _wcfg(), lambda *a: _qlog(*a))
+power.pre_off = kguard.park          # U1: Bett vor dem Abschalten in Fotohöhe parken
 qcheck = QueueCheck(bambuddy, store, lambda: _spool_map(), lambda: settings.get("short_reserve_g") or 10,
                     lambda: (settings.get("rest_tip_max") or 0) if settings.get("rest_tip") else 0,
                     lambda: settings.get("swap_suggest", True))

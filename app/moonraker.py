@@ -171,6 +171,9 @@ class MoonrakerPrinter(BasePrinter):
             z_ = round(float(th_["position"][2]), 1)
             if abs((pz.get(self.id) if pz.get(self.id) is not None else -99) - z_) >= 0.5:
                 pz[self.id] = z_
+                po = self.store.data.get("park_ok") or {}
+                if po.get(self.id) is not None and abs(po[self.id] - z_) >= 0.2:
+                    po.pop(self.id, None)                      # Bett bewegt → Parkhöhe nicht mehr gültig
                 self._head_saved = 0                           # gleich speichern (Strom kann jederzeit weg sein)
         if state == "printing":
             # höchste Z-Höhe des Drucks merken: so weit darf das Bett bei der Plattenprüfung nie hochfahren
@@ -703,6 +706,10 @@ class MoonrakerPrinter(BasePrinter):
                 log(f"Z nicht referenziert, Bett steht laut letzter Messung bei {known:g} mm (≥ {safe:g}) – referenziere nur X/Y")
                 self.gcode("G28 X Y", timeout=120)
             self.gcode(f"G90\nG1 X{float(x):.1f} Y{y:.1f} F6000\nM400", timeout=120)
+            parked = (self.store.data.get("park_ok") or {}).get(self.id)
+            if parked is not None and abs(parked - known) < 0.2:      # von PrintHub selbst geparkt → Höhe verlässlich
+                log(f"Bett von PrintHub auf {known:g} mm geparkt – Höhe gilt als bekannt")
+                return float(known), True
             return float(known), False
         cur = float(pos[2] or 0)
         target = max(float(z), safe)
