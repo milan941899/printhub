@@ -314,8 +314,32 @@ class KlipperGuard:
         ids = {j["job_id"] for j in s["jobs"]}
         s["force"] &= ids
 
+    def _after_print(self, p, s):
+        """Gleich nach Druckende parken: der U1 schaltet nach 5 min Leerlauf die Motoren ab (Z danach unbekannt) –
+        beim späteren Abschalten wäre es dafür zu spät."""
+        try:
+            st = p.status() if p.online else {}
+        except Exception:
+            return
+        if st.get("printing") or st.get("paused"):
+            s["was_printing"], s["idle_since"] = True, None
+            return
+        if not s.get("was_printing") or not p.online:
+            return
+        s["idle_since"] = s.get("idle_since") or time.time()
+        if time.time() - s["idle_since"] < 20 or s.get("busy"):      # End-G-Code fertig fahren lassen
+            return
+        s["was_printing"] = False
+
+        def run():
+            r = self.park(p)
+            if r:
+                self._log(p, f"nach Druckende: {r}")
+        threading.Thread(target=run, daemon=True).start()
+
     def _tick(self, p):
         s = self._s(p)
+        self._after_print(p, s)
         if p.online:
             self._refresh(p, s)
             if time.time() - s["lock_t"] > 60 or s["lock"] is None:
