@@ -1392,3 +1392,5 @@ body.psw-on .board:not(.ff) > .pblk.pcard { order:-1; }
 .pwl { margin:8px 0; padding:8px 10px; border:1px solid var(--line); border-radius:10px; }
 .pwl table { width:100%; border-collapse:collapse; font-size:12.5px; margin-top:4px; font-variant-numeric:tabular-nums; }
 .pwl td { padding:2px 6px 2px 0; white-space:nowrap; } .pwl td:nth-child(3) { white-space:normal; width:100%; } .pwl td:last-child { text-align:right; }
+.pl-body .pwl td:nth-child(2) { white-space:normal; width:100%; word-break:break-word; }
+.pl-body .pwl td:first-child { vertical-align:top; color:var(--muted); }
