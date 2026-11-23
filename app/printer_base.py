@@ -507,7 +507,13 @@ class BasePrinter:
         log.info("[%s] Druck beendet (%s), gebucht: %s", self.id, success, booked)
         # Benachrichtigung
         h, m = divmod(duration // 60, 60)
-        parts = [job.get("name", ""), f"Dauer: {h} h {m:02d} min" if h else f"Dauer: {m} min"]
+        dur_txt = f"Dauer: {h} h {m:02d} min" if h else f"Dauer: {m} min"
+        prep = job.get("prep_s")
+        if prep and 60 <= prep < duration:
+            pm, dm = round(prep / 60), round((duration - prep) / 60)
+            dur_txt += f" (Druck {dm // 60} h {dm % 60:02d} min" if dm >= 60 else f" (Druck {dm} min"
+            dur_txt += f" + Vorbereitung {pm} min)"
+        parts = [job.get("name", ""), dur_txt]
         grams = sum(e["grams"] for e in booked)
         if grams:
             parts.append(f"Filament: {_de(grams, 1)} g")

@@ -232,8 +232,11 @@ class MoonrakerPrinter(BasePrinter):
                 self.job_started(ps.get("filename") or "Druck", extra)
             elif job is not None:
                 pd = ps.get("print_duration") or 0
-                rem = pd / progress - pd if progress and progress > 0.02 and pd > 60 else None
+                rem = self._remaining_s(ps, progress) if progress is not None else None
                 self.update_progress(progress, rem)
+                if self.prep_seconds() and job.get("prep_s") is None:
+                    job["prep_s"] = self.prep_seconds()
+                    self.store.set_job(self.id, job)
                 self.track_layer((ps.get("info") or {}).get("current_layer"))
                 self._track_extrusion(st)
                 self._grab_end_shot(progress)
@@ -375,6 +378,48 @@ class MoonrakerPrinter(BasePrinter):
         log.info("[%s] Kopf %s: Spoolman-Spule %s am Drucker hinterlegt", self.id, key, sid or "–")
         return True
 
+    def _remaining_s(self, ps, progress):
+        """Restzeit in Sekunden (oder None) – Slicer-Schätzung, allmählich auf die Hochrechnung überblendet;
+        die Vorbereitung bis zur ersten Schicht zählt nicht mit."""
+        remaining = None
+        est = self._slicer_estimate(ps.get("filename") or "")
+        pd = ps.get("print_duration") or 0
+        # Vorbereitung (Homing, Kopfwechsel, Düse reinigen, Mesh, Vorheizen – beim U1 ~8 min) bis zur ersten
+        # Schicht nicht in die Hochrechnung nehmen: sie kostet Zeit, aber kaum Bytes.
+        fn, layer = ps.get("filename") or "", (ps.get("info") or {}).get("current_layer")
+        pr = getattr(self, "_prep", None)
+        if not pr or pr.get("fn") != fn or pd < pr.get("seen", 0):
+            pr = self._prep = {"fn": fn, "pd": None, "p": 0.0, "seen": pd}
+        pr["seen"] = pd
+        if pr["pd"] is None and layer and layer >= 1 and not pr.get("late"):
+            if layer <= 2:
+                pr["pd"], pr["p"] = pd, progress
+            else:
+                pr["late"] = True        # erst mitten im Druck gesehen (z. B. PrintHub neu gestartet)
+        file_rem = None
+        if pr["pd"] is not None:
+            pe, de = progress - pr["p"], pd - pr["pd"]
+            if pe > 0.01 and de > 30:
+                file_rem = de * (1 - progress) / pe
+        elif layer is None or pr.get("late"):    # ohne Schichtangabe / Beginn verpasst: wie bisher
+            file_rem = pd * (1 - progress) / progress if progress > 0.01 and pd else None
+        pa = (progress - pr["p"]) / (1 - pr["p"]) if pr["pd"] is not None and pr["p"] < 1 else progress
+        sl_rem = est * (1 - pa) if est else None
+        if sl_rem is not None and file_rem is not None:
+            w = min(1.0, max(0.0, (progress - 0.10) / 0.50))
+            remaining = (sl_rem * (1 - w) + file_rem * w)
+        elif sl_rem is not None:
+            remaining = sl_rem
+            if pr["pd"] is None and layer is not None:
+                remaining = est          # noch in der Vorbereitung: ganze Druckzeit steht noch aus
+        elif file_rem is not None:
+            remaining = file_rem
+        return remaining
+
+    def prep_seconds(self):
+        pr = getattr(self, "_prep", None) or {}
+        return int(pr["pd"]) if pr.get("pd") else None
+
     def status(self):
         with self.lock:
             st = self.status_data
@@ -387,17 +432,8 @@ class MoonrakerPrinter(BasePrinter):
         # kosten Zeit, aber kaum Bytes – z. B. 23 h statt 3 h). Daher anfangs die Schätzung des Slicers, dann
         # allmählich (10 → 60 %) auf die Hochrechnung überblenden, die gegen Ende genauer ist.
         if active and progress is not None:
-            est = self._slicer_estimate(ps.get("filename") or "")
-            pd = ps.get("print_duration") or 0
-            file_rem = pd * (1 - progress) / progress if progress > 0.01 and pd else None
-            sl_rem = est * (1 - progress) if est else None
-            if sl_rem is not None and file_rem is not None:
-                w = min(1.0, max(0.0, (progress - 0.10) / 0.50))
-                remaining = round((sl_rem * (1 - w) + file_rem * w) / 60)
-            elif sl_rem is not None:
-                remaining = round(sl_rem / 60)
-            elif file_rem is not None:
-                remaining = round(file_rem / 60)
+            r = self._remaining_s(ps, progress)
+            remaining = round(r / 60) if r is not None else None
         temps = []
         for i, ex in enumerate(self._extruders()):
             e = st.get(ex)
