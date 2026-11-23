@@ -4026,7 +4026,23 @@ async def api_plate_pose(request):
         if b.get("clear"):
             kguard.clear_height(p)
         txt, clamped, _h = await run_in_threadpool(kguard.pose, p, "Testbild")
-        jpg = await run_in_threadpool(p.camera.snapshot)
+        was = None
+        if getattr(p, "light_pin", None):        # fürs Foto Licht an (wie bei der echten Prüfung), danach wie vorher
+            try:
+                was = p.light_state()
+                if not was:
+                    await run_in_threadpool(p.set_light, True)
+                    await asyncio.sleep(3)
+            except Exception:
+                was = None
+        try:
+            jpg = await run_in_threadpool(p.camera.snapshot)
+        finally:
+            if was is False:
+                try:
+                    await run_in_threadpool(p.set_light, False)
+                except Exception:
+                    pass
     except Exception as e:
         return JSONResponse({"error": str(e)[:300]}, status_code=502)
     import base64 as _b64
