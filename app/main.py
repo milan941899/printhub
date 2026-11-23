@@ -49,6 +49,7 @@ from .queuecheck import QueueCheck
 from . import schedule as sched
 from .nachtruhe import read_env
 from .klipper_guard import KlipperGuard
+from .fwcheck import FwCheck
 from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 from .store import Store
 
@@ -225,6 +226,7 @@ telegram = Telegram(settings, TG_INBOX, _tg_status)
 power = Power(settings, printers, bambuddy, notifier, os.path.join(DATA_DIR, "nachtruhe", "zustand.json"))
 kguard = KlipperGuard(printers, plate, power, notifier, store, nachtruhe, read_env, lambda: _plans(), lambda d: _plans_save(d),
                       lambda: _wcfg(), lambda *a: _qlog(*a))
+fwcheck = FwCheck(store, printers, notifier, settings)
 power.pre_off = kguard.park          # U1: Bett vor dem Abschalten in Fotohöhe parken
 qcheck = QueueCheck(bambuddy, store, lambda: _spool_map(), lambda: settings.get("short_reserve_g") or 10,
                     lambda: (settings.get("rest_tip_max") or 0) if settings.get("rest_tip") else 0,
@@ -4917,6 +4919,17 @@ async def lifespan(app):
     threading.Thread(target=telegram.loop, daemon=True).start()
     threading.Thread(target=power.loop, daemon=True).start()
     kguard.start()
+    # neue Meldung „fw_update“ einmalig auch bei bestehenden Einstellungen einschalten
+    if not store.data.get("fw_event_added"):
+        try:
+            for k in ("notify_events", "tg_events"):
+                cur = list(settings.get(k) or [])
+                if "fw_update" not in cur:
+                    settings.update({k: cur + ["fw_update"]})
+            store.data["fw_event_added"] = True
+        except Exception as e:
+            log.info("fw_update-Meldung nicht eingeschaltet: %s", e)
+    threading.Thread(target=fwcheck.loop, daemon=True).start()
     threading.Thread(target=nachtruhe.supervise, daemon=True).start()
     yield
     nachtruhe._stop()

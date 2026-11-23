@@ -32,6 +32,7 @@ CATALOG = {
     "runout": ("Spulen & Lager", "Spule leer gelaufen – Lager prüfen / Leergewicht korrigieren", True, False),
     "maintenance": ("Wartung", "Wartung fällig", True, False),
     "service": ("Dienste", "Spoolman / Bambuddy / OctoEverywhere nicht erreichbar", True, False),
+    "fw_update": ("Dienste", "Neue paxx-Firmware für den Snapmaker U1", True, False),
     "queue_add": ("Warteschlange", "Neuer Auftrag in der Bambuddy-Warteschlange", False, False),
     "queue_done": ("Warteschlange", "Warteschlange abgearbeitet", False, False),
     "weekly": ("Berichte", "Wochenbericht (Drucke, Filament, Kosten, Nachkaufen)", True, False),
@@ -44,7 +45,7 @@ PRIO_DEFAULT = {
     "fail": 5, "error": 5, "pause": 5, "offline": 5, "waiting": 5, "plate": 5, "power": 5,
     "finish": 4, "low_spool": 4, "runout": 4, "dry": 3, "short": 4, "bed_cooled": 4, "queue_check": 4,
     "start": 3, "first_layer": 3, "progress": 3, "cfg": 3, "stock_low": 3, "maintenance": 3, "service": 3,
-    "queue_add": 3, "queue_done": 3, "weekly": 2,
+    "queue_add": 3, "queue_done": 3, "weekly": 2, "fw_update": 2,
 }
 PRIO_NAMES = {"min": 1, "low": 2, "default": 3, "high": 4, "urgent": 5}
 
