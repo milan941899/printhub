@@ -4032,7 +4032,7 @@ async def api_plate_pose(request):
                 was = p.light_state()
                 if not was:
                     await run_in_threadpool(p.set_light, True)
-                    await asyncio.sleep(3)
+                    await asyncio_sleep(3)
             except Exception:
                 was = None
         try:
