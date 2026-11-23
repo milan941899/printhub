@@ -72,6 +72,31 @@ class KlipperGuard:
         except OSError:
             pass
 
+    def _plog(self, p, kind, steps, result):
+        """Platten-Protokoll (Einstellungen → Plattenfoto): jede Fahrt mit allen Höhen."""
+        try:
+            lst = self.store.data.setdefault("plate_log", [])
+            lst.insert(0, {"t": time.time(), "printer": p.id, "name": p.name, "kind": kind, "steps": steps,
+                           "result": result})
+            del lst[20:]
+            with self.store.lock:
+                self.store._save()
+        except Exception as e:
+            log.warning("Platten-Protokoll: %s", e)
+
+    def _plate_state(self, p, cfg, last, safe, want, heights, target):
+        th = (getattr(p, "status_data", {}) or {}).get("toolhead") or {}
+        homed = (th.get("homed_axes") or "").lower() or "—"
+        pos = th.get("position") or [None] * 4
+        pz = (self.store.data.get("park_z") or {}).get(p.id)
+        po = (self.store.data.get("park_ok") or {}).get(p.id)
+        hop = p.z_hop() if hasattr(p, "z_hop") else 0
+        return (f"Ausgangslage: referenziert {homed.upper()}, Bett Z {pos[2] if 'z' in homed else '?'} · gemerkt {pz} mm"
+                f" · von PrintHub geparkt {po if po is not None else 'nein'} · letzte Druckhöhe {last:g} mm"
+                f" → Mindestabstand {safe:g} mm · eingestellt {want:g} mm → Ziel {target:g} mm"
+                f" · Referenzbilder {', '.join(f'{h:g}' for h in heights) or 'keine'} mm · z_hop {hop:g} mm"
+                f" · Kopf X{cfg.get('x', 135)} Y{cfg.get('y', 10)}")
+
     def _klipper(self):
         return [p for p in self.printers.values() if p.type == "moonraker"]
 
@@ -640,26 +665,33 @@ class KlipperGuard:
         last, safe, want, heights, target = self._target(p, cfg)
         # Nach dem Einschalten senkt das X/Y-Homing das Bett um z_hop → so parken, dass es danach genau auf der
         # Fotohöhe steht. Dabei nie näher als der Sicherheitsabstand.
+        steps = []
+        stp = lambda t: steps.append([round(time.time(), 1), t])
+        stp(self._plate_state(p, cfg, last, safe, want, heights, target))
         hop = p.z_hop() if hasattr(p, "z_hop") else 0
         if hop:
             if target - hop < safe:
                 up = [h for h in heights if h - hop >= safe]
                 target = float(up[0]) if up else safe + hop
             target -= hop
+        stp(f"Parkhöhe {target:g} mm (Fotohöhe {target + hop:g} − z_hop {hop:g})")
         try:
-            zz, sure = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), target, safe)
+            zz, sure = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), target, safe, log=stp)
         except Exception as e:
+            self._plog(p, "Parken", steps, f"Fehler: {e}")
             return f"Parken fehlgeschlagen: {e}"
         if zz is None or not sure:
+            self._plog(p, "Parken", steps, "nicht geparkt")
             return "nicht geparkt"
         self.store.data.setdefault("park_ok", {})[p.id] = round(float(zz), 1)
         self.store.data.setdefault("park_z", {})[p.id] = round(float(zz), 1)
         with self.store.lock:
             self.store._save()
+        self._plog(p, "Parken", steps, f"geparkt auf {zz:g} mm → nach dem Einschalten {zz + hop:g} mm")
         self._log(p, f"Bett für die nächste Plattenprüfung auf {zz:g} mm geparkt (Kopf vorne, + {hop:g} mm beim Homing = {zz + hop:g} mm)")
         return f"Bett auf {zz:g} mm geparkt (nach dem Einschalten {zz + hop:g} mm = Fotohöhe)"
 
-    def pose(self, p):
+    def pose(self, p, kind="Prüfung"):
         """Prüfposition anfahren (wenn eingestellt). Rückgabe: (Text, abweichend, Referenz-Höhe).
         Sicherheitsabstand: das Bett kommt dem Kopf nie näher als letzte Druckhöhe + 20 mm. Reicht die eingestellte
         Höhe dafür nicht, fährt es auf die nächsthöhere Stufe, für die es ein Referenzbild gibt (Beschriftung „80mm“).
@@ -671,21 +703,38 @@ class KlipperGuard:
         if st.get("printing") or st.get("paused"):      # niemals während eines Drucks bewegen
             return "", False, None
         last, safe, want, heights, target = self._target(p, cfg)
+        steps = []
+        stp = lambda t: steps.append([round(time.time(), 1), t])
+        stp(self._plate_state(p, cfg, last, safe, want, heights, target))
         notes = []
-        zz, sure = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), target, safe, log=notes.append)
+
+        def note(t):
+            notes.append(t)
+            stp(t)
+        try:
+            zz, sure = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), target, safe, log=note)
+        except Exception as e:
+            stp(f"Fehler: {e}")
+            self._plog(p, kind, steps, f"Fehler: {e}")
+            raise
         time.sleep(2)
         yy = min(float(cfg.get("y", 10)), getattr(p, "FRONT_Y_MAX", 999))
         pre = f"Kopf X{cfg.get('x')} Y{yy:g}"
         if zz is None:
-            return f"{notes[-1] if notes else 'Position unbekannt'} – bitte selbst prüfen", True, None
+            r = f"{notes[-1] if notes else 'Position unbekannt'} – bitte selbst prüfen"
+            self._plog(p, kind, steps, r)
+            return r, True, None
         if not sure:
-            return f"{pre}, Bett vermutlich bei {zz:g} mm (Z nicht referenziert) – bitte selbst prüfen", True, None
+            r = f"{pre}, Bett vermutlich bei {zz:g} mm (Z nicht referenziert) – bitte selbst prüfen"
+            self._plog(p, kind, steps, r)
+            return r, True, None
         h = int(round(zz)) if heights and abs(zz - round(zz)) < 0.05 and int(round(zz)) in heights else None
         txt = f"{pre}, Bett auf {zz:g} mm"
         if zz > want + 0.05:
             txt += f" statt {want:g} mm (Sicherheitsabstand: letzter Druck {last:g} mm hoch + 20 mm)"
         abw = zz > want + 0.05 and h is None
         txt += f" – Vergleich mit Referenzbild {h} mm" if h is not None else (" – kein Referenzbild für diese Höhe" if abw else "")
+        self._plog(p, kind, steps, txt)
         return txt, abw, h
 
     def check_plate(self, p):
@@ -724,4 +773,11 @@ class KlipperGuard:
                     r, jpg = r2, jpg2
             except Exception:
                 pass
+        try:      # Vergleichsergebnis an den letzten Protokolleintrag hängen
+            e = (self.store.data.get("plate_log") or [None])[0]
+            if e and e.get("printer") == p.id and time.time() - e["t"] < 300:
+                e["steps"].append([round(time.time(), 1), f"Vergleich mit Referenz {href if href is not None else '(Standard)'} mm: "
+                                   f"{'LEER' if r['is_empty'] else 'NICHT LEER'} – {r.get('message') or ''}"])
+        except Exception:
+            pass
         return bool(r["is_empty"]), jpg, r.get("message") or ""

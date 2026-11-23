@@ -716,6 +716,7 @@ class MoonrakerPrinter(BasePrinter):
                 return None, False
             if "x" not in homed or "y" not in homed:
                 log(f"Z nicht referenziert, Bett steht laut letzter Messung bei {known:g} mm (≥ {safe:g}) – referenziere nur X/Y")
+                log("G-Code: G28 X Y")
                 self.gcode("G28 X Y", timeout=120)
                 hop = self.z_hop()          # das X/Y-Homing senkt das Bett um z_hop (U1: 5 mm)
                 if hop:
@@ -725,6 +726,7 @@ class MoonrakerPrinter(BasePrinter):
                     if po.get(self.id) is not None:
                         po[self.id] = round(po[self.id] + hop, 1)
                     log(f"X/Y-Homing hat das Bett um {hop:g} mm gesenkt → jetzt {known:g} mm")
+            log(f"G-Code: G1 X{float(x):.1f} Y{y:.1f} (Kopf nach vorne, Z bleibt)")
             self.gcode(f"G90\nG1 X{float(x):.1f} Y{y:.1f} F6000\nM400", timeout=120)
             parked = (self.store.data.get("park_ok") or {}).get(self.id)
             if parked is not None and abs(parked - known) < 0.2:      # von PrintHub selbst geparkt → Höhe verlässlich
@@ -733,6 +735,7 @@ class MoonrakerPrinter(BasePrinter):
             return float(known), False
         cur = float(pos[2] or 0)
         target = max(float(z), safe)
+        log(f"Z referenziert, Bett steht bei {cur:g} mm → Ziel {target:g} mm")
         cmds = ["G90"]
         if cur < target - 0.05:                      # Bett zu hoch → zuerst runter (weg von der Düse)
             cmds.append(f"G1 Z{target:.1f} F600")
@@ -742,6 +745,7 @@ class MoonrakerPrinter(BasePrinter):
             cmds.append(f"G1 Z{target:.1f} F600")
             log(f"Kopf vorne, Bett hoch: {cur:g} → {target:g} mm (nie unter {safe:g} mm)")
         cmds.append("M400")
+        log("G-Code: " + " | ".join(c for c in cmds if c not in ("G90", "M400")))
         self.gcode("\n".join(cmds), timeout=180)
         return target, True
 

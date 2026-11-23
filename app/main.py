@@ -4025,7 +4025,7 @@ async def api_plate_pose(request):
         await run_in_threadpool(_save_pose, p.id, p.plate_pose_cfg)
         if b.get("clear"):
             kguard.clear_height(p)
-        txt, clamped, _h = await run_in_threadpool(kguard.pose, p)
+        txt, clamped, _h = await run_in_threadpool(kguard.pose, p, "Testbild")
         jpg = await run_in_threadpool(p.camera.snapshot)
     except Exception as e:
         return JSONResponse({"error": str(e)[:300]}, status_code=502)
@@ -4724,6 +4724,10 @@ async def api_power(request):
     return JSONResponse({"ok": True, "via": via})
 
 
+async def api_plate_log(request):
+    return JSONResponse({"log": store.data.get("plate_log") or []})
+
+
 async def api_power_log(request):
     return JSONResponse({"log": power.shutdown_log()})
 
@@ -4973,6 +4977,7 @@ app = Starlette(
         Route("/api/printers/{pid}/power", api_power, methods=["POST"]),
         Route("/api/power/bambuddy", api_power_bambuddy, methods=["POST"]),
         Route("/api/power/log", api_power_log),
+        Route("/api/plate/log", api_plate_log),
         Route("/api/diagnose", api_diagnose),
         Route("/api/logs", api_logs),
         Route("/api/telegram/pair", api_telegram_pair, methods=["POST"]),

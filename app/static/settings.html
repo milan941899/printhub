@@ -1375,6 +1375,17 @@ function lgDownload() {
 }
 
 // ---------- Strom-Verwaltung ----------
+async function plLog(det, pid) {
+  const el = det.querySelector(".pl-body");
+  try {
+    const d = await (await fetch("/api/plate/log")).json();
+    const l = d.log.filter(e => !pid || e.printer === pid);
+    if (!l.length) { el.innerHTML = '<div class="d muted">Noch keine Fahrt aufgezeichnet.</div>'; return; }
+    el.innerHTML = l.map(e => `<div class="pwl"><div class="t">${esc(e.kind)} · ${new Date(e.t * 1000).toLocaleString("de-DE", {day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit"})}
+      <span class="muted">– ${esc(e.result || "")}</span></div>
+      <table>${e.steps.map(s => `<tr><td>${new Date(s[0] * 1000).toLocaleTimeString("de-DE")}</td><td>${esc(s[1])}</td></tr>`).join("")}</table></div>`).join("");
+  } catch (e) { el.textContent = "Konnte das Protokoll nicht laden."; }
+}
 async function pwLog() {
   const el = $("pw-log");
   try {
@@ -1701,7 +1712,8 @@ function pcDraw() {
               <div class="d small" style="padding:4px 0 8px">Bis 4 °C unter dem Ziel aus, 4 °C darüber 100 %, dazwischen stufenlos. Mehrere Materialien: das empfindlichste zählt. Von Hand gestellt → bis zum nächsten Druck aus.</div></div>` : ""}`}
           ${bambu ? "" : `${pcf(i, "plate_pose", "Plattenfoto aus Prüfposition", "Kamera am Druckkopf: vor jeder Plattenprüfung Kopf nach vorne, Bett hoch (nie näher als letzte Druckhöhe + 20 mm)", "", "check")}
             ${p.plate_pose ? `<div class="pc-pose">${pcf(i, "plate_x", "Kopf X (mm)", "", 'inputmode="numeric"')}${pcf(i, "plate_y", "Kopf Y (mm)", "vorne = klein", 'inputmode="numeric"')}${pcf(i, "plate_z", "Bett Z (mm)", "Abstand Düse–Platte", 'inputmode="numeric"')}
-              <button type="button" class="small-btn" onclick="pcPose(${i})">📷 Testbild</button><div id="pc-pose-${i}" class="small"></div></div>` : ""}`}
+              <button type="button" class="small-btn" onclick="pcPose(${i})">📷 Testbild</button><div id="pc-pose-${i}" class="small"></div>
+              <details class="pwlog" ontoggle="if (this.open) plLog(this, '${esc(p._old_id || p.id || "")}')"><summary class="t">Platten-Protokoll (Fahrten, Höhen)</summary><div class="pl-body">Lade …</div></details></div>` : ""}`}
           <div class="pc-test" id="pc-test-${i}"></div>
         </div>
       </div></section>`;
@@ -1713,7 +1725,7 @@ function pcDel(i) { if (confirm(`„${PC[i].name || PC[i].id}“ entfernen? Verl
 async function pcPose(i, clear) {
   const p = PC[i], out = $("pc-pose-" + i);
   if (!p._old_id) return PH.toast("Erst speichern, dann testen", true);
-  if (!clear && !confirm(`${p.name}: Prüfposition jetzt anfahren?\nDer Kopf referenziert X/Y und fährt nach X${p.plate_x ?? 135} Y${p.plate_y ?? 10}, das Bett auf Z${p.plate_z ?? 30} (falls Z referenziert ist). Nicht während eines Drucks.`)) return;
+  if (!clear && !confirm(`${p.name}: Prüfposition jetzt anfahren?\nKein Z-Homing. Ist Z referenziert: Bett erst runter, Kopf nach vorne (X${p.plate_x ?? 135} Y${Math.min(p.plate_y ?? 10, 30)}), dann Bett auf Z${p.plate_z ?? 30} (nie näher als letzte Druckhöhe + 20 mm). Sonst nur X/Y-Homing und Kopf nach vorne, Bett bleibt. Nicht während eines Drucks.`)) return;
   out.innerHTML = `<span class="muted">Fahre an …</span>`;
   const r = await (await fetch(`/api/printers/${p._old_id}/plate-pose`, {method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({x: p.plate_x ?? 135, y: p.plate_y ?? 10, z: p.plate_z ?? 30, clear: !!clear})})).json();
