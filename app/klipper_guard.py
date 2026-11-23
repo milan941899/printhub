@@ -638,6 +638,14 @@ class KlipperGuard:
         if "z" not in (th.get("homed_axes") or "").lower():
             return "nicht geparkt (Z nicht referenziert)"
         last, safe, want, heights, target = self._target(p, cfg)
+        # Nach dem Einschalten senkt das X/Y-Homing das Bett um z_hop → so parken, dass es danach genau auf der
+        # Fotohöhe steht. Dabei nie näher als der Sicherheitsabstand.
+        hop = p.z_hop() if hasattr(p, "z_hop") else 0
+        if hop:
+            if target - hop < safe:
+                up = [h for h in heights if h - hop >= safe]
+                target = float(up[0]) if up else safe + hop
+            target -= hop
         try:
             zz, sure = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), target, safe)
         except Exception as e:
@@ -648,8 +656,8 @@ class KlipperGuard:
         self.store.data.setdefault("park_z", {})[p.id] = round(float(zz), 1)
         with self.store.lock:
             self.store._save()
-        self._log(p, f"Bett für die nächste Plattenprüfung auf {zz:g} mm geparkt (Kopf vorne)")
-        return f"Bett in Fotohöhe {zz:g} mm geparkt"
+        self._log(p, f"Bett für die nächste Plattenprüfung auf {zz:g} mm geparkt (Kopf vorne, + {hop:g} mm beim Homing = {zz + hop:g} mm)")
+        return f"Bett auf {zz:g} mm geparkt (nach dem Einschalten {zz + hop:g} mm = Fotohöhe)"
 
     def pose(self, p):
         """Prüfposition anfahren (wenn eingestellt). Rückgabe: (Text, abweichend, Referenz-Höhe).

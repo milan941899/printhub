@@ -678,6 +678,18 @@ class MoonrakerPrinter(BasePrinter):
         self.gcode("PRINTHUB_FREIGABE", timeout=10)
         self._api("POST", "/printer/print/start", params={"filename": fn}, timeout=15)
 
+    def z_hop(self):
+        """Wie weit das Bett beim X/Y-Homing ohne referenziertes Z nach unten fährt (homing_xyz_override z_hop, U1: 5 mm)."""
+        if getattr(self, "_zhop", None) is None:
+            try:
+                st = self._api("GET", "/printer/objects/query", params={"configfile": "settings"}, timeout=8)
+                cfg = ((st.get("status") or {}).get("configfile") or {}).get("settings") or {}
+                sec = cfg.get("homing_xyz_override") or cfg.get("homing_override") or cfg.get("safe_z_home") or {}
+                self._zhop = float(sec.get("z_hop") or 0)
+            except Exception:
+                return 5.0          # U1-Standard, nicht merken – nächstes Mal neu fragen
+        return self._zhop
+
     FRONT_Y_MAX = 30     # Prüfposition: Kopf steht immer vorne (über dem Rand, nicht über der Plattenmitte)
 
     def plate_pose(self, x, y, z, min_z=None, log=None):
@@ -705,6 +717,14 @@ class MoonrakerPrinter(BasePrinter):
             if "x" not in homed or "y" not in homed:
                 log(f"Z nicht referenziert, Bett steht laut letzter Messung bei {known:g} mm (≥ {safe:g}) – referenziere nur X/Y")
                 self.gcode("G28 X Y", timeout=120)
+                hop = self.z_hop()          # das X/Y-Homing senkt das Bett um z_hop (U1: 5 mm)
+                if hop:
+                    known = round(known + hop, 1)
+                    self.store.data.setdefault("park_z", {})[self.id] = known
+                    po = self.store.data.setdefault("park_ok", {})
+                    if po.get(self.id) is not None:
+                        po[self.id] = round(po[self.id] + hop, 1)
+                    log(f"X/Y-Homing hat das Bett um {hop:g} mm gesenkt → jetzt {known:g} mm")
             self.gcode(f"G90\nG1 X{float(x):.1f} Y{y:.1f} F6000\nM400", timeout=120)
             parked = (self.store.data.get("park_ok") or {}).get(self.id)
             if parked is not None and abs(parked - known) < 0.2:      # von PrintHub selbst geparkt → Höhe verlässlich
