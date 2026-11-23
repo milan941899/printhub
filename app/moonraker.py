@@ -165,6 +165,13 @@ class MoonrakerPrinter(BasePrinter):
         th = (st.get("toolhead") or {}).get("extruder")
         cur = f"T{(th or 'extruder').replace('extruder', '') or '0'}" if th else None
         heads = self.store.data.setdefault("heads", {}).setdefault(self.id, {})
+        th_ = st.get("toolhead") or {}
+        if "z" in (th_.get("homed_axes") or "").lower() and (th_.get("position") or [None] * 3)[2] is not None:
+            pz = self.store.data.setdefault("park_z", {})      # letzte sichere Betthöhe (für Prüfung nach dem Einschalten)
+            z_ = round(float(th_["position"][2]), 1)
+            if abs((pz.get(self.id) if pz.get(self.id) is not None else -99) - z_) >= 0.5:
+                pz[self.id] = z_
+                self._head_saved = 0                           # gleich speichern (Strom kann jederzeit weg sein)
         if state == "printing":
             # höchste Z-Höhe des Drucks merken: so weit darf das Bett bei der Plattenprüfung nie hochfahren
             z = ((st.get("gcode_move") or {}).get("gcode_position") or [0, 0, 0])[2]
@@ -668,25 +675,48 @@ class MoonrakerPrinter(BasePrinter):
         self.gcode("PRINTHUB_FREIGABE", timeout=10)
         self._api("POST", "/printer/print/start", params={"filename": fn}, timeout=15)
 
-    def plate_pose(self, x, y, z, min_z=None):
-        """Prüfposition fürs Plattenfoto anfahren: X/Y referenzieren falls nötig, Bett auf Höhe z (nie unter min_z),
-        Kopf nach x/y. Gibt die tatsächlich angefahrene Höhe zurück (None = Z nicht referenziert, Bett bleibt stehen)."""
+    FRONT_Y_MAX = 30     # Prüfposition: Kopf steht immer vorne (über dem Rand, nicht über der Plattenmitte)
+
+    def plate_pose(self, x, y, z, min_z=None, log=None):
+        """Prüfposition fürs Plattenfoto anfahren – so, dass nichts mit einem liegengebliebenen Teil kollidieren kann:
+          • NIE Z referenzieren: der U1 misst Z in der Plattenmitte (135/135) – genau dort steht ein vergessenes Teil.
+          • Bett zuerst nur nach UNTEN (weg von der Düse), dann Kopf nach vorne, erst dann Bett hoch –
+            und nie näher als min_z (= letzte Druckhöhe + 20 mm).
+          • Z nicht referenziert (nach dem Einschalten): Bett bleibt stehen. Nur wenn die zuletzt bekannte Betthöhe
+            (gemerkt, solange Z referenziert war) den Sicherheitsabstand hat, werden X/Y referenziert und der Kopf
+            fährt nach vorne.
+        Rückgabe: (Höhe, sicher bekannt?) – Höhe None = Position unbekannt."""
+        log = log or (lambda t: None)
+        y = min(float(y), self.FRONT_Y_MAX)
+        safe = float(min_z or 0)
         with self.lock:
-            homed = ((self.status_data.get("toolhead") or {}).get("homed_axes") or "").lower()
-        if "z" not in homed and z is not None:
-            # Ganz referenzieren: der U1 misst Z vorne links in der Ecke (X≈5 Y≈5), nicht in der Plattenmitte
-            self.gcode("G28", timeout=180)
-            homed = "xyz"
-        elif "x" not in homed or "y" not in homed:
-            self.gcode("G28 X Y", timeout=120)
+            th = self.status_data.get("toolhead") or {}
+            homed = (th.get("homed_axes") or "").lower()
+            pos = th.get("position") or [0, 0, 0, 0]
+        if "z" not in homed:
+            known = (self.store.data.get("park_z") or {}).get(self.id) if self.store else None
+            if known is None or known < safe:
+                log(f"Z nicht referenziert, letzte Betthöhe {'unbekannt' if known is None else f'{known:g} mm (zu nah)'} "
+                    f"– nichts bewegt")
+                return None, False
+            if "x" not in homed or "y" not in homed:
+                log(f"Z nicht referenziert, Bett steht laut letzter Messung bei {known:g} mm (≥ {safe:g}) – referenziere nur X/Y")
+                self.gcode("G28 X Y", timeout=120)
+            self.gcode(f"G90\nG1 X{float(x):.1f} Y{y:.1f} F6000\nM400", timeout=120)
+            return float(known), False
+        cur = float(pos[2] or 0)
+        target = max(float(z), safe)
         cmds = ["G90"]
-        zz = None
-        if "z" in homed and z is not None:
-            zz = max(float(z), float(min_z or 0))
-            cmds.append(f"G1 Z{zz:.1f} F600")
-        cmds += [f"G1 X{float(x):.1f} Y{float(y):.1f} F6000", "M400"]
-        self.gcode("\n".join(cmds), timeout=120)
-        return zz
+        if cur < target - 0.05:                      # Bett zu hoch → zuerst runter (weg von der Düse)
+            cmds.append(f"G1 Z{target:.1f} F600")
+            log(f"Bett zuerst runter: {cur:g} → {target:g} mm")
+        cmds.append(f"G1 X{float(x):.1f} Y{y:.1f} F6000")   # Kopf nach vorne (Bett ist jetzt weit genug weg)
+        if cur > target + 0.05:                      # Bett tiefer als nötig → erst jetzt hoch, Kopf steht vorne
+            cmds.append(f"G1 Z{target:.1f} F600")
+            log(f"Kopf vorne, Bett hoch: {cur:g} → {target:g} mm (nie unter {safe:g} mm)")
+        cmds.append("M400")
+        self.gcode("\n".join(cmds), timeout=180)
+        return target, True
 
     def control(self, action):
         path = {"pause": "/printer/print/pause", "resume": "/printer/print/resume", "stop": "/printer/print/cancel"}.get(action)

@@ -632,12 +632,17 @@ class KlipperGuard:
         if want < safe:
             up = [h for h in heights if h >= safe]
             target = float(up[0]) if up else safe
-        zz = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), target, safe)
+        notes = []
+        zz, sure = p.plate_pose(cfg.get("x", 135), cfg.get("y", 10), target, safe, log=notes.append)
         time.sleep(2)
+        yy = min(float(cfg.get("y", 10)), getattr(p, "FRONT_Y_MAX", 999))
+        pre = f"Kopf X{cfg.get('x')} Y{yy:g}"
         if zz is None:
-            return f"Kopf X{cfg.get('x')} Y{cfg.get('y')}, Z nicht referenziert – Bett bleibt stehen", True, None
+            return f"{notes[-1] if notes else 'Position unbekannt'} – bitte selbst prüfen", True, None
+        if not sure:
+            return f"{pre}, Bett vermutlich bei {zz:g} mm (Z nicht referenziert) – bitte selbst prüfen", True, None
         h = int(round(zz)) if heights and abs(zz - round(zz)) < 0.05 and int(round(zz)) in heights else None
-        txt = f"Kopf X{cfg.get('x')} Y{cfg.get('y')}, Bett auf {zz:g} mm"
+        txt = f"{pre}, Bett auf {zz:g} mm"
         if zz > want + 0.05:
             txt += f" statt {want:g} mm (Sicherheitsabstand: letzter Druck {last:g} mm hoch + 20 mm)"
         abw = zz > want + 0.05 and h is None
@@ -649,7 +654,7 @@ class KlipperGuard:
         jpg = None
         abw, href = False, None
         try:
-            self._log(p, "fahre in die Prüfposition (ggf. erst Home All) …")
+            self._log(p, "fahre in die Prüfposition (ohne Z-Referenzfahrt) …")
             pos, abw, href = self.pose(p)
             if pos:
                 self._log(p, f"Prüfposition: {pos}")
