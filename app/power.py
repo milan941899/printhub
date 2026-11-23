@@ -22,6 +22,8 @@ log = logging.getLogger("strom")
 KEEP_GRUND = {
     "druck": "Druck läuft", "heiss": "Düse noch heiß", "auftrag": "nächster Auftrag startet gleich",
     "waechter": "Druckwächter startet gerade einen Auftrag", "frisch": "gerade erst eingeschaltet",
+    "doppelt": "Steckdose gehört auch zu einem anderen Drucker",
+    "fremdlast": "Drucker offline, aber an der Steckdose läuft etwas",
     "update": "Update läuft", "offline": "Drucker antwortet nicht (fährt hoch oder Update?)", "startet": "Klipper startet gerade",
 }
 
@@ -55,10 +57,21 @@ class Power:
                 plug = self.bb.plug_for_printer(bb_pid)
                 if plug:
                     s.update(plug_id=plug["id"], plug_name=plug.get("name"), bb_auto_off=plug.get("auto_off"),
-                             bb_auto_on=plug.get("auto_on"), bb_printer=bb_pid)
+                             bb_auto_on=plug.get("auto_on"), bb_printer=bb_pid,
+                             plug_ip=str(plug.get("ip_address") or plug.get("ip") or plug.get("host") or "").strip())
         except Exception as e:
             s["plug_err"] = str(e)
         return s.get("plug_id")
+
+    def _shared(self, p, s):
+        """Die Bambuddy-Steckdose dieses Druckers ist die Shelly eines anderen Druckers (z. B. umgesteckt)."""
+        ip = s.get("plug_ip")
+        if not ip:
+            return False
+        for o in self.printers.values():
+            if o is not p and o.shelly and str(getattr(o.shelly, "host", "")).split(":")[0] == ip.split(":")[0]:
+                return True
+        return False
 
     def _wstate(self):
         """Zustand des Druckwächters. „Beschäftigt“ gilt bis zu 3 h (er wartet evtl. lange auf deine Antwort),
@@ -184,6 +197,8 @@ class Power:
             return True, ""
         if st.get("online") and (st.get("printing") or st.get("paused")):
             return False, "es läuft ein Druck"
+        if self._shared(p, self.st.get(p.id, {})):
+            return False, "diese Bambuddy-Steckdose ist die Shelly eines anderen Druckers – in Bambuddy vom Drucker lösen"
         t = self._nozzle(st)
         lim = float(self.settings.get("power_off_temp") or 45)
         if t is not None and t >= lim:
@@ -216,6 +231,11 @@ class Power:
         """Grund, den Drucker anzulassen – oder None."""
         if st.get("printing") or st.get("paused"):
             return "druck"
+        if self._shared(p, s):
+            return "doppelt"
+        w = p.shelly.watts if (p.shelly and getattr(p.shelly, "watts", None) is not None) else s.get("watts")
+        if not st.get("online") and w is not None and w > 15:
+            return "fremdlast"
         t = self._nozzle(st)
         if t is not None and t >= float(self.settings.get("power_off_temp") or 45):
             return "heiss"
