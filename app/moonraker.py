@@ -166,7 +166,9 @@ class MoonrakerPrinter(BasePrinter):
         cur = f"T{(th or 'extruder').replace('extruder', '') or '0'}" if th else None
         heads = self.store.data.setdefault("heads", {}).setdefault(self.id, {})
         th_ = st.get("toolhead") or {}
-        if "z" in (th_.get("homed_axes") or "").lower() and (th_.get("position") or [None] * 3)[2] is not None:
+        # nicht während PrintHub selbst fährt: das X/Y-Homing des U1 markiert Z kurz als referenziert (z_hop ab 0)
+        if not getattr(self, "_posing", False) and "xyz" in "".join(sorted((th_.get("homed_axes") or "").lower())) \
+                and (th_.get("position") or [None] * 3)[2] is not None:
             pz = self.store.data.setdefault("park_z", {})      # letzte sichere Betthöhe (für Prüfung nach dem Einschalten)
             z_ = round(float(th_["position"][2]), 1)
             if abs((pz.get(self.id) if pz.get(self.id) is not None else -99) - z_) >= 0.5:
@@ -693,6 +695,14 @@ class MoonrakerPrinter(BasePrinter):
     FRONT_Y_MAX = 30     # Prüfposition: Kopf steht immer vorne (über dem Rand, nicht über der Plattenmitte)
 
     def plate_pose(self, x, y, z, min_z=None, log=None):
+        self._posing = True
+        try:
+            return self._plate_pose(x, y, z, min_z, log)
+        finally:
+            time.sleep(3)           # letzte Statusmeldungen der Fahrt abwarten, dann wieder mitschreiben
+            self._posing = False
+
+    def _plate_pose(self, x, y, z, min_z=None, log=None):
         """Prüfposition fürs Plattenfoto anfahren – so, dass nichts mit einem liegengebliebenen Teil kollidieren kann:
           • NIE Z referenzieren: der U1 misst Z in der Plattenmitte (135/135) – genau dort steht ein vergessenes Teil.
           • Bett zuerst nur nach UNTEN (weg von der Düse), dann Kopf nach vorne, erst dann Bett hoch –

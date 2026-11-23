@@ -729,11 +729,18 @@ class KlipperGuard:
             self._plog(p, kind, steps, r)
             return r, True, None
         h = int(round(zz)) if heights and abs(zz - round(zz)) < 0.05 and int(round(zz)) in heights else None
+        near = ""
+        if h is None and heights:
+            # z. B. nach erneutem X/Y-Homing (Leerlauf-Timeout) 5 mm tiefer: nächstes Referenzbild bis 5 mm Abstand nehmen.
+            # Höhenunterschied macht den Vergleich eher strenger (mehr Abweichung) – im Zweifel wird nachgefragt.
+            c = min(heights, key=lambda v: abs(v - zz))
+            if abs(c - zz) <= 5.1:
+                h, near = int(c), f" (Bett {zz:g} mm, nächstes Referenzbild)"
         txt = f"{pre}, Bett auf {zz:g} mm"
-        if zz > want + 0.05:
+        if zz > want + 0.05 and not near:
             txt += f" statt {want:g} mm (Sicherheitsabstand: letzter Druck {last:g} mm hoch + 20 mm)"
-        abw = zz > want + 0.05 and h is None
-        txt += f" – Vergleich mit Referenzbild {h} mm" if h is not None else (" – kein Referenzbild für diese Höhe" if abw else "")
+        abw = h is None and abs(zz - want) > 0.05
+        txt += f" – Vergleich mit Referenzbild {h} mm{near}" if h is not None else (" – kein Referenzbild für diese Höhe" if abw else "")
         self._plog(p, kind, steps, txt)
         return txt, abw, h
 
