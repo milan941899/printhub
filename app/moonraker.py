@@ -182,7 +182,12 @@ class MoonrakerPrinter(BasePrinter):
             z = ((st.get("gcode_move") or {}).get("gcode_position") or [0, 0, 0])[2]
             mz = self.store.data.setdefault("max_z", {})
             prog = (st.get("virtual_sdcard") or {}).get("progress") or 0
-            if z and z < 400 and 0.01 < prog < 0.995 and z > (mz.get(self.id) or 0) + 0.5:   # ohne Start-/End-G-Code
+            # nur zählen, während wirklich extrudiert wird: der End-G-Code fährt das Bett noch vor 99,5 % ganz runter
+            # (sonst „letzte Druckhöhe 200 mm“ bei einem 20-mm-Würfel)
+            extruding = time.time() - getattr(self, "_extr_t", 0) < 3
+            layer = ((st.get("print_stats") or {}).get("info") or {}).get("current_layer")
+            if z and z < 400 and 0.01 < prog < 0.995 and extruding and (layer is None or layer >= 1) \
+                    and z > (mz.get(self.id) or 0) + 0.5:
                 mz[self.id] = round(z, 1)
         if state == "printing" and cur:
             h = heads.setdefault(cur, {"sec": 0.0, "changes": 0})
