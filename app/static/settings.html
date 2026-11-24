@@ -1250,7 +1250,7 @@ function nrKlipper() {
   const yes = (ok, a, b) => `<span style="color:${ok ? "var(--ok)" : "var(--warn)"}">${ok ? "✓ " + a : "⚠ " + b}</span>`;
   $("nr-kl-list").innerHTML = list.map(k => `<div class="row"><div><div class="t">${esc(k.name)}${k.online ? "" : ` <span class="muted small">(nicht erreichbar)</span>`}</div>
       <div class="d">${yes(k.queue, `Warteschlange aktiv${k.queue_state ? " · " + esc(k.queue_state) : ""}`, "Warteschlange fehlt – in moonraker.conf <code>[job_queue]</code> eintragen")}
-        · ${yes(k.lock, `Startsperre aktiv${k.lock_version ? " (v" + k.lock_version + ")" : ""}`, "Startsperre nicht installiert")}
+        · ${yes(k.lock, `Startsperre aktiv${k.lock_version ? " (v" + k.lock_version + ")" : ""}`, "Startsperre nicht installiert")}${k.lock && (k.lock_version || 1) < 2 ? ` · <b style="color:var(--warn,#d97706)">neue Makro-Version 2 (Parken nach Druckende) – Datei unten neu kopieren und Klipper neu starten</b>` : ""}
         ${k.blocked ? `<br>Zuletzt abgewiesen: ${esc(k.blocked)}` : ""}</div></div>
       ${k.lock ? "" : `<button type="button" class="small-btn" onclick="document.querySelector('.nr-kl-macro').open=true">Einrichten</button>`}</div>`).join("");
   if (NR.klipper_macro && $("nr-kl-cfg").textContent === "–") $("nr-kl-cfg").textContent = NR.klipper_macro;

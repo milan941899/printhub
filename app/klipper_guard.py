@@ -332,8 +332,29 @@ class KlipperGuard:
         s["was_printing"] = False
 
         def run():
+            m = p.park_macro() if hasattr(p, "park_macro") else None
+            gp = float((m or {}).get("geparkt", -1) or -1)
+            if m is not None and gp >= 0:
+                # das Makro hat beim Druckende (vor M84) geparkt – Höhe ist verlässlich
+                self.store.data.setdefault("park_ok", {})[p.id] = round(gp, 1)
+                self.store.data.setdefault("park_z", {})[p.id] = round(gp, 1)
+                with self.store.lock:
+                    self.store._save()
+                try:
+                    p.reset_park_macro()
+                except Exception:
+                    pass
+                hop = p.z_hop() if hasattr(p, "z_hop") else 0
+                self._plog(p, "Parken", [[round(time.time(), 1),
+                                          f"Makro beim Druckende: Teil {float(m.get('top') or 0):g} mm hoch → Bett auf {gp:g} mm, "
+                                          f"Kopf X{m.get('x')} Y{m.get('y')} (Referenzen {m.get('heights')})"]],
+                           f"geparkt auf {gp:g} mm → nach dem Einschalten {gp + hop:g} mm")
+                self._log(p, f"nach Druckende: Bett vom Makro auf {gp:g} mm geparkt")
+                return
             r = self.park(p)
             if r:
+                if m is None and "nicht referenziert" in r:
+                    r += " – Startsperre-Makro v2 installieren, dann parkt der U1 selbst vor dem Abschalten der Motoren"
                 self._log(p, f"nach Druckende: {r}")
         threading.Thread(target=run, daemon=True).start()
 
@@ -620,8 +641,23 @@ class KlipperGuard:
             if a == "chk":
                 n = max(0, n - 1)
 
+    def push_park(self, p):
+        """Werte fürs Parken nach Druckende ans Makro geben (Startsperre v2). Still, wenn das Makro fehlt."""
+        try:
+            if not p.online or not hasattr(p, "park_macro") or p.park_macro() is None:
+                return False
+            cfg = getattr(p, "plate_pose_cfg", None) or {}
+            heights = self.plate.ref_heights(p.id) if self.plate else []
+            p.push_park_cfg(bool(cfg.get("on")), cfg.get("x", 135), min(float(cfg.get("y", 10)), p.FRONT_Y_MAX),
+                            max(5.0, float(cfg.get("z", 30) or 30)), p.z_hop(), heights)
+            return True
+        except Exception as e:
+            log.info("[%s] Park-Werte nicht gesetzt: %s", p.id, e)
+            return False
+
     def _start_file(self, p, job):
         self._s(p)["released_until"] = time.time() + 180     # dieser Start ist erlaubt (Prüfung beim Druckbeginn)
+        self.push_park(p)
         lk = (self._s(p)["lock"] or {})
         if lk.get("lock"):
             p.release_start(job["filename"])

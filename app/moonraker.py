@@ -716,6 +716,24 @@ class MoonrakerPrinter(BasePrinter):
     def gcode(self, script, timeout=30):
         return self._api("POST", "/printer/gcode/script", params={"script": script}, timeout=timeout)
 
+    def park_macro(self):
+        """Variablen des Park-Makros (ab Startsperre v2) oder None, wenn nicht installiert."""
+        try:
+            st = self._api("GET", "/printer/objects/query?gcode_macro%20_PRINTHUB_PARK", timeout=5)
+            return (st.get("status") or {}).get("gcode_macro _PRINTHUB_PARK")
+        except Exception:
+            return None
+
+    def push_park_cfg(self, on, x, y, z, hop, heights):
+        hs = "[" + ",".join(f"{float(h):g}" for h in sorted(heights)) + "]"
+        cmds = [f"SET_GCODE_VARIABLE MACRO=_PRINTHUB_PARK VARIABLE={k} VALUE={v}" for k, v in
+                (("on", 1 if on else 0), ("x", f"{float(x):.1f}"), ("y", f"{float(y):.1f}"), ("z", f"{float(z):.1f}"),
+                 ("hop", f"{float(hop):.1f}"), ("heights", hs))]
+        self.gcode("\n".join(cmds), timeout=15)
+
+    def reset_park_macro(self):
+        self.gcode("SET_GCODE_VARIABLE MACRO=_PRINTHUB_PARK VARIABLE=geparkt VALUE=-1.0", timeout=10)
+
     def release_start(self, fn):
         """Startsperre für 60 s freigeben und die Datei starten."""
         self.gcode("PRINTHUB_FREIGABE", timeout=10)
