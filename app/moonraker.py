@@ -728,7 +728,7 @@ class MoonrakerPrinter(BasePrinter):
         hs = "[" + ",".join(f"{float(h):g}" for h in sorted(heights)) + "]"
         cmds = [f"SET_GCODE_VARIABLE MACRO=_PRINTHUB_PARK VARIABLE={k} VALUE={v}" for k, v in
                 (("on", 1 if on else 0), ("x", f"{float(x):.1f}"), ("y", f"{float(y):.1f}"), ("z", f"{float(z):.1f}"),
-                 ("hop", f"{float(hop):.1f}"), ("heights", hs))]
+                 ("hop", f"{float(hop):.1f}"), ("heights", hs), ("top", "-1.0"), ("geparkt", "-1.0"))]
         self.gcode("\n".join(cmds), timeout=15)
 
     def reset_park_macro(self):
