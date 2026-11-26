@@ -4938,6 +4938,15 @@ async def lifespan(app):
             store.data["fw_event_added"] = True
         except Exception as e:
             log.info("fw_update-Meldung nicht eingeschaltet: %s", e)
+    # Foto bei „Erste Schicht fertig“ einmalig einschalten
+    if not store.data.get("fl_photo_added"):
+        try:
+            cur = list(settings.get("notify_photo") or [])
+            if "first_layer" not in cur:
+                settings.update({"notify_photo": cur + ["first_layer"]})
+            store.data["fl_photo_added"] = True
+        except Exception as e:
+            log.info("Foto erste Schicht nicht eingeschaltet: %s", e)
     threading.Thread(target=fwcheck.loop, daemon=True).start()
     threading.Thread(target=nachtruhe.supervise, daemon=True).start()
     yield

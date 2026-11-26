@@ -22,7 +22,7 @@ SPEC = {
     "ntfy_token": (str, ""),
     "click_url": (str, ""),
     "notify_events": (list, DEFAULT_EVENTS),
-    "notify_photo": (list, ["finish", "fail", "pause", "error", "plate"]),
+    "notify_photo": (list, ["finish", "fail", "pause", "error", "plate", "first_layer"]),
     "notify_prio": (dict, {}),
     "tg_token": (str, ""),                 # Telegram-Bot (von @BotFather)
     "tg_chat": (str, ""),                  # gekoppelter Chat (wird beim „Verbinden“ automatisch gesetzt)
