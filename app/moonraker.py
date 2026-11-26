@@ -259,9 +259,23 @@ class MoonrakerPrinter(BasePrinter):
         """Höhe des Objekts laut Slicer (Moonraker-Metadaten) oder None."""
         try:
             h = float((self.file_meta(fn) or {}).get("object_height") or 0)
-            return h if 0 < h < 400 else None
+            if 0 < h < 400:
+                return h
         except Exception:
-            return None
+            pass
+        # Moonraker auf dem U1 liefert bei Orca-Dateien keine Höhe → selbst im Dateikopf nachsehen
+        # (OrcaSlicer schreibt „; max_z_height: 50.05“ in den HEADER_BLOCK)
+        try:
+            r = self.s.get(self.base + "/server/files/gcodes/" + quote(fn), headers={**(self.headers or {}),
+                           "Range": "bytes=0-32767"}, timeout=10, stream=True)
+            head = r.raw.read(32768, decode_content=True).decode("utf-8", "ignore") if r.ok else ""
+            r.close()
+            m = re.search(r"max_z_height\s*[:=]\s*([0-9.]+)", head)
+            if m and 0 < float(m.group(1)) < 400:
+                return float(m.group(1))
+        except Exception:
+            pass
+        return None
 
     def _max_z_from_meta(self, fn):
         """… und gleich die Objekthöhe laut Slicer als „letzte Druckhöhe“ setzen (sicher: bei Abbruch eher zu hoch)."""

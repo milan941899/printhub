@@ -35,6 +35,12 @@ def _short(fn):
     return re.sub(r"\.gcode$", "", n, flags=re.I)
 
 
+def _detail(msg):
+    """„Platte leer (größtes Teil …)“ → „größtes Teil …“ (keine doppelten Klammern im Protokoll)."""
+    m = re.match(r"^(?:Platte leer|Etwas liegt auf der Platte)\s*\((.*)\)\s*$", msg or "")
+    return m.group(1) if m else (msg or "")
+
+
 class KlipperGuard:
     def __init__(self, printers, plate, power, notifier, store, nachtruhe, read_env, plans_get, plans_save, wcfg, qlog):
         self.printers, self.plate, self.power, self.notifier, self.store = printers, plate, power, notifier, store
@@ -286,7 +292,7 @@ class KlipperGuard:
         s["answer"] = act
         if act == "chk" and s.get("asking") == "plate":
             self.clear_height(p)      # „Platte frei“ von dir bestätigt → Bett darf wieder auf Prüfhöhe
-        return {"chk": "Prüfe nochmal …", "force": "Starte trotz Platte …", "del": "Auftrag wird abgebrochen …"}.get(act, "?")
+        return {"chk": "Prüfe nochmal …", "force": "Starte …", "del": "Auftrag wird abgebrochen …"}.get(act, "?")
 
     # ---------- Hauptschleife ----------
     def start(self):
@@ -547,29 +553,37 @@ class KlipperGuard:
                     break
                 if res is True:
                     self.clear_height(p)
-                    self._log(p, f"Platte leer ✓ ({msg})")
+                    self._log(p, f"Platte leer ✓ – {_detail(msg)}")
                     break
                 n += 1
                 belegt = res is False
-                was = "Platte belegt" if belegt else "Platte nicht prüfbar" if jpg else "Kamera ohne Bild"
-                self._log(p, f"{was} ({msg}) – Rückfrage {n}/{tries}")
+                was = "Platte belegt" if belegt else "Platte bitte selbst prüfen" if jpg else "Kein Kamerabild – Platte bitte selbst prüfen"
+                self._log(p, f"{was}: {_detail(msg)} – Rückfrage {n}/{tries}")
                 if n > tries:
-                    self._abort(p, s, jid, name, switched, f"nach {tries} Rückfragen ohne freie Platte")
+                    self._abort(p, s, jid, name, switched, f"nach {tries} Rückfragen keine freie Platte bestätigt")
                     return
-                s["waiting"] = f"wartet: {was}?"
+                s["waiting"] = f"wartet: {was}"
                 s["answer"], s["asking"] = None, "plate"
-                self.notifier.send("plate", f"{p.name}: {was}? 🟥",
-                                   f"{name}\n{msg}\nOhne Antwort prüfe ich in {wait_min:g} min nochmal ({n}/{tries}).",
-                                   "warning", "high", force=False, photo=(lambda b=jpg: b) if jpg else None,
-                                   buttons=[[("✅ Platte frei – prüfen", f"ph:kw:{p.id}:chk:{jid}"),
-                                             ("▶ Trotzdem drucken", f"ph:kw:{p.id}:force:{jid}")],
-                                            [("🗑 Abbrechen", f"ph:kw:{p.id}:del:{jid}")]])
+                if belegt:
+                    title, body = f"{p.name}: Platte belegt? 🟥", f"{name}\n{msg}\nBitte abräumen. Ohne Antwort prüfe ich in {wait_min:g} min nochmal ({n}/{tries})."
+                    btn = [[("✅ Abgeräumt – nochmal prüfen", f"ph:kw:{p.id}:chk:{jid}"),
+                            ("▶ Trotzdem drucken", f"ph:kw:{p.id}:force:{jid}")],
+                           [("🗑 Abbrechen", f"ph:kw:{p.id}:del:{jid}")]]
+                else:      # nochmal prüfen bringt hier nichts – Frage direkt an dich
+                    title, body = f"{p.name}: {was} 🟨", f"{name}\n{msg}\nIst die Platte frei? Ohne Antwort frage ich in {wait_min:g} min nochmal ({n}/{tries})."
+                    btn = [[("✅ Platte ist frei – drucken", f"ph:kw:{p.id}:force:{jid}")],
+                           [("🗑 Abbrechen", f"ph:kw:{p.id}:del:{jid}")]]
+                self.notifier.send("plate", title, body, "warning", "high", force=False,
+                                   photo=(lambda b=jpg: b) if jpg else None, buttons=btn)
                 t0 = time.time()
                 while s["answer"] is None and time.time() - t0 < wait_min * 60:
                     time.sleep(2)
                 a = s["answer"]
                 if a == "force":
-                    self._log(p, "„Trotzdem drucken“ – starte ohne freie Platte")
+                    self._log(p, "„Trotzdem drucken“ – starte, ohne dass die Prüfung „leer“ gemeldet hat" if belegt
+                              else "Platte von dir als frei bestätigt – starte")
+                    if not belegt:
+                        self.clear_height(p)      # du hast „frei“ bestätigt → kein Abstand zu einem alten Druck nötig
                     break
                 if a == "del":
                     self._abort(p, s, jid, name, switched, "von Hand abgebrochen")
@@ -799,9 +813,13 @@ class KlipperGuard:
             c = min(heights, key=lambda v: abs(v - zz))
             if abs(c - zz) <= 5.1:
                 h, near = int(c), f" (Bett {zz:g} mm, nächstes Referenzbild)"
+        parked = any("Höhe gilt als bekannt" in n for n in notes)
         txt = f"{pre}, Bett auf {zz:g} mm"
         if zz > want + 0.05 and not near:
-            txt += f" statt {want:g} mm (Sicherheitsabstand: letzter Druck {last:g} mm hoch + 20 mm)"
+            if parked:
+                txt += f" (so geparkt – nach dem Einschalten wird Z nicht verfahren)"
+            else:
+                txt += f" statt {want:g} mm (Sicherheitsabstand: letzter Druck {last:g} mm hoch + 20 mm)"
         abw = h is None and abs(zz - want) > 0.05
         txt += f" – Vergleich mit Referenzbild {h} mm{near}" if h is not None else (" – kein Referenzbild für diese Höhe" if abw else "")
         self._plog(p, kind, steps, txt)
@@ -828,7 +846,16 @@ class KlipperGuard:
                     return "fehler", None, f"Kamera: {e}"
                 time.sleep(5)
         if abw:   # Bild aus anderer Höhe → mit den Referenzbildern nicht vergleichbar: nachfragen statt raten
-            return "fehler", jpg, "Bett konnte nicht auf eine Höhe mit Referenzbild (Sicherheitsabstand zum letzten Druck) – bitte Foto ansehen"
+            pz = pos or ""
+            if "zu nah" in pz:
+                why = "Bett steht zu nah an der Düse, um es ohne Z-Homing zu verfahren (letzte Druckhöhe + 20 mm)"
+            elif "vermutlich" in pz or "unbekannt" in pz:
+                why = "Betthöhe nicht sicher bekannt (Drucker wurde nicht von PrintHub geparkt)"
+            elif "kein Referenzbild" in pz:
+                why = "für diese Betthöhe gibt es kein Referenzbild"
+            else:
+                why = "Prüfposition nicht erreicht"
+            return "fehler", jpg, f"Automatischer Vergleich nicht möglich: {why} – bitte Foto ansehen"
         r = self.plate.check(p.id, jpg, height=href)
         if r.get("needs_calibration"):
             return None, jpg, r.get("message") or "nicht kalibriert"
