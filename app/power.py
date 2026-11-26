@@ -272,9 +272,30 @@ class Power:
                 pass
         return None
 
+    def in_night(self, now=None):
+        """Liegt die Zeit im eingestellten Zeitfenster (z. B. 23:00–07:00, auch über Mitternacht)?"""
+        if not self.settings.get("power_night"):
+            return False
+
+        def mins(v, d):
+            try:
+                h, m = str(v or d).strip().split(":")
+                return (int(h) % 24) * 60 + int(m) % 60
+            except Exception:
+                h, m = d.split(":")
+                return int(h) * 60 + int(m)
+        a = mins(self.settings.get("power_night_from"), "23:00")
+        b = mins(self.settings.get("power_night_to"), "07:00")
+        t = time.localtime(now or time.time())
+        c = t.tm_hour * 60 + t.tm_min
+        return a <= c < b if a < b else (c >= a or c < b) if a != b else False
+
     def tick(self):
         auto = bool(self.settings.get("power_auto"))
         after = float(self.settings.get("power_after_min") or 10) * 60
+        night = self.in_night()
+        if night:
+            after = max(0.0, float(self.settings.get("power_night_after_min") or 0)) * 60
         idle = float(self.settings.get("power_idle_min") or 30) * 60
         now = time.time()
         for p in self.printers.values():
@@ -302,7 +323,7 @@ class Power:
             keep = self._keep(p, st, s)
             s["keep"] = keep
             s["off_at"] = None if keep else base
-            s["mode"] = "nach Druck" if s.get("ended_at") else "Leerlauf"
+            s["mode"] = ("nach Druck" + (" (Nacht)" if night else "")) if s.get("ended_at") else "Leerlauf"
             if not auto or keep or now < base:
                 continue
             try:

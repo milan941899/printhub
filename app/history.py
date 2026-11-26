@@ -113,6 +113,28 @@ class History:
         with self.lock, self._db() as db:
             db.execute("UPDATE prints SET photo=? WHERE id=?", (name, pid))
 
+    def clear_old_photos(self, media_dir, days):
+        """Endfotos älter als „days“ Tage löschen (Datei + Eintrag), Modellbilder bleiben."""
+        import os
+        cut, n = time.time() - days * 86400, 0
+        with self.lock, self._db() as db:
+            rows = db.execute("SELECT id, photo FROM prints WHERE photo IS NOT NULL AND photo != ''").fetchall()
+            for pid, name in rows:
+                path = os.path.join(media_dir, os.path.basename(name))
+                try:
+                    old = os.path.getmtime(path) < cut
+                except OSError:
+                    old = False          # Datei fehlt schon – Eintrag lassen (zeigt dann eben nichts)
+                if not old:
+                    continue
+                try:
+                    os.remove(path)
+                except OSError:
+                    continue
+                db.execute("UPDATE prints SET photo=NULL WHERE id=?", (pid,))
+                n += 1
+        return n
+
     def set_video(self, pid, name):
         with self.lock, self._db() as db:
             db.execute("UPDATE prints SET video=? WHERE id=?", (name, pid))

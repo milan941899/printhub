@@ -240,6 +240,10 @@
       <div class="unit-in"><input type="number" min="0" max="300" step="1" data-k="photo_delay" style="width:90px"> s</div>
     </div>
     <div class="row">
+      <div><div class="t">Endfotos aufräumen</div><div class="d">Fotos im Verlauf nach dieser Zeit löschen (0 = nie) · Modellbilder bleiben</div></div>
+      <div class="unit-in"><input type="number" min="0" max="3650" step="1" data-k="photo_keep_days" style="width:90px"> Tage</div>
+    </div>
+    <div class="row">
       <div><div class="t">🔁 Ersatzrolle vorschlagen</div><div class="d">Reicht die eingelegte Rolle nicht: passende Rolle aus dem Lager mit Knopf „Diese einlegen“</div></div>
       <label class="switch"><input type="checkbox" data-k="swap_suggest"><span></span></label>
     </div>
@@ -408,6 +412,12 @@
       <div class="unit-in"><input type="number" min="0" max="240" step="1" data-k="power_after_min" style="width:80px"> min</div></div>
     <div class="row"><div><div class="t">Leerlauf</div><div class="d">Eingeschaltet, aber kein Druck (z. B. von Hand eingeschaltet und vergessen)</div></div>
       <div class="unit-in"><input type="number" min="5" max="600" step="5" data-k="power_idle_min" style="width:80px"> min</div></div>
+    <div class="row"><div><div class="t">🌙 Zeitfenster</div><div class="d">In dieser Zeit nach dem Druck schneller ausschalten (Düse muss trotzdem kühl sein)</div></div>
+      <label class="switch"><input type="checkbox" data-k="power_night"><span></span></label></div>
+    <div class="row"><div><div class="t">Von – bis</div><div class="d">Auch über Mitternacht, z. B. 23:00 – 07:00</div></div>
+      <div class="unit-in"><input type="time" data-k="power_night_from"> – <input type="time" data-k="power_night_to"></div></div>
+    <div class="row"><div><div class="t">Wartezeit im Zeitfenster</div><div class="d">Nach Druckende (0 = sobald die Düse kühl ist)</div></div>
+      <div class="unit-in"><input type="number" min="0" max="240" step="1" data-k="power_night_after_min" style="width:80px"> min</div></div>
     <div class="row"><div><div class="t">Erst aus unter</div><div class="d">Düsentemperatur – schont das Hotend</div></div>
       <div class="unit-in"><input type="number" min="30" max="80" step="1" data-k="power_off_temp" style="width:80px"> °C</div></div>
     <div class="row" id="pw-bb-row" hidden><div><div class="t">Bambuddy „Auto Aus“</div><div class="d" id="pw-bb">–</div></div>

@@ -4663,6 +4663,21 @@ def _tg_strom(args):
     return out or [{"title": "Keine Steckdose eingerichtet", "text": "Shelly in PrintHub oder Steckdose in Bambuddy fehlt.", "tags": "warning"}]
 
 
+def _photo_cleanup():
+    """Alle 6 h: Endfotos im Verlauf nach der eingestellten Zeit löschen."""
+    time.sleep(120)
+    while True:
+        try:
+            days = int(settings.get("photo_keep_days") or 0)
+            if days > 0:
+                n = history.clear_old_photos(MEDIA_DIR, days)
+                if n:
+                    log.info("Aufräumen: %d Endfotos älter als %d Tage gelöscht", n, days)
+        except Exception as e:
+            log.warning("Endfotos aufräumen fehlgeschlagen: %s", e)
+        time.sleep(6 * 3600)
+
+
 def _tg_button(data):
     parts = data.split(":")
     if parts[1] == "q" and len(parts) == 4:
@@ -4941,6 +4956,7 @@ async def lifespan(app):
     import threading
     threading.Thread(target=lambda: (time.sleep(20), _backfill_codes()), daemon=True).start()
     threading.Thread(target=_sampler, daemon=True).start()
+    threading.Thread(target=_photo_cleanup, daemon=True).start()
     threading.Thread(target=autobackup.loop, daemon=True).start()
     threading.Thread(target=telegram.loop, daemon=True).start()
     threading.Thread(target=power.loop, daemon=True).start()
