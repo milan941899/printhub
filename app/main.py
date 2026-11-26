@@ -4498,17 +4498,26 @@ def _tg_filament(args):
 
 
 def _tg_bild(args):
-    out = []
-    for p in printers.values():
-        if not p.camera:
-            continue
+    """Kamerabilder aller Drucker – parallel und ohne auf offline-Drucker zu warten (die Bambu-Kamera wartet
+    sonst bis zu 10 s auf ein Bild, das nie kommt)."""
+    from concurrent.futures import ThreadPoolExecutor
+    cams = [p for p in printers.values() if p.camera]
+    if not cams:
+        return [{"title": "Keine Kamera eingerichtet", "text": "", "tags": "warning"}]
+
+    def one(p):
         st = p.status()
+        if not st.get("online", getattr(p, "online", True)):
+            return {"title": f"{p.name}: offline", "text": "kein Kamerabild", "tags": "warning"}
         info = f"{st.get('state', '')}" + (f" {st.get('progress') or 0} %" if st.get("printing") else "")
         try:
-            out.append({"title": f"{p.name}", "text": info, "photo": p.camera.snapshot(), "tags": "printer"})
+            return {"title": f"{p.name}", "text": info, "photo": p.camera.snapshot(wait=6), "tags": "printer"}
         except Exception as e:
-            out.append({"title": f"{p.name}: kein Kamerabild", "text": str(e), "tags": "warning"})
-    return out or [{"title": "Keine Kamera eingerichtet", "text": "", "tags": "warning"}]
+            return {"title": f"{p.name}: kein Kamerabild", "text": str(e), "tags": "warning"}
+    with ThreadPoolExecutor(max_workers=len(cams)) as ex:
+        out = list(ex.map(one, cams))
+    # Bilder zuerst, offline-Hinweise danach
+    return sorted(out, key=lambda o: 0 if o.get("photo") else 1)
 
 
 def _tg_queue(args):
