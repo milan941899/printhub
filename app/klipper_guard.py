@@ -346,7 +346,8 @@ class KlipperGuard:
                     pass
                 hop = p.z_hop() if hasattr(p, "z_hop") else 0
                 self._plog(p, "Parken", [[round(time.time(), 1),
-                                          f"Makro beim Druckende: Teil {float(m.get('top') or 0):g} mm hoch → Bett auf {gp:g} mm, "
+                                          f"Makro beim Druckende: Teil {max(float(m.get('top') or 0), float(m.get('tmax') or 0)):g} mm hoch "
+                                          f"(gemessen {float(m.get('top') or 0):g}, Slicer {float(m.get('tmax') or 0):g}) → Bett auf {gp:g} mm, "
                                           f"Kopf X{m.get('x')} Y{m.get('y')} (Referenzen {m.get('heights')})"]],
                            f"geparkt auf {gp:g} mm → nach dem Einschalten {gp + hop:g} mm")
                 self._log(p, f"nach Druckende: Bett vom Makro auf {gp:g} mm geparkt")
@@ -641,15 +642,17 @@ class KlipperGuard:
             if a == "chk":
                 n = max(0, n - 1)
 
-    def push_park(self, p):
+    def push_park(self, p, fn=None):
         """Werte fürs Parken nach Druckende ans Makro geben (Startsperre v2). Still, wenn das Makro fehlt."""
         try:
             if not p.online or not hasattr(p, "park_macro") or p.park_macro() is None:
                 return False
             cfg = getattr(p, "plate_pose_cfg", None) or {}
             heights = self.plate.ref_heights(p.id) if self.plate else []
+            m = p.park_macro() or {}
+            tmax = p.object_height(fn) if fn and "tmax" in m else None      # nur, wenn das Makro (v3) es kennt
             p.push_park_cfg(bool(cfg.get("on")), cfg.get("x", 135), min(float(cfg.get("y", 10)), p.FRONT_Y_MAX),
-                            max(5.0, float(cfg.get("z", 30) or 30)), p.z_hop(), heights)
+                            max(5.0, float(cfg.get("z", 30) or 30)), p.z_hop(), heights, tmax)
             return True
         except Exception as e:
             log.info("[%s] Park-Werte nicht gesetzt: %s", p.id, e)
@@ -657,7 +660,7 @@ class KlipperGuard:
 
     def _start_file(self, p, job):
         self._s(p)["released_until"] = time.time() + 180     # dieser Start ist erlaubt (Prüfung beim Druckbeginn)
-        self.push_park(p)
+        self.push_park(p, job.get("filename"))
         lk = (self._s(p)["lock"] or {})
         if lk.get("lock"):
             p.release_start(job["filename"])

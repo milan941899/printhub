@@ -184,10 +184,16 @@ class MoonrakerPrinter(BasePrinter):
             prog = (st.get("virtual_sdcard") or {}).get("progress") or 0
             # nur zählen, während wirklich extrudiert wird: der End-G-Code fährt das Bett noch vor 99,5 % ganz runter
             # (sonst „letzte Druckhöhe 200 mm“ bei einem 20-mm-Würfel)
-            extruding = time.time() - getattr(self, "_extr_t", 0) < 3
+            # Extrusion seit der LETZTEN Abfrage (nicht „in den letzten Sekunden“): PRINT_END zieht das Bett kurz nach
+            # der letzten Extrusion auf Z200. Dazu: Höhe wächst schichtweise – Sprünge > 3 mm sind Fahrbewegungen.
+            pos = (st.get("toolhead") or {}).get("position") or []
+            e_now = float(pos[3]) if len(pos) > 3 and pos[3] is not None else None
+            e_prev, self._mz_e = getattr(self, "_mz_e", None), e_now
+            extruding = e_now is not None and e_prev is not None and e_now - e_prev > 0.05
             layer = ((st.get("print_stats") or {}).get("info") or {}).get("current_layer")
+            cur_max = mz.get(self.id) or 0
             if z and z < 400 and 0.01 < prog < 0.995 and extruding and (layer is None or layer >= 1) \
-                    and z > (mz.get(self.id) or 0) + 0.5:
+                    and z > cur_max + 0.5 and (cur_max <= 0 or z <= cur_max + 3):
                 mz[self.id] = round(z, 1)
         if state == "printing" and cur:
             h = heads.setdefault(cur, {"sec": 0.0, "changes": 0})
@@ -232,7 +238,8 @@ class MoonrakerPrinter(BasePrinter):
                 extra = {"filename": ps.get("filename", "")}
                 if isinstance(hm, list) and hm:
                     extra["head_map"] = hm[:32]
-                self.store.data.setdefault("max_z", {})[self.id] = 0     # neue Höhe messen
+                self.store.data.setdefault("max_z", {})[self.id] = 0     # neue Höhe messen …
+                threading.Thread(target=self._max_z_from_meta, args=(ps.get("filename") or "",), daemon=True).start()
                 self.fan_override = {}                                     # neuer Druck: Automatik gilt wieder
                 self.job_started(ps.get("filename") or "Druck", extra)
             elif job is not None:
@@ -247,6 +254,21 @@ class MoonrakerPrinter(BasePrinter):
                 self._grab_end_shot(progress)
         elif job is not None and state in ("complete", "cancelled", "error", "standby"):
             self.job_ended(state == "complete", progress)
+
+    def object_height(self, fn):
+        """Höhe des Objekts laut Slicer (Moonraker-Metadaten) oder None."""
+        try:
+            h = float((self.file_meta(fn) or {}).get("object_height") or 0)
+            return h if 0 < h < 400 else None
+        except Exception:
+            return None
+
+    def _max_z_from_meta(self, fn):
+        """… und gleich die Objekthöhe laut Slicer als „letzte Druckhöhe“ setzen (sicher: bei Abbruch eher zu hoch)."""
+        h = self.object_height(fn)
+        if h:
+            mz = self.store.data.setdefault("max_z", {})
+            mz[self.id] = max(mz.get(self.id) or 0, round(h, 1))
 
     def _track_extrusion(self, st):
         """Merkt, wann zuletzt wirklich extrudiert wurde (E-Position wächst). Ein Bild gilt erst als „vom Druck“,
@@ -724,11 +746,13 @@ class MoonrakerPrinter(BasePrinter):
         except Exception:
             return None
 
-    def push_park_cfg(self, on, x, y, z, hop, heights):
+    def push_park_cfg(self, on, x, y, z, hop, heights, tmax=None):
         hs = "[" + ",".join(f"{float(h):g}" for h in sorted(heights)) + "]"
         cmds = [f"SET_GCODE_VARIABLE MACRO=_PRINTHUB_PARK VARIABLE={k} VALUE={v}" for k, v in
                 (("on", 1 if on else 0), ("x", f"{float(x):.1f}"), ("y", f"{float(y):.1f}"), ("z", f"{float(z):.1f}"),
                  ("hop", f"{float(hop):.1f}"), ("heights", hs), ("top", "-1.0"), ("geparkt", "-1.0"))]
+        if tmax:      # Objekthöhe laut Slicer – das Makro nimmt den größeren Wert (ab v3)
+            cmds.append(f"SET_GCODE_VARIABLE MACRO=_PRINTHUB_PARK VARIABLE=tmax VALUE={float(tmax):.2f}")
         self.gcode("\n".join(cmds), timeout=15)
 
     def reset_park_macro(self):
