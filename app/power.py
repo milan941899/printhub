@@ -24,6 +24,7 @@ KEEP_GRUND = {
     "waechter": "Druckwächter startet gerade einen Auftrag", "frisch": "gerade erst eingeschaltet",
     "doppelt": "Steckdose gehört auch zu einem anderen Drucker",
     "fremdlast": "Drucker offline, aber an der Steckdose läuft etwas",
+    "tagsueber": "Tagsüber an (Zeitfenster)",
     "update": "Update läuft", "offline": "Drucker antwortet nicht (fährt hoch oder Update?)", "startet": "Klipper startet gerade",
 }
 
@@ -272,11 +273,39 @@ class Power:
                 pass
         return None
 
-    def in_night(self, now=None):
-        """Liegt die Zeit im eingestellten Zeitfenster (z. B. 23:00–07:00, auch über Mitternacht)?"""
-        if not self.settings.get("power_night"):
-            return False
+    DAYS = ["MO", "DI", "MI", "DO", "FR", "SA", "SO"]
 
+    def _day_path(self):
+        return os.path.join(os.path.dirname(os.path.dirname(self.wstate_path)), "tagsueber.json")
+
+    def _day_done(self, pid, key=None):
+        """Merkt pro Drucker, an welchem Tag schon eingeschaltet wurde (übersteht Neustarts) –
+        so wird ein von Hand ausgeschalteter Drucker am selben Tag nicht wieder eingeschaltet."""
+        try:
+            with open(self._day_path()) as f:
+                d = json.load(f)
+        except Exception:
+            d = {}
+        if key is None:
+            return d.get(pid)
+        if d.get(pid) != key:
+            d[pid] = key
+            try:
+                with open(self._day_path(), "w") as f:
+                    json.dump(d, f)
+            except Exception as e:
+                log.info("Tagsüber-Zustand nicht gespeichert: %s", e)
+        return key
+
+    def day_mode(self, p):
+        """„Tagsüber an“ für diesen Drucker eingeschaltet?"""
+        if not self.settings.get("power_day"):
+            return False
+        ids = [x.strip() for x in str(self.settings.get("power_day_printers") or "").split(",") if x.strip()]
+        return p.id in ids
+
+    def in_day(self, now=None):
+        """Liegt die Zeit im Tagesfenster (Wochentag gewählt, Von–Bis, auch über Mitternacht)? → (ja/nein, Tageskennung)."""
         def mins(v, d):
             try:
                 h, m = str(v or d).strip().split(":")
@@ -284,18 +313,25 @@ class Power:
             except Exception:
                 h, m = d.split(":")
                 return int(h) * 60 + int(m)
-        a = mins(self.settings.get("power_night_from"), "23:00")
-        b = mins(self.settings.get("power_night_to"), "07:00")
-        t = time.localtime(now or time.time())
+        a = mins(self.settings.get("power_day_from"), "07:00")
+        b = mins(self.settings.get("power_day_to"), "23:00")
+        now = now or time.time()
+        t = time.localtime(now)
         c = t.tm_hour * 60 + t.tm_min
-        return a <= c < b if a < b else (c >= a or c < b) if a != b else False
+        if a == b:
+            return False, None
+        inside = a <= c < b if a < b else (c >= a or c < b)
+        start = now - ((c - a) % 1440) * 60      # Beginn dieses Fensters (Tag, an dem es angefangen hat)
+        ts = time.localtime(start)
+        days = [x.strip().upper() for x in str(self.settings.get("power_day_days") or "").split(",") if x.strip()]
+        if inside and self.DAYS[ts.tm_wday] not in days:
+            inside = False
+        return inside, time.strftime("%Y-%m-%d", ts)
 
     def tick(self):
         auto = bool(self.settings.get("power_auto"))
         after = float(self.settings.get("power_after_min") or 10) * 60
-        night = self.in_night()
-        if night:
-            after = max(0.0, float(self.settings.get("power_night_after_min") or 0)) * 60
+        day, day_key = self.in_day()
         idle = float(self.settings.get("power_idle_min") or 30) * 60
         now = time.time()
         for p in self.printers.values():
@@ -303,6 +339,21 @@ class Power:
             self._plug(p, s)                     # Zuordnung zu Bambuddy (für Warteschlange), zwischengespeichert
             on = self.plug_on(p)
             s["on"] = on
+            dm = self.day_mode(p)
+            if dm and day and on is not None and self._day_done(p.id) != day_key:
+                self._day_done(p.id, day_key)
+                if on is False:
+                    try:
+                        self.switch(p, True, reason="automatisch (Tagsüber an)")
+                        log.info("[%s] Tagsüber an: eingeschaltet", p.id)
+                        if self.notifier:
+                            self.notifier.send("power", f"{p.name}: Drucker eingeschaltet 🔌",
+                                               f"Automatisch (Tagsüber an bis {self.settings.get('power_day_to') or '23:00'}).",
+                                               "electric_plug")
+                    except Exception as e:
+                        s["error"] = str(e)
+                        log.warning("[%s] Tagsüber an: Einschalten fehlgeschlagen: %s", p.id, e)
+                    continue
             if on is not True:
                 s.update(on_since=None, off_at=None, keep=None, ended_at=None, was_active=False)
                 continue
@@ -320,18 +371,23 @@ class Power:
             if s.get("was_active"):              # Druck ist gerade zu Ende gegangen
                 s.update(was_active=False, ended_at=now)
             base = s["ended_at"] + after if s.get("ended_at") else max(s.get("on_since") or now, s.get("last_active") or 0) + idle
+            if dm and day:                       # tagsüber: nie automatisch aus
+                s.update(keep="tagsueber", off_at=None, mode="tagsüber an")
+                continue
+            if dm:                               # Tagesfenster vorbei: aus, sobald nichts mehr dagegen spricht
+                base = min(base, s["ended_at"] + after if s.get("ended_at") else now)
             keep = self._keep(p, st, s)
             s["keep"] = keep
             s["off_at"] = None if keep else base
-            s["mode"] = ("nach Druck" + (" (Nacht)" if night else "")) if s.get("ended_at") else "Leerlauf"
-            if not auto or keep or now < base:
+            s["mode"] = "nach Druck" if s.get("ended_at") else ("Tagsüber-Zeit vorbei" if dm else "Leerlauf")
+            if not (auto or dm) or keep or now < base:
                 continue
             try:
                 via = self.switch(p, False, reason=f"automatisch ({s['mode']})")
                 mins = int((now - (s.get('ended_at') or s.get('on_since') or now)) / 60)
                 if self.notifier:
                     self.notifier.send("power", f"{p.name}: Drucker ausgeschaltet 🔌",
-                                       f"Automatisch {'nach dem Druck' if s.get('ended_at') else 'nach Leerlauf'} "
+                                       f"Automatisch {'nach dem Druck' if s.get('ended_at') else ('– Tagsüber-Zeit vorbei' if dm else 'nach Leerlauf')} "
                                        f"({mins} min, Düse kühl). Über {via}.", "electric_plug")
                 s.update(on=False, off_at=None, ended_at=None)
             except Exception as e:
@@ -345,7 +401,7 @@ class Power:
         return {"available": bool(p.shelly) or bool(s.get("plug_id")), "on": s.get("on"),
                 "watts": (p.shelly.watts if p.shelly and p.shelly.online else s.get("watts")),
                 "auto": bool(self.settings.get("power_auto")),
-                "off_in_s": max(0, int(off_at - time.time())) if (off_at and self.settings.get("power_auto")) else None,
+                "off_in_s": max(0, int(off_at - time.time())) if (off_at and (self.settings.get("power_auto") or self.day_mode(p))) else None,
                 "keep": KEEP_GRUND.get(s.get("keep")) if s.get("keep") else None, "mode": s.get("mode"),
                 "plug": s.get("plug_name"), "bb_auto_off": s.get("bb_auto_off"), "bb_auto_on": s.get("bb_auto_on"),
                 "error": s.get("error") or s.get("plug_err")}

@@ -74,10 +74,11 @@ SPEC = {
     "power_off_temp": (float, 45.0),       # erst aus, wenn die Düse darunter ist (°C)
     "power_after_min": (float, 10.0),      # Wartezeit nach Druckende (min)
     "power_idle_min": (float, 30.0),
-    "power_night": (bool, False),          # Zeitfenster: nachts kürzere Wartezeit nach dem Druck
-    "power_night_from": (str, "23:00"),
-    "power_night_to": (str, "07:00"),
-    "power_night_after_min": (float, 0.0),  # Wartezeit nach Druckende im Zeitfenster (min)       # Leerlauf ohne Druck (z. B. von Hand eingeschaltet) (min)          # Fortschritt im Browser-Tab (Titel + Symbol)
+    "power_day": (bool, False),            # „Tagsüber an“: morgens einschalten, tagsüber anlassen, abends aus
+    "power_day_from": (str, "07:00"),
+    "power_day_to": (str, "23:00"),
+    "power_day_days": (str, "MO,DI,MI,DO,FR,SA,SO"),
+    "power_day_printers": (str, ""),       # Drucker-IDs, Komma-getrennt       # Leerlauf ohne Druck (z. B. von Hand eingeschaltet) (min)          # Fortschritt im Browser-Tab (Titel + Symbol)
     "weekly_day": (str, "off"),            # Wochenbericht: Wochentag 0=Mo … 6=So, off = aus
     "weekly_hour": (int, 20),
     "ai_enabled": (bool, False),           # Etikett zusätzlich mit Gemini lesen

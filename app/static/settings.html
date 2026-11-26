@@ -412,12 +412,13 @@
       <div class="unit-in"><input type="number" min="0" max="240" step="1" data-k="power_after_min" style="width:80px"> min</div></div>
     <div class="row"><div><div class="t">Leerlauf</div><div class="d">Eingeschaltet, aber kein Druck (z. B. von Hand eingeschaltet und vergessen)</div></div>
       <div class="unit-in"><input type="number" min="5" max="600" step="5" data-k="power_idle_min" style="width:80px"> min</div></div>
-    <div class="row"><div><div class="t">🌙 Zeitfenster</div><div class="d">In dieser Zeit nach dem Druck schneller ausschalten (Düse muss trotzdem kühl sein)</div></div>
-      <label class="switch"><input type="checkbox" data-k="power_night"><span></span></label></div>
-    <div class="row"><div><div class="t">Von – bis</div><div class="d">Auch über Mitternacht, z. B. 23:00 – 07:00</div></div>
-      <div class="unit-in"><input type="time" data-k="power_night_from"> – <input type="time" data-k="power_night_to"></div></div>
-    <div class="row"><div><div class="t">Wartezeit im Zeitfenster</div><div class="d">Nach Druckende (0 = sobald die Düse kühl ist)</div></div>
-      <div class="unit-in"><input type="number" min="0" max="240" step="1" data-k="power_night_after_min" style="width:80px"> min</div></div>
+    <div class="row"><div><div class="t">☀️ Tagsüber an</div><div class="d">Morgens automatisch einschalten, tagsüber nie automatisch aus, nach Ende der Zeit aus
+      (sobald kein Druck läuft und die Düse kühl ist). Von Hand ausgeschaltet bleibt er an dem Tag aus.</div></div>
+      <label class="switch"><input type="checkbox" data-k="power_day"><span></span></label></div>
+    <div class="row"><div><div class="t">Von – bis</div><div class="d">Auch über Mitternacht möglich</div></div>
+      <div class="unit-in"><input type="time" data-k="power_day_from"> – <input type="time" data-k="power_day_to"></div></div>
+    <div class="row"><div><div class="t">Tage</div></div><div class="checks" id="pd-days"></div></div>
+    <div class="row"><div><div class="t">Drucker</div><div class="d">Nur Drucker mit Steckdose</div></div><div class="checks" id="pd-pr"></div></div>
     <div class="row"><div><div class="t">Erst aus unter</div><div class="d">Düsentemperatur – schont das Hotend</div></div>
       <div class="unit-in"><input type="number" min="30" max="80" step="1" data-k="power_off_temp" style="width:80px"> °C</div></div>
     <div class="row" id="pw-bb-row" hidden><div><div class="t">Bambuddy „Auto Aus“</div><div class="d" id="pw-bb">–</div></div>
@@ -1086,6 +1087,7 @@ function fill() {
   document.querySelectorAll("#theme button").forEach(b => b.classList.toggle("on", b.dataset.v === S.theme));
   if ($("evgroups")) drawEvents();
   document.querySelectorAll("#photo_events input").forEach(c => c.checked = (S.photo_events || []).includes(c.value));
+  pdFill();
   document.querySelectorAll("#weekly_lines input").forEach(c => c.checked = (S.weekly_lines || []).includes(c.value));
   const via = S.notify_via || "both";
   document.querySelectorAll("#notify_via button").forEach(b => b.classList.toggle("on", b.dataset.v === via));
@@ -1405,6 +1407,19 @@ async function pwLog() {
       <span class="muted">– ${esc(e.result || "")}</span></div>
       <table>${e.steps.map(s => `<tr><td>${new Date(s[0] * 1000).toLocaleTimeString("de-DE")}</td><td>+${s[1]} s</td><td>${esc(s[2])}</td><td>${s[3] != null ? s[3] + " W" : ""}</td></tr>`).join("")}</table></div>`).join("");
   } catch (e) { el.textContent = "Konnte das Protokoll nicht laden."; }
+}
+let PD_PR = null;
+async function pdFill() {
+  const days = ["MO", "DI", "MI", "DO", "FR", "SA", "SO"], sel = (S.power_day_days || "").split(",");
+  const box = $("pd-days");
+  if (!box) return;
+  box.innerHTML = days.map(d => `<label><input type="checkbox" value="${d}" ${sel.includes(d) ? "checked" : ""}> ${d[0] + d[1].toLowerCase()}</label>`).join("");
+  box.querySelectorAll("input").forEach(c => c.onchange = () => save({power_day_days: [...box.querySelectorAll("input:checked")].map(x => x.value).join(",")}));
+  if (!PD_PR) { try { PD_PR = ((await (await fetch("/api/state")).json()).printers || []).filter(p => p.power && p.power.available).map(p => ({id: p.id, name: p.name})); } catch { PD_PR = []; } }
+  const ids = (S.power_day_printers || "").split(","), pb = $("pd-pr");
+  pb.innerHTML = PD_PR.length ? PD_PR.map(p => `<label><input type="checkbox" value="${p.id}" ${ids.includes(p.id) ? "checked" : ""}> ${PH.esc ? PH.esc(p.name) : p.name}</label>`).join("")
+    : '<span class="muted small">Kein Drucker mit Steckdose</span>';
+  pb.querySelectorAll("input").forEach(c => c.onchange = () => save({power_day_printers: [...pb.querySelectorAll("input:checked")].map(x => x.value).join(",")}));
 }
 async function pwHint() {
   let st; try { st = await (await fetch("/api/state")).json(); } catch { return; }
