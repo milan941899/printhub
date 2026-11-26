@@ -222,7 +222,8 @@ class MoonrakerPrinter(BasePrinter):
         self.last_state = state
         progress = st.get("virtual_sdcard", {}).get("progress")
         if state == "paused" and prev is not None and prev != "paused":
-            self.notify("pause", "Druck pausiert ⏸", ps.get("filename", ""), "pause_button", "high")
+            self.notify("pause", "Druck pausiert ⏸", ps.get("filename", ""), "pause_button", "high",
+                        buttons=self.ctl_buttons())
         if state == "error" and prev != "error":
             self.notify("error", "Druckerfehler ⚠", ps.get("message") or "Klipper meldet einen Fehler", "rotating_light", "urgent")
             self.note_job_error((ps.get("message") or "Klipper-Fehler")[:120])
@@ -300,6 +301,61 @@ class MoonrakerPrinter(BasePrinter):
             if ok:
                 self._last_shot = ok[-1]
                 self._pend_shots = [s for s in pend if s[0] >= now - 0.8]
+
+    def end_photo(self):
+        """Endfoto: hat das Park-Makro beim Druckende geparkt (Kopf vorne, Bett auf Referenzhöhe), ein frisches Bild
+        mit Licht von dort – das zeigt das ganze Teil. Sonst wie bisher das letzte Bild aus dem Druck.
+        Läuft im Meldungs-Thread (wartet dort bis 45 s), nicht in der Abfrage-Schleife."""
+        fallback = super().end_photo()
+        if not hasattr(self, "_endshot_lock"):
+            self._endshot_lock = threading.Lock()
+
+        def shot():
+            with self._endshot_lock:
+                c = getattr(self, "_park_shot", None)
+                if c and time.time() - c[0] < 600:
+                    return c[1]
+                jpg = self._park_snapshot()
+                if jpg:
+                    self._park_shot = (time.time(), jpg)
+                    return jpg
+            return fallback()
+        return shot
+
+    def _park_snapshot(self):
+        end = time.time() + 45
+        while time.time() < end:
+            m = self.park_macro()
+            if m is None or not m.get("on"):
+                return None                       # kein Makro / Parken aus → altes Verhalten
+            if float(m.get("geparkt", -1) or -1) >= 0:
+                break
+            time.sleep(2)
+        else:
+            log.info("[%s] Endfoto: Makro hat nicht geparkt – nehme letztes Bild aus dem Druck", self.id)
+            return None
+        was = None
+        try:
+            was = self.light_state()
+            if was is False:
+                self.set_light(True)
+        except Exception:
+            was = None
+        try:
+            time.sleep(3)                         # Licht/Belichtung einschwingen lassen
+            jpg = self.camera.snapshot()
+            if jpg:
+                log.info("[%s] Endfoto aus der Parkposition aufgenommen", self.id)
+            return jpg
+        except Exception as e:
+            log.info("[%s] Endfoto aus der Parkposition fehlgeschlagen: %s", self.id, e)
+            return None
+        finally:
+            if was is False:
+                try:
+                    self.set_light(False)
+                except Exception:
+                    pass
 
     def _grab_end_shot(self, progress):
         """Kamera sitzt beim U1 am Druckkopf: ab 90 % regelmäßig ein Bild merken, solange der Kopf noch druckt."""

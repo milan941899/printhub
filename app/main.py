@@ -4712,6 +4712,23 @@ def _tg_button(data):
             return f"Nicht geklappt: {e}"[:190], []
         log.info("Lager: Spule #%s leer – auf 0 gesetzt und archiviert (Telegram)", sid)
         return f"Spule #{sid} auf 0 g gesetzt und archiviert ✓", []
+    if parts[1] == "ctl" and len(parts) == 4:
+        p = printers.get(parts[2])
+        if not p or not hasattr(p, "control"):
+            return "Drucker unbekannt", []
+        act = parts[3]
+        if act == "stop":
+            return "Sicher?", [{"title": f"Druck auf {p.name} wirklich abbrechen?", "text": "Das lässt sich nicht rückgängig machen.",
+                                "tags": "warning", "buttons": [[("⏹ Ja, abbrechen", f"ph:ctl:{p.id}:stopok"), ("Nein", "noop")]]}]
+        act = {"stopok": "stop"}.get(act, act)
+        if act not in ("pause", "resume", "stop"):
+            return "Unbekannte Aktion", []
+        try:
+            p.control(act)
+        except Exception as e:
+            return f"Nicht geklappt: {e}"[:190], []
+        log.info("[%s] Druck %s (Telegram)", p.id, act)
+        return {"pause": "Druck pausiert ⏸", "resume": "Druck geht weiter ▶", "stop": "Druck abgebrochen ⏹"}[act] + f" – {p.name}", []
     if parts[1] == "light" and len(parts) == 4:
         p = printers.get(parts[2])
         if not p:

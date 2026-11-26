@@ -305,7 +305,8 @@ class BambuPrinter(BasePrinter):
             perr = self.state.get("print_error") or 0
             self._track_stage(gs)
         if gs == "PAUSE" and prev is not None and prev != "PAUSE":
-            self.notify("pause", "Druck pausiert ⏸", self._pause_text(), "pause_button", "high")
+            self.notify("pause", "Druck pausiert ⏸", self._pause_text(), "pause_button", "high",
+                        buttons=self.ctl_buttons())
             if str(self.state.get("stg_cur")) == "6":
                 self.note_runout(tray_now)
                 self._offer_swap()

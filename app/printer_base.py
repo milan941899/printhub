@@ -67,6 +67,10 @@ class BasePrinter:
             return lambda: shot[1]
         return self.camera.snapshot
 
+    def ctl_buttons(self):
+        """Telegram-Knöpfe für einen pausierten Druck."""
+        return [[("▶ Fortsetzen", f"ph:ctl:{self.id}:resume"), ("⏹ Abbrechen", f"ph:ctl:{self.id}:stop")]]
+
     def notify(self, event, title, message, tags="", priority="default", buttons=None, click=None):
         if self.notifier:
             photo = (self.end_photo() if event in ("finish", "fail") else self.camera.snapshot) if self.camera else None
@@ -133,7 +137,8 @@ class BasePrinter:
         if int(layer) >= 2:
             job["first_layer_sent"] = True
             self.store.set_job(self.id, job)
-            self.notify("first_layer", "Erste Schicht fertig ✅", f"{job.get('name', '')} – jetzt kurz die Haftung prüfen.", "eyes")
+            self.notify("first_layer", "Erste Schicht fertig ✅", f"{job.get('name', '')} – jetzt kurz die Haftung prüfen.", "eyes",
+                        buttons=[[("⏸ Pausieren", f"ph:ctl:{self.id}:pause"), ("⏹ Abbrechen", f"ph:ctl:{self.id}:stop")]])
 
     def _energy_now(self):
         if self.shelly and self.shelly.online and self.shelly.total_wh is not None:
@@ -216,6 +221,7 @@ class BasePrinter:
     def job_started(self, name, extra=None):
         self._last_shot = None
         self._pend_shots = []
+        self._park_shot = None
         job = {"name": name, "started": int(time.time()), "filaments": None, "max_progress": 0.0,
                "energy_start": self._energy_now()}
         if extra:
