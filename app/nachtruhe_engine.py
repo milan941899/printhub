@@ -1366,15 +1366,36 @@ class Waechter:
 
         # Druck wurde pausiert (Gadget, Drucker, Bambuddy oder von Hand)
         if state == "PAUSE" and alt in ("RUNNING", "PREPARE"):
-            grund = ""
-            if st.get("hms_errors"):
-                grund = " Grund laut Drucker: " + "; ".join(
-                    str(e.get("description") or e.get("full_code")) for e in st["hms_errors"])
-            log(f"Druck pausiert: '{name}'.{grund}")
-            melden("Druck pausiert",
-                   f"'{name}' wurde angehalten – evtl. hat die KI (OctoEverywhere Gadget) einen Fehler "
-                   f"erkannt.{grund} Bitte Foto prüfen.",
-                   ["pause_button"], 5, bild=self.fehler_bild(),
+            fehler = "; ".join(str(e.get("description") or e.get("full_code") or e.get("code") or e)
+                               for e in st.get("hms_errors") or [])
+            try:
+                prog = float(st.get("progress") or st.get("mc_percent") or 0)
+            except (TypeError, ValueError):
+                prog = 0.0
+            try:
+                lay, tot = int(st.get("layer_num") or 0), int(st.get("total_layers") or st.get("total_layer_num") or 0)
+            except (TypeError, ValueError):
+                lay, tot = 0, 0
+            am_ende = prog >= 99 or (tot > 0 and lay >= tot)
+            log(f"Druck pausiert: '{name}' ({prog:.0f} %, Schicht {lay}/{tot}). {fehler}")
+            if fehler:
+                # der Drucker selbst hat angehalten – nicht die KI
+                titel = "Druck pausiert – Drucker meldet Fehler"
+                text = f"'{name}' wurde vom Drucker angehalten"
+                if am_ende:
+                    text += (" – beim Druckende, vermutlich beim Zurückziehen des Filaments ins AMS. "
+                             "Das Teil ist fertig gedruckt")
+                text += f".\nGrund: {fehler}"
+                if am_ende:
+                    text += ("\nFilament am AMS prüfen (verheddert/hakt?), dann Fortsetzen – "
+                             "bei Abbrechen gilt der Druck im Verlauf als abgebrochen.")
+                else:
+                    text += "\nBitte am Drucker prüfen."
+            else:
+                titel = "Druck pausiert"
+                text = (f"'{name}' wurde angehalten – evtl. hat die KI (OctoEverywhere Gadget) einen Fehler "
+                        f"erkannt oder es wurde von Hand pausiert. Bitte Foto prüfen.")
+            melden(titel, text, ["pause_button"], 5, bild=self.fehler_bild(),
                    aktionen=[(K_FORTSETZEN, f"fortsetzen:{self.pid}"),
                              (K_STOPPEN, f"druckstopp:{self.pid}")])
 
