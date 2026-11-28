@@ -132,9 +132,18 @@ class BasePrinter:
     def track_layer(self, layer):
         """Erste Schicht fertig melden (einmal pro Druck)."""
         job = self.store.get_job(self.id)
-        if not job or not layer or job.get("first_layer_sent"):
+        if not job or not layer:
             return
-        if int(layer) >= 2:
+        try:
+            L = int(layer)
+        except (TypeError, ValueError):
+            return
+        if L > (job.get("max_layer") or 0):          # höchste erreichte Schicht (für genaues Abbuchen beim Abbruch)
+            job["max_layer"] = L
+            self.store.set_job(self.id, job)
+        if job.get("first_layer_sent"):
+            return
+        if L >= 2:
             job["first_layer_sent"] = True
             self.store.set_job(self.id, job)
             self.notify("first_layer", "Erste Schicht fertig ✅", f"{job.get('name', '')} – jetzt kurz die Haftung prüfen.", "eyes",
@@ -243,8 +252,9 @@ class BasePrinter:
             if not current or current.get("started") != job.get("started"):
                 return  # Druck ist inzwischen vorbei; job_ended lädt selbst nach
             current["filaments"] = usage
-            if job.get("thumb"):
-                current["thumb"] = job["thumb"]
+            for k in ("thumb", "gpm", "layer_prof"):     # Vorschaubild, Gramm/mm (U1), Schicht-Verlauf (Bambu)
+                if job.get(k):
+                    current[k] = job[k]
             self.store.set_job(self.id, current)
             self.check_enough(current)
             log.info("[%s] Filamentbedarf laut Slicer: %s", self.id, usage)
@@ -368,6 +378,10 @@ class BasePrinter:
         """Macht aus job['filaments'] eine Liste [(slot_key, gramm)]. Standard: schon fertig."""
         return job.get("filaments") or []
 
+    def actual_usage(self, job, success):
+        """Genauer Verbrauch [(slot_key, gramm)] statt Slicer-Wert × Fortschritt – oder None (dann wie bisher)."""
+        return None
+
     def update_progress(self, progress, remaining_s=None):
         job = self.store.get_job(self.id)
         if not job:
@@ -425,9 +439,18 @@ class BasePrinter:
             factor = max(0.0, min(1.0, p))
         booked = []
         low = []
+        end_p = 1.0 if success else factor
         try:
-            usage = self.resolve_usage(job)
-            usage = self.split_backup(job, usage, 1.0 if success else factor)
+            usage = None
+            try:
+                usage = self.actual_usage(job, success)
+            except Exception as e:
+                log.warning("[%s] Genauer Verbrauch nicht ermittelt: %s", self.id, e)
+            if usage is not None:
+                factor = 1.0                              # schon der echte/anteilige Wert
+            else:
+                usage = self.resolve_usage(job)
+            usage = self.split_backup(job, usage, end_p)
         except Exception as e:
             log.warning("[%s] Zuordnung fehlgeschlagen: %s", self.id, e)
             usage = []
@@ -522,7 +545,7 @@ class BasePrinter:
         parts = [job.get("name", ""), dur_txt]
         grams = sum(e["grams"] for e in booked)
         if grams:
-            parts.append(f"Filament: {_de(grams, 1)} g")
+            parts.append(f"Filament: {_de(grams, 1)} g" + (f" ({job['usage_note']})" if job.get("usage_note") else ""))
         if kwh is not None:
             parts.append(f"Strom: {_de(kwh)} kWh ({_de(energy_cost)} €)")
         if total is not None:

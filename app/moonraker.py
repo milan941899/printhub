@@ -19,12 +19,18 @@ STATE_DE = {
 }
 ACTIVE = {"printing", "paused"}
 RE_GRAMS = re.compile(r";\s*filament used \[g\]\s*=\s*([0-9.,\s]+)")
+RE_MM = re.compile(r";\s*filament used \[mm\]\s*=\s*([0-9.,\s]+)")
+G_PER_MM_DEFAULT = 0.0024053 * 1.25      # 1,75 mm Filament, Dichte 1,25 g/cm³ (falls der Slicer keine mm angibt)
 
 
-def parse_gcode_grams(text: str):
+def _de1(v):
+    return f"{v:.1f}".replace(".", ",")
+
+
+def parse_gcode_grams(text: str, rx=RE_GRAMS):
     """Liest '; filament used [g] = 1.2, 0.0, 3.4' (OrcaSlicer/Snapmaker Orca/PrusaSlicer)."""
     m = None
-    for m in RE_GRAMS.finditer(text):
+    for m in rx.finditer(text):
         pass
     if not m:
         return None
@@ -165,6 +171,10 @@ class MoonrakerPrinter(BasePrinter):
         th = (st.get("toolhead") or {}).get("extruder")
         cur = f"T{(th or 'extruder').replace('extruder', '') or '0'}" if th else None
         heads = self.store.data.setdefault("heads", {}).setdefault(self.id, {})
+        try:
+            self._track_measure(st, state, cur)
+        except Exception as e:
+            log.debug("[%s] Verbrauch messen: %s", self.id, e)
         th_ = st.get("toolhead") or {}
         # nicht während PrintHub selbst fährt: das X/Y-Homing des U1 markiert Z kurz als referenziert (z_hop ab 0)
         if not getattr(self, "_posing", False) and "xyz" in "".join(sorted((th_.get("homed_axes") or "").lower())) \
@@ -401,21 +411,32 @@ class MoonrakerPrinter(BasePrinter):
                     grams = [float(x or 0) for x in fw]
         except Exception:
             pass
-        # 2) Ende der G-Code-Datei lesen (dort steht die Slicer-Zusammenfassung)
-        if grams is None:
-            grams = self._grams_from_gcode(fn)
+        # 2) Ende der G-Code-Datei lesen (dort steht die Slicer-Zusammenfassung, auch die Millimeter)
+        mm = None
+        try:
+            g2, mm = self._summary_from_gcode(fn)
+            if grams is None:
+                grams = g2
+        except Exception as e:
+            if grams is None:
+                raise
+            log.debug("[%s] Slicer-Millimeter nicht gelesen: %s", self.id, e)
         if grams is None:
             raise ValueError("Keine Angabe 'filament used [g]' im G-Code gefunden")
         # Snapmaker U1: der Drucker ordnet Slicer-Filament → Kopf frei zu (print_task_config.extruder_map_table,
         # z. B. [1, 3, 2, 0] = Filament 1 auf T1, Filament 2 auf T3 …). Ohne Tabelle: Filament 1 → T0 usw.
         m = self._map_table(job)
-        out = {}
+        out, mm_t = {}, {}
         for i, g in enumerate(grams):
             if g <= 0:
                 continue
             h = m[i] if m and i < len(m) and isinstance(m[i], int) and 0 <= m[i] < self.channels else i
             if h < self.channels:
                 out[f"T{h}"] = out.get(f"T{h}", 0) + g
+                if mm and i < len(mm) and mm[i] > 0:
+                    mm_t[f"T{h}"] = mm_t.get(f"T{h}", 0) + mm[i]
+        # Gramm pro mm je Kopf – genau wie der Slicer rechnet (Dichte des jeweiligen Filaments)
+        job["gpm"] = {k: out[k] / v for k, v in mm_t.items() if v > 0 and out.get(k)}
         return list(out.items())
 
     def _map_table(self, job):
@@ -430,6 +451,10 @@ class MoonrakerPrinter(BasePrinter):
         return None
 
     def _grams_from_gcode(self, fn):
+        return self._summary_from_gcode(fn)[0]
+
+    def _summary_from_gcode(self, fn):
+        """(Gramm je Filament, Millimeter je Filament) aus der Slicer-Zusammenfassung."""
         url = self.base + "/server/files/gcodes/" + quote(fn)
         tail_size = 400_000
         r = self.s.get(url, headers={**self.headers, "Range": f"bytes=-{tail_size}"}, stream=True, timeout=30)
@@ -438,12 +463,72 @@ class MoonrakerPrinter(BasePrinter):
         for chunk in r.iter_content(8192):
             tail.append(chunk)
         text = b"".join(tail).decode("utf-8", "ignore")
-        grams = parse_gcode_grams(text)
-        if grams is None and r.status_code == 206:
+        grams, mm = parse_gcode_grams(text), parse_gcode_grams(text, RE_MM)
+        if (grams is None or mm is None) and r.status_code == 206:
             # Zusammenfassung steht evtl. im Kopf (PrusaSlicer-Stil)
             r2 = self.s.get(url, headers={**self.headers, "Range": "bytes=0-200000"}, timeout=30)
-            grams = parse_gcode_grams(r2.content.decode("utf-8", "ignore"))
-        return grams
+            head = r2.content.decode("utf-8", "ignore")
+            grams = grams if grams is not None else parse_gcode_grams(head)
+            mm = mm if mm is not None else parse_gcode_grams(head, RE_MM)
+        return grams, mm
+
+    # --- tatsächlich geförderte Menge je Kopf -----------------------------------
+    def _track_measure(self, st, state, cur):
+        """print_stats.filament_used (mm, seit Druckbeginn, alle Köpfe) mitzählen und dem aktiven Kopf zuordnen."""
+        if state not in ACTIVE or not cur:
+            return
+        fu = (st.get("print_stats") or {}).get("filament_used")
+        job = self.store.get_job(self.id)
+        if fu is None or not job:
+            return
+        fu = float(fu)
+        m = getattr(self, "_meas", None)
+        if not m or m.get("started") != job.get("started"):
+            m = self._meas = {"started": job.get("started"), "mm": dict(job.get("meas_mm") or {}),
+                              "last": job.get("meas_last"), "saved": time.time()}
+            if m["last"] is None and not m["mm"]:
+                if time.time() - (job.get("started") or 0) < 180:
+                    m["mm"][cur] = max(0.0, fu)        # gerade erst gestartet: bisher Gefördertes gehört dazu
+                else:
+                    job["meas_incomplete"] = True      # PrintHub kam mitten im Druck dazu → Slicer-Wert nehmen
+                    self.store.set_job(self.id, job)
+                m["last"] = fu
+                return
+        d = fu - (m["last"] if m["last"] is not None else fu)
+        now = time.time()
+        dt, m["t"] = now - (m.get("t") or now), now
+        m["last"] = fu
+        # mehr als ~25 mm/s Filament kann kein Kopf fördern → Sprung (z. B. E-Position beim Kopfwechsel) ignorieren
+        if 0 < d <= max(60.0, dt * 25):
+            m["mm"][cur] = m["mm"].get(cur, 0.0) + d
+        elif d > 0:
+            m["jumps"] = m.get("jumps", 0) + 1
+            log.info("[%s] Verbrauch messen: Sprung %.0f mm in %.0f s ignoriert", self.id, d, dt)
+        if time.time() - m["saved"] > 30:
+            m["saved"] = time.time()
+            job["meas_mm"] = {k: round(v, 1) for k, v in m["mm"].items()}
+            job["meas_last"] = fu
+            self.store.set_job(self.id, job)
+
+    def actual_usage(self, job, success):
+        """U1: wirklich geförderte Millimeter je Kopf × Gramm/mm des Slicers."""
+        if job.get("meas_incomplete"):
+            return None
+        m = getattr(self, "_meas", None)
+        mm = dict(m["mm"]) if m and m.get("started") == job.get("started") else dict(job.get("meas_mm") or {})
+        if sum(mm.values()) < 5:
+            return None
+        gpm = job.get("gpm") or {}
+        out = [(k, v * gpm.get(k, G_PER_MM_DEFAULT)) for k, v in mm.items() if v > 0.5]
+        meas = sum(g for _, g in out)
+        slicer = sum(g for _, g in (job.get("filaments") or []))
+        if slicer > 0 and ((success and not (0.5 <= meas / slicer <= 2.0)) or (not success and meas > slicer * 1.3)):
+            log.warning("[%s] Gemessen %.1f g passt nicht zum Slicer (%.1f g) – nehme Slicer-Wert", self.id, meas, slicer)
+            return None
+        job["usage_note"] = f"gemessen · Slicer {_de1(slicer)} g" if success else "gemessen bis zum Abbruch"
+        log.info("[%s] Verbrauch gemessen: %s (Slicer %.1f g)", self.id,
+                 {k: round(g, 1) for k, g in out}, slicer)
+        return out
 
     # --- Slots / Status --------------------------------------------------------
     def slots(self):

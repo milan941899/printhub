@@ -138,6 +138,52 @@ def parse_slice_info(data: bytes, plate=None):
     return out
 
 
+def layer_profile(gcode_lines):
+    """Zählt im G-Code die Extrusion je Filament und Schicht.
+    Ergebnis {"n": Schichten, "f": {filament_idx (1-basiert): [Anteil bis vor Schicht 1, bis Ende Schicht 1, …]}}
+    – damit lässt sich bei einem Abbruch genau sagen, wie viel von welcher Farbe schon verbraucht war."""
+    tool, rel, e_abs = 0, True, 0.0
+    cur, marks = {}, []
+    for raw in gcode_lines:
+        line = raw.decode("utf-8", "ignore") if isinstance(raw, bytes) else raw
+        if line.startswith("; CHANGE_LAYER"):
+            marks.append(dict(cur))
+            continue
+        if not line or line[0] == ";":
+            continue
+        code = line.split(";", 1)[0].strip()
+        if not code:
+            continue
+        c0 = code.split(" ", 1)[0]
+        if c0 in ("G1", "G0", "G2", "G3"):
+            i = code.find(" E")
+            if i < 0:
+                continue
+            try:
+                e = float(code[i + 2:].split(" ", 1)[0])
+            except ValueError:
+                continue
+            d = e if rel else e - e_abs
+            if not rel:
+                e_abs = e
+            cur[tool] = cur.get(tool, 0.0) + d
+        elif c0 == "M83":
+            rel = True
+        elif c0 == "M82":
+            rel = False
+        elif c0 == "G92" and " E" in code:
+            try:
+                e_abs = float(code.split(" E", 1)[1].split(" ", 1)[0])
+            except ValueError:
+                e_abs = 0.0
+        elif c0[0] == "T" and c0[1:].isdigit() and int(c0[1:]) < 16:
+            tool = int(c0[1:])
+    marks.append(dict(cur))
+    tot = {t: v for t, v in cur.items() if v > 0}
+    return {"n": len(marks) - 1,
+            "f": {str(t + 1): [round(max(0.0, min(1.0, m.get(t, 0.0) / v)), 4) for m in marks] for t, v in tot.items()}}
+
+
 SPEED_DE = {1: "Leise", 2: "Standard", 3: "Sport", 4: "Ludicrous"}
 
 
@@ -558,7 +604,43 @@ class BambuPrinter(BasePrinter):
                     job["thumb"] = self.save_media("modell", z.read(pick), "png")
         except Exception as e:
             log.debug("[%s] Kein Modellbild in der 3MF: %s", self.id, e)
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                names = z.namelist()
+                gname = next((n for n in (f"Metadata/plate_{plate or 1}.gcode",) if n in names), None) \
+                    or next((n for n in names if n.startswith("Metadata/plate_") and n.endswith(".gcode")), None)
+                if gname:
+                    with z.open(gname) as f:
+                        job["layer_prof"] = layer_profile(f)
+                    log.info("[%s] Schicht-Verlauf gelesen: %s Schichten, Filamente %s", self.id,
+                             job["layer_prof"]["n"], list(job["layer_prof"]["f"]))
+        except Exception as e:
+            log.info("[%s] Schicht-Verlauf aus dem G-Code nicht gelesen: %s", self.id, e)
         return parse_slice_info(data, plate)
+
+    def actual_usage(self, job, success):
+        """Abbruch: Verbrauch je Filament bis zur erreichten Schicht aus dem G-Code (statt Gesamt × Fortschritt)."""
+        prof, L = job.get("layer_prof"), int(job.get("max_layer") or 0)
+        if success or not prof or not prof.get("f") or not job.get("filaments"):
+            return None
+        n = int(prof.get("n") or 0)
+        if n <= 0 or L > n + 1:
+            return None
+        L = min(L, n)
+        fil = []
+        for f in job["filaments"]:
+            arr = prof["f"].get(str(f["idx"]))
+            if arr is None:
+                frac = 0.0                                   # im G-Code nicht benutzt
+            elif L <= 0:
+                frac = arr[0]
+            else:
+                frac = (arr[L - 1] + arr[L]) / 2               # laufende Schicht halb gedruckt
+            fil.append(dict(f, grams=f["grams"] * frac))
+        job["usage_note"] = f"bis Schicht {L}/{n} gezählt"
+        log.info("[%s] Abbruch bei Schicht %s/%s: %s", self.id, L, n,
+                 {f["idx"]: round(f["grams"], 1) for f in fil})
+        return self.resolve_usage(dict(job, filaments=fil))
 
     def resolve_usage(self, job):
         # Zuordnung erst am Ende, wenn Mapping und benutzte Slots bekannt sind
